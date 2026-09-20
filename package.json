@@ -1,0 +1,19 @@
+{
+  "name": "megalomarket-ai-core",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Megalomarket AI Core — moteur de recommandations et de synchronisation omnicanale (eBay, site propre, Amazon/TikTok Shop à venir).",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.32.1",
+    "better-sqlite3": "^11.7.0",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "node-cron": "^3.0.3"
+  }
+}

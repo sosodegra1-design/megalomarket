@@ -1,0 +1,186 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Megalomarket — AI Core</title>
+<style>
+  :root { --bg:#0f1115; --panel:#171a21; --border:#2a2e37; --text:#e8eaed; --dim:#9aa0ab; --accent:#5b8cff; --green:#3ecf8e; --amber:#f2b84b; --red:#f26d6d; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--text); font-family:-apple-system,system-ui,sans-serif; padding:24px; }
+  h1 { font-size:20px; margin:0 0 4px; }
+  .sub { color:var(--dim); font-size:13px; margin-bottom:24px; }
+  .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(280px,1fr)); gap:16px; margin-bottom:24px; }
+  .card { background:var(--panel); border:1px solid var(--border); border-radius:12px; padding:16px; }
+  .card h2 { font-size:13px; text-transform:uppercase; letter-spacing:0.5px; color:var(--dim); margin:0 0 12px; }
+  .channel-row { display:flex; justify-content:space-between; padding:6px 0; font-size:13px; border-bottom:1px solid var(--border); }
+  .channel-row:last-child { border-bottom:none; }
+  .pill { padding:2px 8px; border-radius:999px; font-size:11px; font-weight:600; }
+  .pill.on { background:rgba(62,207,142,.15); color:var(--green); }
+  .pill.off { background:rgba(242,184,75,.15); color:var(--amber); }
+  table { width:100%; border-collapse:collapse; font-size:13px; }
+  th, td { text-align:left; padding:8px; border-bottom:1px solid var(--border); }
+  th { color:var(--dim); font-weight:500; font-size:11px; text-transform:uppercase; }
+  button { background:var(--accent); color:white; border:none; border-radius:8px; padding:6px 12px; font-size:12px; cursor:pointer; }
+  button.secondary { background:transparent; border:1px solid var(--border); color:var(--text); }
+  button.danger { background:transparent; border:1px solid var(--red); color:var(--red); }
+  input, textarea, select { background:#0c0e12; border:1px solid var(--border); color:var(--text); border-radius:8px; padding:8px; font-size:13px; width:100%; }
+  .row { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:8px; }
+  .row > * { flex:1; min-width:120px; }
+  .log-item { font-size:12px; color:var(--dim); padding:4px 0; border-bottom:1px solid var(--border); }
+  .empty { color:var(--dim); font-size:13px; padding:12px 0; }
+</style>
+</head>
+<body>
+  <h1>Megalomarket — AI Core</h1>
+  <div class="sub">Tableau de bord de synchronisation omnicanale et de recommandations IA.</div>
+
+  <div class="grid">
+    <div class="card">
+      <h2>Canaux connectés</h2>
+      <div id="channels"></div>
+    </div>
+    <div class="card">
+      <h2>Ajouter un produit</h2>
+      <div class="row">
+        <input id="p-sku" placeholder="SKU" />
+        <input id="p-name" placeholder="Nom" />
+      </div>
+      <div class="row">
+        <input id="p-cost" type="number" step="0.01" placeholder="Prix de revient (€)" />
+      </div>
+      <textarea id="p-desc" placeholder="Description de base" rows="2" style="margin-bottom:8px;"></textarea>
+      <button onclick="addProduct()">Ajouter</button>
+      <div id="p-error" class="empty"></div>
+    </div>
+    <div class="card">
+      <h2>Qualifier un message client</h2>
+      <textarea id="s-message" placeholder="Colle ici le message du client" rows="3" style="margin-bottom:8px;"></textarea>
+      <button onclick="qualifySupport()">Qualifier avec l'IA</button>
+      <div id="s-result" class="empty"></div>
+    </div>
+  </div>
+
+  <div class="card" style="margin-bottom:16px;">
+    <h2>Produits</h2>
+    <table id="products-table"><thead><tr><th>SKU</th><th>Nom</th><th>Coût</th><th>Canaux</th><th>Actions IA</th></tr></thead><tbody></tbody></table>
+    <div id="products-empty" class="empty" hidden>Aucun produit pour l'instant.</div>
+  </div>
+
+  <div class="card" style="margin-bottom:16px;">
+    <h2>Recommandations en attente</h2>
+    <table id="recs-table"><thead><tr><th>Type</th><th>Canal</th><th>Détail</th><th>Actions</th></tr></thead><tbody></tbody></table>
+    <div id="recs-empty" class="empty" hidden>Aucune recommandation en attente.</div>
+  </div>
+
+  <div class="card">
+    <h2>Journal d'activité</h2>
+    <div id="activity"></div>
+  </div>
+
+<script>
+async function api(path, options) {
+  const res = await fetch('/api' + path, { headers: { 'Content-Type': 'application/json' }, ...options });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || res.statusText);
+  return data;
+}
+
+async function loadChannels() {
+  const channels = await api('/channels');
+  document.getElementById('channels').innerHTML = channels.map(c =>
+    `<div class="channel-row"><span>${c.channel}</span><span class="pill ${c.configured ? 'on' : 'off'}">${c.configured ? 'Connecté' : 'En attente'}</span></div>`
+  ).join('');
+}
+
+async function loadProducts() {
+  const products = await api('/products');
+  const tbody = document.querySelector('#products-table tbody');
+  document.getElementById('products-empty').hidden = products.length > 0;
+  tbody.innerHTML = products.map(p => `
+    <tr>
+      <td>${p.sku}</td>
+      <td>${p.name}</td>
+      <td>${p.cost_price.toFixed(2)} €</td>
+      <td>${p.listings.map(l => `${l.channel}: ${l.price.toFixed(2)}€`).join(', ') || '—'}</td>
+      <td><button class="secondary" onclick="suggestPrice(${p.id})">Suggérer prix</button></td>
+    </tr>`).join('');
+}
+
+async function loadRecommendations() {
+  const recs = await api('/recommendations?status=pending');
+  const tbody = document.querySelector('#recs-table tbody');
+  document.getElementById('recs-empty').hidden = recs.length > 0;
+  tbody.innerHTML = recs.map(r => `
+    <tr>
+      <td>${r.type}</td>
+      <td>${r.channel || '—'}</td>
+      <td>${r.type === 'price' ? (r.payload.suggestedPrice + '€ — ' + r.payload.rationale) : (r.payload.description || r.payload.draftReply || '')}</td>
+      <td>
+        <button onclick="decideRec(${r.id}, 'apply')">Appliquer</button>
+        <button class="danger" onclick="decideRec(${r.id}, 'dismiss')">Ignorer</button>
+      </td>
+    </tr>`).join('');
+}
+
+async function loadActivity() {
+  const log = await api('/activity');
+  document.getElementById('activity').innerHTML = log.length
+    ? log.map(a => `<div class="log-item">${new Date(a.created_at).toLocaleString('fr-FR')} — [${a.kind}] ${a.message}</div>`).join('')
+    : '<div class="empty">Aucune activité pour l\'instant.</div>';
+}
+
+async function addProduct() {
+  const sku = document.getElementById('p-sku').value.trim();
+  const name = document.getElementById('p-name').value.trim();
+  const costPrice = Number(document.getElementById('p-cost').value || 0);
+  const description = document.getElementById('p-desc').value.trim();
+  const errorEl = document.getElementById('p-error');
+  errorEl.textContent = '';
+  try {
+    await api('/products', { method: 'POST', body: JSON.stringify({ sku, name, costPrice, description }) });
+    document.getElementById('p-sku').value = '';
+    document.getElementById('p-name').value = '';
+    document.getElementById('p-cost').value = '';
+    document.getElementById('p-desc').value = '';
+    await Promise.all([loadProducts(), loadActivity()]);
+  } catch (e) {
+    errorEl.textContent = e.message;
+  }
+}
+
+async function suggestPrice(productId) {
+  try {
+    await api('/recommendations/price/' + productId, { method: 'POST' });
+    await Promise.all([loadRecommendations(), loadActivity()]);
+  } catch (e) {
+    alert(e.message);
+  }
+}
+
+async function decideRec(id, action) {
+  await api(`/recommendations/${id}/${action}`, { method: 'POST' });
+  await Promise.all([loadRecommendations(), loadActivity()]);
+}
+
+async function qualifySupport() {
+  const customerMessage = document.getElementById('s-message').value.trim();
+  const resultEl = document.getElementById('s-result');
+  resultEl.textContent = 'Analyse en cours…';
+  try {
+    const result = await api('/support/qualify', { method: 'POST', body: JSON.stringify({ customerMessage }) });
+    resultEl.innerHTML = `<strong>${result.category}</strong> (urgence ${result.urgency})<br>${result.draftReply}`;
+    await loadActivity();
+  } catch (e) {
+    resultEl.textContent = e.message;
+  }
+}
+
+async function refreshAll() {
+  await Promise.all([loadChannels(), loadProducts(), loadRecommendations(), loadActivity()]);
+}
+refreshAll();
+setInterval(refreshAll, 15000);
+</script>
+</body>
+</html>

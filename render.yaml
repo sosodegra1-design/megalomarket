@@ -1,0 +1,46 @@
+services:
+  - type: web
+    name: megalomarket-ai-core
+    runtime: node
+    plan: starter
+    buildCommand: npm install
+    startCommand: npm start
+    disk:
+      name: megalomarket-data
+      mountPath: /opt/render/project/src/data
+      sizeGB: 1
+    envVars:
+      - key: DATABASE_PATH
+        value: /opt/render/project/src/data/megalomarket.db
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: EBAY_ENV
+        value: production
+      - key: EBAY_APP_ID
+        sync: false
+      - key: EBAY_CERT_ID
+        sync: false
+      - key: EBAY_DEV_ID
+        sync: false
+      - key: EBAY_REFRESH_TOKEN
+        sync: false
+      - key: OWN_SITE_API_URL
+        sync: false
+      - key: OWN_SITE_API_KEY
+        sync: false
+      - key: AMAZON_REFRESH_TOKEN
+        sync: false
+      - key: AMAZON_CLIENT_ID
+        sync: false
+      - key: AMAZON_CLIENT_SECRET
+        sync: false
+      - key: AMAZON_SELLER_ID
+        sync: false
+      - key: TIKTOKSHOP_APP_KEY
+        sync: false
+      - key: TIKTOKSHOP_APP_SECRET
+        sync: false
+      - key: TIKTOKSHOP_ACCESS_TOKEN
+        sync: false
+      - key: TIKTOKSHOP_SHOP_ID
+        sync: false
