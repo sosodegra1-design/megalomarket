@@ -1,5 +1,5 @@
 import { askClaude } from './client.js';
-import { db, logActivity } from '../db/database.js';
+import { dbAll, dbGet, dbRun, logActivity } from '../db/database.js';
 
 const SYSTEM_PROMPT = `Tu es un expert en tarification e-commerce multicanal pour Megalomarket, une boutique pour enfants.
 Tu reçois les prix actuels d'un produit sur plusieurs canaux de vente ainsi que son historique de ventes récent.
@@ -29,13 +29,14 @@ ${orderLines}`;
 }
 
 export async function generatePriceRecommendations(productId) {
-  const product = db.prepare('SELECT * FROM products WHERE id = ?').get(productId);
+  const product = await dbGet('SELECT * FROM products WHERE id = ?', [productId]);
   if (!product) throw new Error(`Produit introuvable (id=${productId}).`);
 
-  const listings = db.prepare('SELECT * FROM channel_listings WHERE product_id = ?').all(productId);
-  const recentOrders = db
-    .prepare('SELECT * FROM orders WHERE product_id = ? ORDER BY created_at DESC LIMIT 20')
-    .all(productId);
+  const listings = await dbAll('SELECT * FROM channel_listings WHERE product_id = ?', [productId]);
+  const recentOrders = await dbAll(
+    'SELECT * FROM orders WHERE product_id = ? ORDER BY created_at DESC LIMIT 20',
+    [productId],
+  );
 
   const prompt = buildPrompt(product, listings, recentOrders);
   const raw = await askClaude({ system: SYSTEM_PROMPT, prompt, maxTokens: 800 });
@@ -47,18 +48,18 @@ export async function generatePriceRecommendations(productId) {
     throw new Error(`Réponse IA non exploitable (JSON invalide) : ${raw.slice(0, 200)}`);
   }
 
-  const insert = db.prepare(
-    'INSERT INTO recommendations (type, channel, product_id, payload, status, created_at) VALUES (?, ?, ?, ?, ?, ?)',
-  );
   const saved = [];
   for (const suggestion of parsed.suggestions || []) {
     if (typeof suggestion.suggestedPrice !== 'number' || suggestion.suggestedPrice < product.cost_price) {
       continue; // ignore une suggestion incohérente plutôt que de la stocker aveuglément
     }
-    const info = insert.run('price', suggestion.channel, productId, JSON.stringify(suggestion), 'pending', Date.now());
+    const info = await dbRun(
+      'INSERT INTO recommendations (type, channel, product_id, payload, status, created_at) VALUES (?, ?, ?, ?, ?, ?)',
+      ['price', suggestion.channel, productId, JSON.stringify(suggestion), 'pending', Date.now()],
+    );
     saved.push({ id: info.lastInsertRowid, ...suggestion });
   }
 
-  logActivity('RECOMMANDATION_PRIX', `${saved.length} suggestion(s) de prix générée(s) pour "${product.name}"`);
+  await logActivity('RECOMMANDATION_PRIX', `${saved.length} suggestion(s) de prix générée(s) pour "${product.name}"`);
   return saved;
 }

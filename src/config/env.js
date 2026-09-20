@@ -6,7 +6,11 @@ function has(...keys) {
 
 export const config = {
   port: Number(process.env.PORT) || 3000,
-  databasePath: process.env.DATABASE_PATH || './data/megalomarket.db',
+
+  turso: {
+    url: process.env.TURSO_DATABASE_URL || `file:${process.env.DATABASE_PATH || './data/megalomarket.db'}`,
+    authToken: process.env.TURSO_AUTH_TOKEN || undefined,
+  },
 
   anthropicApiKey: process.env.ANTHROPIC_API_KEY || null,
 

@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { db, logActivity } from '../db/database.js';
+import { dbAll, dbRun, logActivity } from '../db/database.js';
 import { allChannelsStatus } from '../connectors/index.js';
 import { generatePriceRecommendations } from '../ai/priceOptimizer.js';
 import { generateDescription } from '../ai/descriptionWriter.js';
@@ -17,17 +17,30 @@ function asyncRoute(handler) {
   };
 }
 
+// --- Supervision ---
+api.get('/health', (req, res) => {
+  res.json({ ok: true });
+});
+
 // --- État des connecteurs ---
 api.get('/channels', (req, res) => {
   res.json(allChannelsStatus());
 });
 
 // --- Produits ---
-api.get('/products', (req, res) => {
-  const products = db.prepare('SELECT * FROM products ORDER BY created_at DESC').all();
-  const listings = db.prepare('SELECT * FROM channel_listings WHERE product_id = ?');
-  res.json(products.map((p) => ({ ...p, listings: listings.all(p.id) })));
-});
+api.get(
+  '/products',
+  asyncRoute(async (req, res) => {
+    const products = await dbAll('SELECT * FROM products ORDER BY created_at DESC');
+    const withListings = await Promise.all(
+      products.map(async (p) => ({
+        ...p,
+        listings: await dbAll('SELECT * FROM channel_listings WHERE product_id = ?', [p.id]),
+      })),
+    );
+    res.json(withListings);
+  }),
+);
 
 api.post(
   '/products',
@@ -35,18 +48,22 @@ api.post(
     const { sku, name, description = '', costPrice = 0 } = req.body || {};
     if (!sku || !name) throw new Error('sku et name sont obligatoires.');
     if (!Number.isFinite(costPrice) || costPrice < 0) throw new Error('costPrice invalide.');
-    const info = db
-      .prepare('INSERT INTO products (sku, name, description, cost_price, created_at) VALUES (?, ?, ?, ?, ?)')
-      .run(sku, name, description, costPrice, Date.now());
-    logActivity('PRODUIT_CREE', `Produit ajouté : ${name} (${sku})`);
+    const info = await dbRun(
+      'INSERT INTO products (sku, name, description, cost_price, created_at) VALUES (?, ?, ?, ?, ?)',
+      [sku, name, description, costPrice, Date.now()],
+    );
+    await logActivity('PRODUIT_CREE', `Produit ajouté : ${name} (${sku})`);
     res.status(201).json({ id: info.lastInsertRowid });
   }),
 );
 
 // --- Commandes ---
-api.get('/orders', (req, res) => {
-  res.json(db.prepare('SELECT * FROM orders ORDER BY created_at DESC LIMIT 100').all());
-});
+api.get(
+  '/orders',
+  asyncRoute(async (req, res) => {
+    res.json(await dbAll('SELECT * FROM orders ORDER BY created_at DESC LIMIT 100'));
+  }),
+);
 
 api.post(
   '/sync/orders',
@@ -63,13 +80,16 @@ api.post(
 );
 
 // --- Recommandations IA ---
-api.get('/recommendations', (req, res) => {
-  const status = req.query.status;
-  const rows = status
-    ? db.prepare('SELECT * FROM recommendations WHERE status = ? ORDER BY created_at DESC').all(status)
-    : db.prepare('SELECT * FROM recommendations ORDER BY created_at DESC LIMIT 100').all();
-  res.json(rows.map((r) => ({ ...r, payload: JSON.parse(r.payload) })));
-});
+api.get(
+  '/recommendations',
+  asyncRoute(async (req, res) => {
+    const status = req.query.status;
+    const rows = status
+      ? await dbAll('SELECT * FROM recommendations WHERE status = ? ORDER BY created_at DESC', [status])
+      : await dbAll('SELECT * FROM recommendations ORDER BY created_at DESC LIMIT 100');
+    res.json(rows.map((r) => ({ ...r, payload: JSON.parse(r.payload) })));
+  }),
+);
 
 api.post(
   '/recommendations/price/:productId',
@@ -90,11 +110,12 @@ api.post(
 api.post(
   '/recommendations/:id/apply',
   asyncRoute(async (req, res) => {
-    const info = db
-      .prepare("UPDATE recommendations SET status = 'applied' WHERE id = ? AND status = 'pending'")
-      .run(req.params.id);
+    const info = await dbRun(
+      "UPDATE recommendations SET status = 'applied' WHERE id = ? AND status = 'pending'",
+      [req.params.id],
+    );
     if (info.changes === 0) throw new Error('Recommandation introuvable ou déjà traitée.');
-    logActivity('RECOMMANDATION_APPLIQUEE', `Recommandation #${req.params.id} marquée comme appliquée.`);
+    await logActivity('RECOMMANDATION_APPLIQUEE', `Recommandation #${req.params.id} marquée comme appliquée.`);
     res.json({ ok: true });
   }),
 );
@@ -102,9 +123,10 @@ api.post(
 api.post(
   '/recommendations/:id/dismiss',
   asyncRoute(async (req, res) => {
-    const info = db
-      .prepare("UPDATE recommendations SET status = 'dismissed' WHERE id = ? AND status = 'pending'")
-      .run(req.params.id);
+    const info = await dbRun(
+      "UPDATE recommendations SET status = 'dismissed' WHERE id = ? AND status = 'pending'",
+      [req.params.id],
+    );
     if (info.changes === 0) throw new Error('Recommandation introuvable ou déjà traitée.');
     res.json({ ok: true });
   }),
@@ -120,6 +142,9 @@ api.post(
 );
 
 // --- Journal d'activité ---
-api.get('/activity', (req, res) => {
-  res.json(db.prepare('SELECT * FROM activity_log ORDER BY created_at DESC LIMIT 100').all());
-});
+api.get(
+  '/activity',
+  asyncRoute(async (req, res) => {
+    res.json(await dbAll('SELECT * FROM activity_log ORDER BY created_at DESC LIMIT 100'));
+  }),
+);

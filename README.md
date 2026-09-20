@@ -52,16 +52,29 @@ Les tests couvrent la configuration, les garde-fous des connecteurs (erreurs cla
 si mal configurés) et le schéma de base de données. Ils ne nécessitent aucune vraie
 clé d'API ni connexion réseau.
 
-## Déploiement sur Render
+## Déploiement sur Render (gratuit)
 
-Ce dépôt inclut `render.yaml` :
+Ce dépôt inclut `render.yaml` configuré pour le **plan gratuit** de Render (aucune carte
+bancaire requise). La base de données ne vit donc pas sur un disque Render (payant), mais sur
+**Turso** (SQLite hébergé, gratuit, sans carte) :
 
-1. Pousse ce projet sur un dépôt GitHub.
-2. Sur Render, "New" → "Blueprint" → sélectionne ce dépôt. Render détecte `render.yaml`.
-3. Render te demande de remplir les variables d'environnement marquées secrètes
-   (celles listées dans `.env.example`) — renseigne tes vraies clés à ce moment-là,
-   jamais dans le code.
-4. Déploie. Le service tourne en continu et exécute ses synchronisations planifiées.
+1. Crée un compte sur [turso.tech](https://turso.tech), puis une base :
+   `turso db create megalomarket` et `turso db tokens create megalomarket`.
+   Récupère l'URL (`turso db show megalomarket --url`, commence par `libsql://`) et le jeton.
+2. Pousse ce projet sur un dépôt GitHub.
+3. Sur Render, "New" → "Blueprint" → sélectionne ce dépôt. Render détecte `render.yaml`.
+4. Renseigne les variables secrètes demandées : `TURSO_DATABASE_URL`, `TURSO_AUTH_TOKEN`,
+   `ANTHROPIC_API_KEY`, puis les clés eBay si tu les as déjà.
+5. Déploie.
+
+### Le service gratuit se met en veille — comment le garder actif
+
+Le plan gratuit de Render arrête le service après ~15 min sans requête, ce qui empêche les
+synchronisations planifiées (`src/services/scheduler.js`) de se déclencher pendant la veille.
+Solution gratuite : configure un ping régulier (toutes les 10-14 min) vers
+`https://<ton-service>.onrender.com/api/health` avec un service comme
+[cron-job.org](https://cron-job.org) (gratuit, sans carte). Ça garde le service éveillé et
+les synchronisations internes tournent normalement.
 
 ## Prochaines étapes concrètes
 

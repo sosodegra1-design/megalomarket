@@ -1,4 +1,4 @@
-import { db, logActivity } from '../db/database.js';
+import { dbRun, logActivity } from '../db/database.js';
 import { connectors, activeChannels } from '../connectors/index.js';
 
 /**
@@ -11,15 +11,14 @@ export async function syncStockFromAllChannels() {
   for (const channel of activeChannels()) {
     try {
       const items = await connectors[channel].listInventoryItems();
-      const upsert = db.prepare(`
-        INSERT INTO channel_listings (product_id, channel, external_id, price, stock, status, updated_at)
-        SELECT id, ?, ?, 0, ?, 'active', ?
-        FROM products WHERE sku = ?
-        ON CONFLICT(product_id, channel) DO UPDATE SET stock = excluded.stock, updated_at = excluded.updated_at
-      `);
-
       for (const item of items) {
-        const info = upsert.run(channel, item.sku, item.quantity, Date.now(), item.sku);
+        const info = await dbRun(
+          `INSERT INTO channel_listings (product_id, channel, external_id, price, stock, status, updated_at)
+           SELECT id, ?, ?, 0, ?, 'active', ?
+           FROM products WHERE sku = ?
+           ON CONFLICT(product_id, channel) DO UPDATE SET stock = excluded.stock, updated_at = excluded.updated_at`,
+          [channel, item.sku, item.quantity, Date.now(), item.sku],
+        );
         if (info.changes > 0) results.updated += 1;
       }
     } catch (error) {
@@ -27,7 +26,7 @@ export async function syncStockFromAllChannels() {
     }
   }
 
-  logActivity(
+  await logActivity(
     'SYNC_STOCK',
     `Synchronisation stock : ${results.updated} ligne(s) mise(s) à jour${results.errors.length ? `, ${results.errors.length} erreur(s)` : ''}.`,
   );

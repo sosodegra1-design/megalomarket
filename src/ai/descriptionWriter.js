@@ -1,5 +1,5 @@
 import { askClaude } from './client.js';
-import { db, logActivity } from '../db/database.js';
+import { dbGet, dbRun, logActivity } from '../db/database.js';
 
 const CHANNEL_GUIDANCE = {
   ebay: 'Description eBay : orientée mots-clés de recherche, liste les caractéristiques techniques en points courts, ton factuel.',
@@ -13,7 +13,7 @@ Réponds UNIQUEMENT avec un objet JSON valide : {"description": "texte de la des
 La description doit être en français, sans emoji, sans superlatifs non justifiés, et respecter les consignes du canal fournies.`;
 
 export async function generateDescription(productId, channel) {
-  const product = db.prepare('SELECT * FROM products WHERE id = ?').get(productId);
+  const product = await dbGet('SELECT * FROM products WHERE id = ?', [productId]);
   if (!product) throw new Error(`Produit introuvable (id=${productId}).`);
   const guidance = CHANNEL_GUIDANCE[channel];
   if (!guidance) throw new Error(`Canal inconnu : ${channel}`);
@@ -34,10 +34,11 @@ Rédige une description adaptée à ce canal.`;
   }
   if (!parsed.description) throw new Error('La réponse IA ne contient pas de description.');
 
-  const info = db
-    .prepare('INSERT INTO recommendations (type, channel, product_id, payload, status, created_at) VALUES (?, ?, ?, ?, ?, ?)')
-    .run('description', channel, productId, JSON.stringify(parsed), 'pending', Date.now());
+  const info = await dbRun(
+    'INSERT INTO recommendations (type, channel, product_id, payload, status, created_at) VALUES (?, ?, ?, ?, ?, ?)',
+    ['description', channel, productId, JSON.stringify(parsed), 'pending', Date.now()],
+  );
 
-  logActivity('RECOMMANDATION_DESCRIPTION', `Nouvelle description proposée pour "${product.name}" (${channel})`);
+  await logActivity('RECOMMANDATION_DESCRIPTION', `Nouvelle description proposée pour "${product.name}" (${channel})`);
   return { id: info.lastInsertRowid, ...parsed };
 }

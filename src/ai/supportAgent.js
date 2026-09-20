@@ -1,5 +1,5 @@
 import { askClaude } from './client.js';
-import { db, logActivity } from '../db/database.js';
+import { dbGet, dbRun, logActivity } from '../db/database.js';
 
 const SYSTEM_PROMPT = `Tu es agent de support client pour Megalomarket, une boutique d'articles pour enfants vendant sur eBay, Amazon, TikTok Shop et son site propre.
 Tu reçois un message client concernant une commande. Réponds UNIQUEMENT avec un objet JSON valide :
@@ -18,10 +18,10 @@ export async function qualifySupportMessage({ orderId, customerMessage }) {
   let order = null;
   let product = null;
   if (orderId) {
-    order = db.prepare('SELECT * FROM orders WHERE id = ?').get(orderId);
+    order = await dbGet('SELECT * FROM orders WHERE id = ?', [orderId]);
     if (!order) throw new Error(`Commande introuvable (id=${orderId}).`);
     if (order.product_id) {
-      product = db.prepare('SELECT * FROM products WHERE id = ?').get(order.product_id);
+      product = await dbGet('SELECT * FROM products WHERE id = ?', [order.product_id]);
     }
   }
 
@@ -44,10 +44,18 @@ ${customerMessage.trim()}
     throw new Error(`Réponse IA non exploitable (JSON invalide) : ${raw.slice(0, 200)}`);
   }
 
-  const info = db
-    .prepare('INSERT INTO recommendations (type, channel, product_id, payload, status, created_at) VALUES (?, ?, ?, ?, ?, ?)')
-    .run('support', order?.channel ?? null, order?.product_id ?? null, JSON.stringify({ ...parsed, orderId, customerMessage }), 'pending', Date.now());
+  const info = await dbRun(
+    'INSERT INTO recommendations (type, channel, product_id, payload, status, created_at) VALUES (?, ?, ?, ?, ?, ?)',
+    [
+      'support',
+      order?.channel ?? null,
+      order?.product_id ?? null,
+      JSON.stringify({ ...parsed, orderId, customerMessage }),
+      'pending',
+      Date.now(),
+    ],
+  );
 
-  logActivity('SUPPORT_QUALIFIE', `Message client qualifié : ${parsed.category} (urgence ${parsed.urgency})`);
+  await logActivity('SUPPORT_QUALIFIE', `Message client qualifié : ${parsed.category} (urgence ${parsed.urgency})`);
   return { id: info.lastInsertRowid, ...parsed };
 }

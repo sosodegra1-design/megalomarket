@@ -2,16 +2,14 @@ services:
   - type: web
     name: megalomarket-ai-core
     runtime: node
-    plan: starter
+    plan: free
     buildCommand: npm install
     startCommand: npm start
-    disk:
-      name: megalomarket-data
-      mountPath: /opt/render/project/src/data
-      sizeGB: 1
     envVars:
-      - key: DATABASE_PATH
-        value: /opt/render/project/src/data/megalomarket.db
+      - key: TURSO_DATABASE_URL
+        sync: false
+      - key: TURSO_AUTH_TOKEN
+        sync: false
       - key: ANTHROPIC_API_KEY
         sync: false
       - key: EBAY_ENV
