@@ -114,6 +114,51 @@ export async function updateOfferPrice(offerId, newPrice) {
   return { offerId, newPrice };
 }
 
+/**
+ * Crée (ou remplace) une fiche complète sur eBay et la publie : inventory item (titre, description,
+ * images, stock), offre (prix), puis publication. Le SKU doit être unique côté eBay.
+ * Nécessite un compte vendeur eBay avec ses "business policies" (paiement/livraison/retours) déjà
+ * configurées — sans quoi eBay refusera la publication avec un message d'erreur explicite.
+ */
+export async function createListing({ sku, title, description, imageUrls, price, quantity = 1, categoryId }) {
+  if (!sku) throw new Error('SKU manquant pour la publication eBay.');
+  if (!title || !description) throw new Error('Titre et description requis pour la publication eBay.');
+  if (!Number.isFinite(price) || price <= 0) throw new Error('Prix invalide.');
+
+  await ebayFetch(`/sell/inventory/v1/inventory_item/${encodeURIComponent(sku)}`, {
+    method: 'PUT',
+    body: JSON.stringify({
+      product: {
+        title: title.slice(0, 80),
+        description,
+        imageUrls: (imageUrls || []).slice(0, 12),
+      },
+      condition: 'NEW',
+      availability: { shipToLocationAvailability: { quantity } },
+    }),
+  });
+
+  const offer = await ebayFetch('/sell/inventory/v1/offer', {
+    method: 'POST',
+    body: JSON.stringify({
+      sku,
+      marketplaceId: 'EBAY_FR',
+      format: 'FIXED_PRICE',
+      categoryId,
+      listingDescription: description,
+      pricingSummary: { price: { value: price.toFixed(2), currency: 'EUR' } },
+      availableQuantity: quantity,
+      merchantLocationKey: config.ebay.merchantLocationKey || undefined,
+    }),
+  });
+
+  const published = await ebayFetch(`/sell/inventory/v1/offer/${offer.offerId}/publish`, {
+    method: 'POST',
+  });
+
+  return { offerId: offer.offerId, listingId: published?.listingId };
+}
+
 export function isConfigured() {
   return config.ebay.ready;
 }

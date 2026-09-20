@@ -48,3 +48,31 @@ CREATE TABLE IF NOT EXISTS activity_log (
   message TEXT NOT NULL,
   created_at INTEGER NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS imports (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  source_url TEXT NOT NULL,
+  source_site TEXT NOT NULL,
+  title TEXT NOT NULL,
+  raw_description TEXT NOT NULL DEFAULT '',
+  purchase_price REAL NOT NULL DEFAULT 0,
+  currency TEXT NOT NULL DEFAULT 'USD',
+  image_urls TEXT NOT NULL DEFAULT '[]',
+  status TEXT NOT NULL DEFAULT 'brouillon' CHECK (status IN ('brouillon', 'pret')),
+  created_at INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS import_listings (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  import_id INTEGER NOT NULL REFERENCES imports(id) ON DELETE CASCADE,
+  marketplace TEXT NOT NULL CHECK (marketplace IN ('amazon', 'tiktok_shop', 'allegro', 'ebay')),
+  title TEXT NOT NULL,
+  description TEXT NOT NULL,
+  suggested_price REAL NOT NULL,
+  status TEXT NOT NULL DEFAULT 'a_valider' CHECK (status IN ('a_valider', 'valide', 'publie', 'echec')),
+  published_external_id TEXT,
+  publish_error TEXT,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL,
+  UNIQUE (import_id, marketplace)
+);

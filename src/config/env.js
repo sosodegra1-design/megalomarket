@@ -20,6 +20,8 @@ export const config = {
     certId: process.env.EBAY_CERT_ID || null,
     devId: process.env.EBAY_DEV_ID || null,
     refreshToken: process.env.EBAY_REFRESH_TOKEN || null,
+    // Optionnel : requis par certains comptes eBay pour la création d'offre (createListing).
+    merchantLocationKey: process.env.EBAY_MERCHANT_LOCATION_KEY || null,
     get ready() {
       return has('EBAY_APP_ID', 'EBAY_CERT_ID', 'EBAY_DEV_ID', 'EBAY_REFRESH_TOKEN');
     },
@@ -51,5 +53,22 @@ export const config = {
     get ready() {
       return has('TIKTOKSHOP_APP_KEY', 'TIKTOKSHOP_APP_SECRET', 'TIKTOKSHOP_ACCESS_TOKEN', 'TIKTOKSHOP_SHOP_ID');
     },
+  },
+
+  allegro: {
+    clientId: process.env.ALLEGRO_CLIENT_ID || null,
+    clientSecret: process.env.ALLEGRO_CLIENT_SECRET || null,
+    refreshToken: process.env.ALLEGRO_REFRESH_TOKEN || null,
+    get ready() {
+      return has('ALLEGRO_CLIENT_ID', 'ALLEGRO_CLIENT_SECRET', 'ALLEGRO_REFRESH_TOKEN');
+    },
+  },
+
+  // Coefficient de marge et frais fixes utilisés pour calculer le prix de vente conseillé
+  // lors de l'import produit (prix suggéré = prix d'achat * coefficient + frais fixes,
+  // jamais en dessous de prix d'achat + frais fixes).
+  pricing: {
+    marginCoefficient: Number(process.env.PRICING_MARGIN_COEFFICIENT) || 1.8,
+    fixedFee: Number(process.env.PRICING_FIXED_FEE) || 0,
   },
 };

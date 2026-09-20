@@ -44,3 +44,26 @@ test('logActivity writes a retrievable row', async () => {
   const rows = await dbAll('SELECT * FROM activity_log ORDER BY id DESC LIMIT 1');
   assert.equal(rows[0].kind, 'TEST');
 });
+
+test('import_listings enforces one row per import/marketplace pair', async () => {
+  const info = await dbRun(
+    `INSERT INTO imports (source_url, source_site, title, raw_description, purchase_price, currency, image_urls, status, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, 'brouillon', ?)`,
+    ['https://example.com/p/1', 'aliexpress', 'Produit test', '', 3.5, 'USD', '[]', Date.now()],
+  );
+  const importId = info.lastInsertRowid;
+
+  await dbRun(
+    `INSERT INTO import_listings (import_id, marketplace, title, description, suggested_price, status, created_at, updated_at)
+     VALUES (?, 'ebay', 'Titre', 'Description', 9.9, 'a_valider', ?, ?)`,
+    [importId, Date.now(), Date.now()],
+  );
+
+  await assert.rejects(() =>
+    dbRun(
+      `INSERT INTO import_listings (import_id, marketplace, title, description, suggested_price, status, created_at, updated_at)
+       VALUES (?, 'ebay', 'Autre titre', 'Autre description', 12, 'a_valider', ?, ?)`,
+      [importId, Date.now(), Date.now()],
+    ),
+  );
+});

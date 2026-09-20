@@ -42,3 +42,15 @@ services:
         sync: false
       - key: TIKTOKSHOP_SHOP_ID
         sync: false
+      - key: ALLEGRO_CLIENT_ID
+        sync: false
+      - key: ALLEGRO_CLIENT_SECRET
+        sync: false
+      - key: ALLEGRO_REFRESH_TOKEN
+        sync: false
+      - key: EBAY_MERCHANT_LOCATION_KEY
+        sync: false
+      - key: PRICING_MARGIN_COEFFICIENT
+        value: "1.8"
+      - key: PRICING_FIXED_FEE
+        value: "0"

@@ -5,6 +5,7 @@ const ebay = await import('../src/connectors/ebay.js');
 const ownSite = await import('../src/connectors/ownSite.js');
 const amazon = await import('../src/connectors/amazon.js');
 const tiktokShop = await import('../src/connectors/tiktokShop.js');
+const allegro = await import('../src/connectors/allegro.js');
 
 test('ebay connector reports not configured without credentials', () => {
   assert.equal(ebay.isConfigured(), false);
@@ -24,4 +25,12 @@ test('amazon connector clearly reports pending status', async () => {
 
 test('tiktok shop connector clearly reports pending status', async () => {
   await assert.rejects(() => tiktokShop.listOrders(), /pas encore actif/);
+});
+
+test('allegro connector clearly reports pending status', async () => {
+  await assert.rejects(() => allegro.listOrders(), /pas encore actif/);
+});
+
+test('allegro connector rejects publication attempts while unconfigured', async () => {
+  await assert.rejects(() => allegro.createListing({}), /pas encore actif/);
 });

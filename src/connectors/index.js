@@ -2,12 +2,14 @@ import * as ebay from './ebay.js';
 import * as ownSite from './ownSite.js';
 import * as amazon from './amazon.js';
 import * as tiktokShop from './tiktokShop.js';
+import * as allegro from './allegro.js';
 
 export const connectors = {
   ebay,
   own_site: ownSite,
   amazon,
   tiktok_shop: tiktokShop,
+  allegro,
 };
 
 export function activeChannels() {

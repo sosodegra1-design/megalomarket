@@ -28,6 +28,10 @@ export async function updateOfferPrice() {
   notReady();
 }
 
+export async function createListing() {
+  notReady();
+}
+
 export function isConfigured() {
   return config.tiktokShop.ready;
 }

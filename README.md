@@ -15,10 +15,32 @@ Service central de recommandations IA et de synchronisation omnicanale pour Mega
 
 | Canal | État | Fichier |
 |---|---|---|
-| eBay | Implémenté (OAuth2 + Sell API) | `src/connectors/ebay.js` |
+| eBay | Implémenté (OAuth2 + Sell API), y compris la publication de nouvelles fiches | `src/connectors/ebay.js` |
 | Site propre | Implémenté (contrat REST générique, à ajuster à ton vrai backend) | `src/connectors/ownSite.js` |
 | Amazon | En attente d'approbation SP-API — squelette prêt | `src/connectors/amazon.js` |
 | TikTok Shop | En attente d'approbation Partner API — squelette prêt | `src/connectors/tiktokShop.js` |
+| Allegro | En attente d'inscription développeur — squelette prêt | `src/connectors/allegro.js` |
+
+## Import produit par lien (Alibaba, AliExpress, ...)
+
+Permet de créer une fiche produit prête à vendre à partir d'une simple URL fournisseur.
+
+1. **`POST /api/imports`** `{ "url": "https://..." }` — extrait titre, description, prix d'achat et
+   photos de la page (`src/importer/scraper.js`). Sites protégés contre les robots (Alibaba,
+   AliExpress) : l'extraction peut échouer si le contenu est chargé en JavaScript — l'erreur le
+   signale clairement plutôt que de renvoyer une fiche vide.
+2. **`POST /api/imports/:id/generate`** — envoie les données brutes à Claude, qui génère une fiche
+   (titre + description en français) adaptée à chaque marketplace (Amazon, TikTok Shop, Allegro,
+   eBay) et calcule le prix de vente conseillé (`src/importer/pricing.js` : prix d'achat × coefficient
+   de marge + frais fixes, jamais en dessous du prix d'achat — verrou anti-vente à perte).
+3. **`GET /api/imports/:id`** — récupère l'import et toutes ses fiches par marketplace (statut
+   `a_valider`, `valide`, `publie` ou `echec`).
+4. **Option A (validation manuelle)** : `PATCH /api/imports/:id/listings/:marketplace` `{ title?,
+   description?, suggestedPrice? }` pour corriger une fiche avant publication.
+5. **Option B (publication directe)** : `POST /api/imports/:id/listings/:marketplace/publish` —
+   publie réellement sur la marketplace via son connecteur (`src/importer/publisher.js`). Ne
+   fonctionne aujourd'hui que pour eBay (seul canal déjà configuré) ; les autres renvoient une
+   erreur claire "pas encore actif" tant que leurs clés API ne sont pas renseignées.
 
 Un connecteur non configuré (clés manquantes dans `.env`) est automatiquement ignoré par
 les synchronisations — il ne fait jamais planter les autres canaux.
