@@ -174,10 +174,38 @@ async function migrateChannelListings() {
   return migrated;
 }
 
+/* Vérifie que la base branchée est bien celle de ce projet.
+ *
+ * Le réflexe naturel, quand on a déjà une base chez le même hébergeur, est de
+ * la réutiliser. Ici ce serait fatal : le site BBVOLTEX possède lui aussi une
+ * table `products` (et une table `orders`), avec des colonnes entièrement
+ * différentes. Comme `CREATE TABLE IF NOT EXISTS` ne dit rien quand la table
+ * existe déjà, la mauvaise base ne provoque aucune erreur au démarrage — elle
+ * fait échouer les requêtes plus tard sur un « no such column: sku » qui
+ * n'évoque jamais la vraie cause. Ce contrôle la nomme.
+ */
+async function assertSchemaIsOurs() {
+  const columns = await dbAll('PRAGMA table_info(products)');
+  if (columns.length === 0) return; // table absente : le schéma vient d'être créé
+
+  const names = columns.map((column) => column.name);
+  const missing = ['sku', 'cost_price'].filter((column) => !names.includes(column));
+  if (missing.length > 0) {
+    throw new Error(
+      `La base branchée n'est pas celle de Megalomarket : sa table products n'a pas les colonnes ${missing.join(', ')}. `
+      + "Elle appartient probablement à un autre projet — le site BBVOLTEX a lui aussi une table products, aux colonnes différentes. "
+      + 'Crée une base distincte pour Megalomarket et pointe TURSO_DATABASE_URL dessus, sans jamais réutiliser celle du site.',
+    );
+  }
+}
+
 export async function initDatabase() {
   await client.execute('PRAGMA foreign_keys = ON');
   const schemaSql = readFileSync(`${__dirname}/schema.sql`, 'utf8');
   await client.executeMultiple(schemaSql);
+  // Avant les migrations : sur la mauvaise base elles ne trouvent rien à faire
+  // et laisseraient passer le problème.
+  await assertSchemaIsOurs();
   await migrateImportListings();
   await migrateChannelListings();
 }
