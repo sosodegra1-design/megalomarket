@@ -1,11 +1,16 @@
 import { Router } from 'express';
-import { dbAll, dbRun, logActivity } from '../db/database.js';
+import { dbAll, dbGet, dbRun, logActivity } from '../db/database.js';
 import { allChannelsStatus } from '../connectors/index.js';
 import { generatePriceRecommendations } from '../ai/priceOptimizer.js';
 import { generateDescription } from '../ai/descriptionWriter.js';
 import { qualifySupportMessage } from '../ai/supportAgent.js';
 import { syncStockFromAllChannels } from '../services/stockSync.js';
 import { syncOrdersFromAllChannels } from '../services/orderSync.js';
+import {
+  pushPriceToChannel,
+  pushPriceToAllChannels,
+  hasSuccessfulPush,
+} from '../services/pushSync.js';
 
 export const api = Router();
 
@@ -79,6 +84,22 @@ api.post(
   }),
 );
 
+// --- Push d'un prix vers les canaux ---
+api.post(
+  '/products/:productId/price',
+  asyncRoute(async (req, res) => {
+    const productId = Number(req.params.productId);
+    const { price, channel } = req.body || {};
+    if (!Number.isFinite(price) || price <= 0) throw new Error('Prix invalide.');
+
+    if (channel) {
+      res.json(await pushPriceToChannel(productId, channel, price));
+      return;
+    }
+    res.json(await pushPriceToAllChannels(productId, price));
+  }),
+);
+
 // --- Recommandations IA ---
 api.get(
   '/recommendations',
@@ -107,16 +128,66 @@ api.post(
   }),
 );
 
+/*
+ * Appliquer une recommandation.
+ *
+ * Seules les recommandations de type « price » ont quelque chose à pousser : le
+ * prix suggéré part réellement vers le canal visé, et le statut ne passe à
+ * « applied » que si le canal a accepté. Avant, la route se contentait de
+ * changer le statut — le bouton du tableau de bord était décoratif et la
+ * promesse « synchroniser automatiquement stock et prix » n'était pas tenue.
+ *
+ * Les recommandations « description » et « support » n'ont rien à pousser : le
+ * texte généré est publié par le module d'import, la réponse de support est
+ * envoyée par le vendeur. Elles gardent donc l'ancien comportement (bascule du
+ * statut) ; on ne simule pas une synchronisation qui n'existe pas.
+ */
 api.post(
   '/recommendations/:id/apply',
   asyncRoute(async (req, res) => {
-    const info = await dbRun(
-      "UPDATE recommendations SET status = 'applied' WHERE id = ? AND status = 'pending'",
-      [req.params.id],
+    const recommendation = await dbGet('SELECT * FROM recommendations WHERE id = ?', [req.params.id]);
+    if (!recommendation || recommendation.status !== 'pending') {
+      throw new Error('Recommandation introuvable ou déjà traitée.');
+    }
+
+    if (recommendation.type !== 'price') {
+      await dbRun("UPDATE recommendations SET status = 'applied' WHERE id = ?", [recommendation.id]);
+      await logActivity('RECOMMANDATION_APPLIQUEE', `Recommandation #${recommendation.id} marquée comme appliquée.`);
+      res.json({ ok: true });
+      return;
+    }
+
+    if (!recommendation.channel) {
+      throw new Error(`Recommandation de prix #${recommendation.id} sans canal : impossible de savoir où pousser le prix.`);
+    }
+
+    const payload = JSON.parse(recommendation.payload);
+    const suggestedPrice = payload.suggestedPrice;
+    if (!Number.isFinite(suggestedPrice) || suggestedPrice <= 0) {
+      throw new Error(`Recommandation de prix #${recommendation.id} sans prix suggéré exploitable.`);
+    }
+
+    // Un échec ici laisse la recommandation « pending » : la base ne connaît
+    // pas d'état « echec », et l'utilisateur doit pouvoir réessayer après avoir
+    // corrigé la cause (clé du canal, offre supprimée…).
+    let result;
+    try {
+      result = await pushPriceToChannel(recommendation.product_id, recommendation.channel, suggestedPrice);
+    } catch (error) {
+      throw new Error(`Échec de l'application de la recommandation #${recommendation.id} sur ${recommendation.channel} : ${error.message}`);
+    }
+
+    if (!hasSuccessfulPush([result])) {
+      const reason = result.error || result.reason || 'canal non pris en charge';
+      throw new Error(`Recommandation #${recommendation.id} non appliquée sur ${recommendation.channel} : ${reason}`);
+    }
+
+    await dbRun("UPDATE recommendations SET status = 'applied' WHERE id = ?", [recommendation.id]);
+    await logActivity(
+      'RECOMMANDATION_APPLIQUEE',
+      `Recommandation #${recommendation.id} appliquée : prix ${suggestedPrice.toFixed(2)} € poussé sur ${recommendation.channel}.`,
     );
-    if (info.changes === 0) throw new Error('Recommandation introuvable ou déjà traitée.');
-    await logActivity('RECOMMANDATION_APPLIQUEE', `Recommandation #${req.params.id} marquée comme appliquée.`);
-    res.json({ ok: true });
+    res.json({ ok: true, price: suggestedPrice, channel: recommendation.channel });
   }),
 );
 

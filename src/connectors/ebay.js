@@ -102,10 +102,44 @@ async function fetchAllPages(buildPath, limit, extractItems) {
   return items;
 }
 
-/** Liste les commandes récentes (Fulfillment API). */
-export async function listOrders({ limit = 20 } = {}) {
+/**
+ * Normalise l'option `since` (date ISO ou timestamp en ms) en une date UTC au
+ * format `...Z`, seul format accepté par le filtre eBay. On normalise au lieu
+ * d'injecter la chaîne brute : sans cela, un `since` contenant `&` ou `]`
+ * casserait la query string, et un `since` invalide serait silencieusement
+ * envoyé à eBay qui répondrait une erreur 400 opaque.
+ */
+function toIsoSince(since) {
+  if (since === undefined || since === null || since === '') return null;
+  const ms = typeof since === 'number' ? since : Date.parse(since);
+  if (!Number.isFinite(ms)) {
+    throw new Error(`Option « since » invalide (date ISO ou timestamp en ms attendu) : ${since}`);
+  }
+  return new Date(ms).toISOString();
+}
+
+/**
+ * Liste les commandes récentes (Fulfillment API).
+ *
+ * `since` restreint le résultat aux commandes créées après cette date, via le
+ * filtre `creationdate` d'eBay. C'est ce qui évite de re-parcourir tout
+ * l'historique récent à chaque cycle : sans curseur temporel, les 20 pages du
+ * plafond pouvaient être redemandées toutes les 5 minutes et épuiser le quota
+ * quotidien des Sell APIs. eBay ne documente ce filtre que sur les 90 derniers
+ * jours : au-delà, il faut retomber sur une synchronisation complète.
+ *
+ * Forme du filtre vérifiée dans le guide officiel « Discovering unfulfilled
+ * orders » : `filter=creationdate:%5B2016-09-29T15:05:43.026Z..%5D`. Les crochets
+ * DOIVENT être percent-encodés (%5B / %5D) — on les code à la main plutôt que
+ * via URLSearchParams, qui encoderait aussi les `:` et ne reproduirait pas la
+ * forme documentée. Le reste de la valeur vient de `toISOString()`, donc ne
+ * contient que des caractères sûrs dans une query string.
+ */
+export async function listOrders({ limit = 20, since } = {}) {
+  const sinceIso = toIsoSince(since);
+  const filter = sinceIso ? `&filter=creationdate:%5B${sinceIso}..%5D` : '';
   const orders = await fetchAllPages(
-    (pageLimit, offset) => `/sell/fulfillment/v1/order?limit=${pageLimit}&offset=${offset}`,
+    (pageLimit, offset) => `/sell/fulfillment/v1/order?limit=${pageLimit}&offset=${offset}${filter}`,
     limit,
     (data) => data.orders,
   );
@@ -134,6 +168,39 @@ export async function listInventoryItems({ limit = 50 } = {}) {
     quantity: item.availability?.shipToLocationAvailability?.quantity ?? 0,
     title: item.product?.title,
   }));
+}
+
+/**
+ * Retrouve l'offerId eBay à partir du SKU.
+ *
+ * Le SKU et l'offerId sont deux identifiants distincts chez eBay : le SKU est
+ * celui que le hub connaît (et que `listInventoryItems` renvoie), l'offerId est
+ * l'identifiant interne de l'offre publiée, seul accepté par
+ * `PUT /sell/inventory/v1/offer/{offerId}`. `channel_listings.external_id` est
+ * rempli par la synchro de stock avec le SKU : le confondre avec un offerId
+ * ferait échouer toute mise à jour de prix. On interroge donc l'Inventory API
+ * (`GET /sell/inventory/v1/offer?sku=…`) à chaque push plutôt que de stocker un
+ * offerId, qui changerait silencieusement si l'offre était recréée ou republiée.
+ *
+ * Un même SKU peut porter plusieurs offres (une par place de marché) : on
+ * privilégie celle d'EBAY_FR, la seule que le hub publie, et on retombe sur la
+ * première offre publiée pour ne pas rester bloqué si la réponse ne mentionne
+ * pas la place de marché.
+ */
+export async function getOfferIdForSku(sku) {
+  if (!sku) throw new Error('SKU manquant pour retrouver l’offre eBay.');
+
+  const data = await ebayFetch(`/sell/inventory/v1/offer?sku=${encodeURIComponent(sku)}`);
+  const offers = data?.offers || [];
+  const published = offers.filter((offer) => offer.status === 'PUBLISHED' || offer.listing?.listingId);
+  // Si aucune offre n'est marquée publiée on garde la liste complète : le statut
+  // peut être absent selon les comptes, et l'offerId reste le bon identifiant.
+  const candidates = published.length ? published : offers;
+  const preferred = candidates.find((offer) => offer.marketplaceId === 'EBAY_FR');
+  const offerId = preferred?.offerId || candidates[0]?.offerId;
+
+  if (!offerId) throw new Error(`Aucune offre eBay trouvée pour le SKU « ${sku} ».`);
+  return offerId;
 }
 
 /** Met à jour le prix d'une offre publiée (nécessite l'offerId eBay, distinct du SKU interne). */

@@ -235,6 +235,27 @@ async function loadChannels() {
   `).join('');
 }
 
+/* Résume un push par canal : ce qui a été mis à jour, ce qui est ignoré (le
+   canal ne sait pas faire l'opération) et ce qui a échoué. Sans cette
+   distinction, un succès partiel passerait pour un succès complet. */
+function summarisePush(results) {
+  const list = Array.isArray(results) ? results : [results];
+  const ok = list.filter((r) => r && r.ok).map((r) => r.channel);
+  const skipped = list.filter((r) => r && r.skipped).map((r) => r.channel);
+  const failed = list.filter((r) => r && !r.ok && !r.skipped);
+  const parts = [];
+  if (ok.length) parts.push('mis à jour : ' + ok.join(', '));
+  if (skipped.length) parts.push('ignorés : ' + skipped.join(', '));
+  if (failed.length) parts.push('échecs : ' + failed.map((r) => r.channel + ' (' + (r.error || 'raison inconnue') + ')').join(' · '));
+  return parts.join('  |  ') || 'aucun canal concerné';
+}
+
+function listingSummary(p) {
+  const listings = p.listings || [];
+  if (!listings.length) return 'aucune fiche par canal';
+  return listings.map((l) => esc(l.channel) + ' ' + money(l.price)).join(' · ');
+}
+
 async function loadProducts() {
   const products = await api('/api/products');
   const box = $('products');
@@ -245,10 +266,14 @@ async function loadProducts() {
         <span class="name">${esc(p.name)}</span>
         <span class="pill off">${esc(p.sku)}</span>
       </div>
-      <div class="meta">Revient ${money(p.cost_price)} · ${(p.listings || []).length} fiche(s) par canal</div>
+      <div class="meta">Revient ${money(p.cost_price)} · ${listingSummary(p)}</div>
       <div class="row">
         <button class="ghost tiny" data-price="${p.id}">Suggérer un prix</button>
         <button class="ghost tiny" data-desc="${p.id}">Générer une description</button>
+      </div>
+      <div class="row">
+        <input type="number" id="pp-${p.id}" step="0.01" min="0" placeholder="prix à pousser" style="width:150px">
+        <button class="tiny" data-push="${p.id}">Pousser ce prix</button>
       </div>
     </div>
   `).join('');
@@ -266,6 +291,19 @@ async function loadProducts() {
       'Description générée.',
     ).then(loadRecommendations);
   }));
+
+  /* Pousse réellement le prix vers les canaux. Le hub refuse tout prix sous le
+     prix de revient, avant même d'appeler le canal. */
+  box.querySelectorAll('[data-push]').forEach((b) => b.addEventListener('click', () => guard(async () => {
+    const price = Number($('pp-' + b.dataset.push).value);
+    if (!Number.isFinite(price) || price <= 0) throw new Error('Saisis un prix supérieur à zéro.');
+    const results = await api('/api/products/' + b.dataset.push + '/price', {
+      method: 'POST', body: JSON.stringify({ price }),
+    });
+    await Promise.all([loadProducts(), loadActivity()]);
+    say('Prix ' + money(price) + ' — ' + summarisePush(results), 'info');
+    return results;
+  })));
 }
 
 async function loadRecommendations() {
@@ -284,17 +322,26 @@ async function loadRecommendations() {
         </div>
         <div class="meta">${esc(String(why).slice(0, 220))}</div>
         <div class="row">
-          <button class="ghost tiny" data-apply="${r.id}">Marquer appliquée</button>
+          ${r.type === 'price'
+            ? `<button class="tiny" data-apply="${r.id}">Appliquer le prix sur ${esc(r.channel || '?')}</button>`
+            : `<button class="ghost tiny" data-apply="${r.id}">Marquer appliquée</button>`}
           <button class="ghost tiny" data-dismiss="${r.id}">Rejeter</button>
         </div>
       </div>
     `;
   }).join('');
 
-  box.querySelectorAll('[data-apply]').forEach((b) => b.addEventListener('click', () => guard(
-    () => api('/api/recommendations/' + b.dataset.apply + '/apply', { method: 'POST' }),
-    'Recommandation marquée comme appliquée.',
-  ).then(loadRecommendations)));
+  /* Pour une recommandation de prix, « appliquer » pousse réellement le prix sur
+     le canal : la recommandation n'est marquée appliquée que si le canal a
+     accepté. Un échec laisse la ligne en attente et affiche la raison. */
+  box.querySelectorAll('[data-apply]').forEach((b) => b.addEventListener('click', () => guard(async () => {
+    const result = await api('/api/recommendations/' + b.dataset.apply + '/apply', { method: 'POST' });
+    await Promise.all([loadRecommendations(), loadActivity(), loadProducts()]);
+    if (result && result.price != null) {
+      say('Prix ' + money(result.price) + ' appliqué sur ' + result.channel + '.', 'good');
+    }
+    return result;
+  })));
 
   box.querySelectorAll('[data-dismiss]').forEach((b) => b.addEventListener('click', () => guard(
     () => api('/api/recommendations/' + b.dataset.dismiss + '/dismiss', { method: 'POST' }),

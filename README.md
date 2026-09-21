@@ -5,11 +5,12 @@ Service central de recommandations IA et de synchronisation omnicanale pour Mega
 
 ## Ce que ça fait aujourd'hui
 
-- **Synchronisation de stock et de commandes** depuis chaque canal connecté (planifiée automatiquement toutes les 15 min pour le stock, 5 min pour les commandes — voir `src/services/scheduler.js`).
+- **Synchronisation entrante** : le stock et les commandes de chaque canal connecté sont relus et enregistrés (toutes les 15 min pour le stock, 5 min pour les commandes — voir `src/services/scheduler.js`).
+- **Propagation sortante** : un prix validé part réellement vers le canal (`src/services/pushSync.js`). Appliquer une recommandation de prix n'est plus une simple étiquette en base — le hub fait autorité, le canal reçoit. Le verrou anti-vente à perte s'applique **avant tout appel réseau**, et un canal qui ne sait pas faire l'opération est ignoré sans bruit au lieu de faire échouer les autres.
 - **Recommandations de prix** par canal, générées par l'IA à partir du prix de revient, des prix actuels et de l'historique de ventes (`src/ai/priceOptimizer.js`). Une suggestion en dessous du prix de revient est automatiquement rejetée, jamais stockée.
 - **Génération de descriptions produit** adaptées au ton de chaque canal (`src/ai/descriptionWriter.js`).
 - **Qualification de messages de support client** (catégorie, urgence, réponse proposée) — la décision finale sur un remboursement ou un litige reste toujours humaine, l'IA ne fait qu'assister (`src/ai/supportAgent.js`).
-- **Tableau de bord** (`src/public/index.html`) pour voir l'état des canaux, gérer les produits, valider ou ignorer les recommandations, et qualifier un message client.
+- **Tableau de bord** (`src/public/index.html`) : import d'un produit par lien en deux étapes (extraction puis génération IA), édition et publication par canal, produits, recommandations à appliquer, support, synchronisations, journal d'activité.
 
 ## État des connecteurs
 
