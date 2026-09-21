@@ -69,6 +69,37 @@ CREATE TABLE IF NOT EXISTS suppliers (
   updated_at TEXT NOT NULL
 );
 
+-- Distributeurs : entreprises à qui Megalomarket vend en gros (aval), à ne pas
+-- confondre avec le `kind = 'distributeur'` de la table `suppliers`, qui
+-- désigne une plateforme de sourcing (amont, on y achète). Table séparée
+-- car la relation est inverse : pas de marge à négocier, pas d'import
+-- rattaché — juste un carnet de contacts commerciaux.
+CREATE TABLE IF NOT EXISTS distributors (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  contact_email TEXT,
+  region TEXT,
+  status TEXT NOT NULL DEFAULT 'actif' CHECK (status IN ('actif', 'inactif')),
+  notes TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+-- Lots de suggestions générées par l'agent « chasseur de pépites » (voir
+-- src/ai/nicheHunter.js). batch_id regroupe les 20 lignes d'une même
+-- génération ; l'historique des lots précédents est conservé.
+CREATE TABLE IF NOT EXISTS trend_finds (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  batch_id TEXT NOT NULL,
+  rank INTEGER NOT NULL,
+  title TEXT NOT NULL,
+  category TEXT NOT NULL DEFAULT '',
+  rationale TEXT NOT NULL DEFAULT '',
+  target_audience TEXT NOT NULL DEFAULT '',
+  price_range TEXT NOT NULL DEFAULT '',
+  created_at INTEGER NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS imports (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   source_url TEXT NOT NULL,

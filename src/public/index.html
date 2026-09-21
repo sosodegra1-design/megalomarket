@@ -1102,6 +1102,18 @@
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="6" cy="12" r="2.6"/><circle cx="18" cy="5.5" r="2.6"/><circle cx="18" cy="18.5" r="2.6"/><path d="m8.3 10.8 7.4-3.9m0 10.2-7.4-3.9"/></svg>
         Canaux
       </a>
+      <!-- Un distributeur (client B2B en aval, à qui on vend en gros) est
+           l'inverse du fournisseur/distributeur de sourcing : sa rubrique vit
+           donc côté Exploitation (vente), pas côté Pilotage (achat). -->
+      <a class="nav-item" href="#/distributeurs" data-view="distributeurs">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20V10l8-5 8 5v10"/><path d="M9 20v-6h6v6"/></svg>
+        Distributeurs
+        <span class="nav-count" id="navCountDistributeurs" hidden></span>
+      </a>
+      <a class="nav-item" href="#/denicheur" data-view="denicheur">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="m20 20-4.35-4.35"/></svg>
+        Dénicheur
+      </a>
       <a class="nav-item" href="#/journal" data-view="journal">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 5.5h16M4 12h16M4 18.5h10"/></svg>
         Journal
@@ -1741,6 +1753,150 @@
             <button class="btn ghost btn-sm" id="btnSyncOrders" type="button">Synchroniser les commandes</button>
           </div>
           <p class="hint hint-tight" style="margin-top:10px">Chaque synchronisation rapporte ses erreurs canal par canal : un succès partiel ne doit jamais passer pour un succès complet.</p>
+        </div>
+      </section>
+
+      <!-- ==================== VUE : DISTRIBUTEURS ====================
+           Client B2B en aval (Megalomarket lui vend en gros) — l'inverse du
+           fournisseur/distributeur de sourcing (src/routes/suppliers.js).
+           Table dédiée côté serveur (distributors), pas de marge, pas
+           d'import rattaché : un simple carnet de contacts commerciaux. -->
+      <section class="view" id="view-distributeurs" data-view="distributeurs" hidden>
+        <div class="card reveal-in">
+          <div class="card-head card-head-line">
+            <div class="card-head-text">
+              <h2>Enregistrer un distributeur <span class="heading-count" id="distributorsHeadingCount"></span></h2>
+              <p>Un distributeur est une entreprise à qui tu vends en gros — pas une plateforme où tu achètes (ça, c'est <a href="#/fournisseurs">Fournisseurs</a>). Aucune marge ni import rattaché ici : juste un contact commercial retrouvable.</p>
+            </div>
+          </div>
+
+          <div class="panel">
+            <section class="panel-section">
+              <h3 class="panel-section-title">Identité</h3>
+              <div class="field-grid">
+                <div class="field field-required" id="distNameField">
+                  <label for="distName">Nom</label>
+                  <input type="text" id="distName" placeholder="Toys &amp; Co Wholesale" autocomplete="off" aria-describedby="distNameHint">
+                  <p class="field-hint" id="distNameHint" role="status"></p>
+                </div>
+                <div class="field" id="distEmailField">
+                  <label for="distEmail">E-mail de contact (optionnel)</label>
+                  <input type="text" id="distEmail" placeholder="achats@exemple.com" autocomplete="off" aria-describedby="distEmailHint">
+                  <p class="field-hint" id="distEmailHint" role="status"></p>
+                </div>
+              </div>
+            </section>
+
+            <section class="panel-section">
+              <h3 class="panel-section-title">Suivi</h3>
+              <div class="field-grid">
+                <div class="field">
+                  <label for="distRegion">Région (optionnel)</label>
+                  <input type="text" id="distRegion" placeholder="Bénélux, DACH, France…" autocomplete="off">
+                </div>
+                <div class="field">
+                  <label for="distStatus">Statut</label>
+                  <select id="distStatus">
+                    <option value="actif">Actif</option>
+                    <option value="inactif">Inactif</option>
+                  </select>
+                  <p class="field-help">Un distributeur <b>inactif</b> reste dans l'historique mais sort des choix courants.</p>
+                </div>
+                <div class="field field-wide">
+                  <label for="distNotes">Notes (optionnel)</label>
+                  <input type="text" id="distNotes" placeholder="volumes négociés, contact direct, conditions…" autocomplete="off">
+                </div>
+              </div>
+            </section>
+
+            <div class="panel-foot">
+              <button class="btn" id="btnCreateDistributor" type="button">Enregistrer le distributeur</button>
+              <button class="btn btn-ghost" id="btnResetDistributor" type="button">Vider le formulaire</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="card table-card reveal-in" id="distributorsTableCard">
+          <div class="table-tools">
+            <div class="table-tools-text">
+              <h2>Distributeurs enregistrés</h2>
+              <p id="distributorsCount">…</p>
+            </div>
+            <input class="input table-filter table-filter-sm" type="search" id="distributorsFilter" placeholder="Filtrer par nom, e-mail, région, notes…" autocomplete="off" aria-label="Filtrer les distributeurs">
+          </div>
+          <div class="table-scroll">
+            <table class="table">
+              <thead id="distributorsHead">
+                <tr>
+                  <th data-sort="name">Nom</th>
+                  <th data-sort="contact_email">E-mail</th>
+                  <th data-sort="region">Région</th>
+                  <th data-sort="status">Statut</th>
+                  <th>Notes</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody id="distributors"></tbody>
+            </table>
+          </div>
+          <div class="table-pager" id="distributorsPager"></div>
+        </div>
+      </section>
+
+      <!-- ==================== VUE : DÉNICHEUR ====================
+           Agent « chasseur de pépites » : des SUGGESTIONS générées par IA à
+           partir de connaissances générales, jamais des ventes vérifiées en
+           temps réel (aucune source de ce type n'existe dans ce projet) — voir
+           src/ai/nicheHunter.js. Le bandeau ci-dessous le rappelle toujours à
+           côté du résultat. -->
+      <section class="view" id="view-denicheur" data-view="denicheur" hidden>
+        <div class="card reveal-in">
+          <div class="card-head card-head-line">
+            <div class="card-head-text">
+              <h2>Dénicheur — chasseur de pépites</h2>
+              <p>Lance une recherche IA d'idées de produits à fort potentiel pour l'import et la revente multicanale. Chaque chasse propose un classement de 20 pistes.</p>
+            </div>
+          </div>
+          <p class="section-links">
+            <span class="pill warn">Suggestions IA — pas des ventes vérifiées</span>
+            <span class="hint">Ce classement est généré à partir des connaissances générales du modèle, sans accès à des chiffres de ventes mondiaux en temps réel. C'est un point de départ pour ta recherche produit, à vérifier avant tout achat.</span>
+          </p>
+          <div class="panel">
+            <div class="field-grid">
+              <div class="field field-wide">
+                <label for="denicheurFocus">Axe de recherche (optionnel)</label>
+                <input type="text" id="denicheurFocus" placeholder="ex. jouets Noël, accessoires cuisine, animalerie…" autocomplete="off">
+              </div>
+            </div>
+            <div class="panel-foot">
+              <button class="btn" id="btnHuntNiches" type="button" data-needs-ai>Lancer la chasse aux pépites</button>
+              <p class="hint hint-tight" id="denicheurAiNote" data-ai-note hidden>IA non configurée : voir le bandeau de configuration en haut de page.</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="card table-card reveal-in" id="denicheurTableCard">
+          <div class="table-tools">
+            <div class="table-tools-text">
+              <h2>Dernier classement</h2>
+              <p id="denicheurCount">Aucune chasse lancée pour le moment.</p>
+            </div>
+          </div>
+          <div class="table-scroll">
+            <table class="table">
+              <thead>
+                <tr>
+                  <th>#</th>
+                  <th>Produit</th>
+                  <th>Catégorie</th>
+                  <th>Pourquoi</th>
+                  <th>Cible</th>
+                  <th>Prix indicatif</th>
+                </tr>
+              </thead>
+              <tbody id="denicheurRows"><tr class="table-empty"><td colspan="6">Aucune chasse lancée pour le moment.</td></tr></tbody>
+            </table>
+          </div>
         </div>
       </section>
 
@@ -2674,6 +2830,7 @@ function renderNavCounts() {
   put('navCountImports', state.imports.length);
   put('navCountFournisseurs', state.suppliers.filter((s) => SOURCING_KINDS.includes(s.kind)).length);
   put('navCountTransporteurs', state.suppliers.filter((s) => s.kind === CARRIER_KIND).length);
+  put('navCountDistributeurs', state.distributors.length);
 }
 
 function renderDashboardLists() {
@@ -4456,6 +4613,195 @@ $('btnSyncOrders').addEventListener('click', (event) => action(event.currentTarg
   return result;
 }));
 
+/* ===================== DISTRIBUTEURS =====================
+   Client B2B en aval : un simple carnet de contacts commerciaux, table
+   dédiée `distributors` côté serveur — sans marge ni import rattaché,
+   contrairement au sourcing de src/routes/suppliers.js. */
+state.distributors = [];
+state.editingDistributorId = null;
+
+const distributorsTable = createTable({
+  body: 'distributors',
+  head: 'distributorsHead',
+  filter: 'distributorsFilter',
+  pager: 'distributorsPager',
+  view: 'distributeurs',
+  pageSize: 10,
+  skeleton: 4,
+  empty: 'Aucun distributeur enregistré pour le moment.',
+  columns: [
+    { key: 'name', value: (d) => d.name },
+    { key: 'contact_email', value: (d) => d.contact_email || '' },
+    { key: 'region', value: (d) => d.region || '' },
+    { key: 'status', value: (d) => d.status },
+  ],
+  search: (d) => [d.name, d.contact_email, d.region, d.notes].join(' '),
+  row: (d) => {
+    if (state.editingDistributorId === d.id) {
+      return '<tr class="row-in editing"><td colspan="6"><div class="edit-row">'
+        + '<input class="input" id="dist-edit-name-' + d.id + '" value="' + esc(d.name) + '" placeholder="Nom">'
+        + '<input class="input" id="dist-edit-email-' + d.id + '" value="' + esc(d.contact_email || '') + '" placeholder="E-mail">'
+        + '<input class="input" id="dist-edit-region-' + d.id + '" value="' + esc(d.region || '') + '" placeholder="Région">'
+        + '<select id="dist-edit-status-' + d.id + '">'
+        + '<option value="actif"' + (d.status === 'actif' ? ' selected' : '') + '>Actif</option>'
+        + '<option value="inactif"' + (d.status === 'inactif' ? ' selected' : '') + '>Inactif</option>'
+        + '</select>'
+        + '<input class="input" id="dist-edit-notes-' + d.id + '" value="' + esc(d.notes || '') + '" placeholder="Notes">'
+        + '<button class="btn btn-sm" type="button" data-action="save" data-id="' + d.id + '">Enregistrer</button>'
+        + '<button class="btn btn-ghost btn-sm" type="button" data-action="cancel">Annuler</button>'
+        + '</div></td></tr>';
+    }
+    return '<tr class="row-in">'
+      + '<td data-label="Nom">' + esc(d.name) + '</td>'
+      + '<td data-label="E-mail">' + (d.contact_email ? esc(d.contact_email) : '<span class="muted">—</span>') + '</td>'
+      + '<td data-label="Région">' + (d.region ? esc(d.region) : '<span class="muted">—</span>') + '</td>'
+      + '<td data-label="Statut"><span class="pill ' + (d.status === 'actif' ? 'ok' : 'off') + '">' + esc(d.status) + '</span></td>'
+      + '<td data-label="Notes">' + (d.notes ? esc(d.notes) : '<span class="muted">—</span>') + '</td>'
+      + '<td class="table-actions">'
+      + '<button class="btn btn-ghost btn-xs" type="button" data-action="edit" data-id="' + d.id + '">Modifier</button>'
+      + '<button class="btn btn-ghost btn-xs" type="button" data-action="delete" data-id="' + d.id + '" data-name="' + esc(d.name) + '">Supprimer</button>'
+      + '</td></tr>';
+  },
+});
+
+function updateDistributorCounts() {
+  const rows = state.distributors;
+  const count = $('distributorsCount');
+  if (count) {
+    count.textContent = rows.length
+      ? rows.length + ' distributeur' + (rows.length > 1 ? 's' : '')
+      : 'Aucun distributeur enregistré pour le moment.';
+  }
+  const heading = $('distributorsHeadingCount');
+  if (heading) heading.textContent = rows.length ? '(' + rows.length + ')' : '';
+}
+
+async function loadDistributors() {
+  distributorsTable.setLoading();
+  const rows = await api('/api/distributors');
+  state.distributors = rows;
+  distributorsTable.setRows(rows);
+  updateDistributorCounts();
+  scheduleDashboard();
+  return rows;
+}
+
+function resetDistributorForm() {
+  for (const id of ['distName', 'distEmail', 'distRegion', 'distNotes']) {
+    const el = $(id);
+    if (el) el.value = '';
+  }
+  setFieldState('distNameField', 'distNameHint', '', '');
+  setFieldState('distEmailField', 'distEmailHint', '', '');
+  const status = $('distStatus');
+  if (status) status.value = 'actif';
+}
+
+onAction($('distributors'), {
+  edit: (button) => { state.editingDistributorId = Number(button.dataset.id); distributorsTable.render(); },
+  cancel: () => { state.editingDistributorId = null; distributorsTable.render(); },
+
+  save: (button) => action(button, async () => {
+    const id = button.dataset.id;
+    const email = $('dist-edit-email-' + id).value.trim();
+    const region = $('dist-edit-region-' + id).value.trim();
+    const notes = $('dist-edit-notes-' + id).value.trim();
+    await api('/api/distributors/' + encodeURIComponent(id), {
+      method: 'PATCH',
+      body: JSON.stringify({
+        name: $('dist-edit-name-' + id).value.trim(),
+        status: $('dist-edit-status-' + id).value,
+        contactEmail: email || null,
+        region: region || null,
+        notes: notes || null,
+      }),
+    });
+    state.editingDistributorId = null;
+    await loadDistributors();
+    confirmFlash($('distributorsTableCard'));
+  }, 'Distributeur modifié.'),
+
+  delete: (button) => action(button, async () => {
+    const name = button.dataset.name || 'ce distributeur';
+    if (!window.confirm('Supprimer « ' + name + ' » ?')) return null;
+    const result = await api('/api/distributors/' + encodeURIComponent(button.dataset.id), { method: 'DELETE' });
+    if (String(state.editingDistributorId) === String(button.dataset.id)) state.editingDistributorId = null;
+    await loadDistributors();
+    return result;
+  }, 'Distributeur supprimé.'),
+});
+
+$('btnCreateDistributor').addEventListener('click', (event) => action(event.currentTarget, async () => {
+  const name = $('distName').value.trim();
+  if (!name) throw new Error('Le nom du distributeur est obligatoire.');
+  const email = $('distEmail').value.trim();
+  const region = $('distRegion').value.trim();
+  const notes = $('distNotes').value.trim();
+  const body = { name, status: $('distStatus').value };
+  if (email) body.contactEmail = email;
+  if (region) body.region = region;
+  if (notes) body.notes = notes;
+
+  await api('/api/distributors', { method: 'POST', body: JSON.stringify(body) });
+  resetDistributorForm();
+  await loadDistributors();
+  confirmFlash($('distributorsTableCard'));
+}, 'Distributeur enregistré.'));
+
+$('btnResetDistributor').addEventListener('click', (event) => {
+  event.preventDefault();
+  resetDistributorForm();
+  const name = $('distName');
+  if (name && typeof name.focus === 'function') name.focus();
+});
+
+/* ===================== DÉNICHEUR (CHASSEUR DE PÉPITES) =====================
+   Le résultat est une SUGGESTION générée par IA, jamais un classement de
+   ventes vérifié — voir l'avertissement dans src/ai/nicheHunter.js. La vue
+   le rappelle en permanence à côté du tableau. */
+state.denicheur = { batchId: null, finds: [] };
+
+function renderDenicheur() {
+  const rows = state.denicheur.finds || [];
+  const tbody = $('denicheurRows');
+  if (tbody) {
+    tbody.innerHTML = rows.length
+      ? rows.map((f) => (
+        '<tr class="row-in">'
+        + '<td>' + esc(f.rank) + '</td>'
+        + '<td>' + esc(f.title) + '</td>'
+        + '<td>' + (f.category ? esc(f.category) : '<span class="muted">—</span>') + '</td>'
+        + '<td>' + (f.rationale ? esc(f.rationale) : '<span class="muted">—</span>') + '</td>'
+        + '<td>' + (f.targetAudience ? esc(f.targetAudience) : '<span class="muted">—</span>') + '</td>'
+        + '<td>' + (f.priceRange ? esc(f.priceRange) : '<span class="muted">—</span>') + '</td>'
+        + '</tr>'
+      )).join('')
+      : '<tr class="table-empty"><td colspan="6">Aucune chasse lancée pour le moment.</td></tr>';
+    stagger(tbody);
+  }
+  const count = $('denicheurCount');
+  if (count) {
+    count.textContent = rows.length
+      ? rows.length + ' pépite' + (rows.length > 1 ? 's' : '') + ' suggérée' + (rows.length > 1 ? 's' : '') + ' par l\'IA — à vérifier avant tout achat.'
+      : 'Aucune chasse lancée pour le moment.';
+  }
+}
+
+async function loadDenicheur() {
+  const result = await api('/api/niches/latest');
+  state.denicheur = result;
+  renderDenicheur();
+  return result;
+}
+
+$('btnHuntNiches').addEventListener('click', (event) => action(event.currentTarget, async () => {
+  const focus = $('denicheurFocus').value.trim();
+  const result = await api('/api/niches/hunt', { method: 'POST', body: JSON.stringify(focus ? { focus } : {}) });
+  state.denicheur = result;
+  renderDenicheur();
+  confirmFlash($('denicheurTableCard'));
+}, 'Nouvelle chasse aux pépites terminée.'));
+
 /* ===================== ROUTAGE PAR ANCRE =====================
    Chaque vue a une ancre (#/imports, #/produits…) : elle est partageable et
    survit à un rafraîchissement, sans dépendre d'un serveur qui ne connaît que
@@ -4471,6 +4817,8 @@ const VIEWS = {
   fournisseurs: { el: 'view-fournisseurs', title: 'Fournisseurs' },
   transporteurs: { el: 'view-transporteurs', title: 'Transporteurs' },
   canaux: { el: 'view-canaux', title: 'Canaux' },
+  distributeurs: { el: 'view-distributeurs', title: 'Distributeurs' },
+  denicheur: { el: 'view-denicheur', title: 'Dénicheur' },
   journal: { el: 'view-journal', title: 'Journal' },
   support: { el: 'view-support', title: 'Support' },
 };
@@ -4482,6 +4830,8 @@ const ROUTES = {
   '#/fournisseurs': 'fournisseurs',
   '#/transporteurs': 'transporteurs',
   '#/canaux': 'canaux',
+  '#/distributeurs': 'distributeurs',
+  '#/denicheur': 'denicheur',
   '#/journal': 'journal',
   '#/support': 'support',
 };
@@ -4627,7 +4977,7 @@ async function loadAll() {
   await loadConfig();
   // Chaque bloc est indépendant : une section en erreur ne doit pas vider les autres.
   const loadImportsAndDetails = async () => { await loadImports(); await hydrateImportDetails(); };
-  const blocks = [loadChannels, loadProducts, loadRecommendations, loadSuppliers, loadImportsAndDetails, loadActivity];
+  const blocks = [loadChannels, loadProducts, loadRecommendations, loadSuppliers, loadImportsAndDetails, loadActivity, loadDistributors, loadDenicheur];
   const errors = [];
   await Promise.all(blocks.map((fn) => fn().catch((error) => { errors.push(fn.name + ' : ' + error.message); })));
   renderDashboard();

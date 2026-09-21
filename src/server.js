@@ -6,6 +6,8 @@ import { config } from './config/env.js';
 import { api } from './routes/api.js';
 import { importsRouter } from './routes/imports.js';
 import { suppliersRouter } from './routes/suppliers.js';
+import { distributorsRouter } from './routes/distributors.js';
+import { nichesRouter } from './routes/niches.js';
 import { requireAdmin } from './middleware/auth.js';
 import { startScheduler } from './services/scheduler.js';
 import { initDatabase, logActivity } from './db/database.js';
@@ -26,6 +28,8 @@ app.use(express.json());
 app.use('/api', api);
 app.use('/api/imports', importsRouter);
 app.use('/api/suppliers', suppliersRouter);
+app.use('/api/distributors', distributorsRouter);
+app.use('/api/niches', nichesRouter);
 app.use(express.static(join(__dirname, 'public')));
 
 /* Décrit la base visée sans jamais exposer le jeton : l'hôte suffit à voir d'un
