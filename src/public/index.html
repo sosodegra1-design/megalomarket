@@ -11,14 +11,15 @@
         .grid-3 { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px; }
         .card { background-color: var(--card-bg); border-radius: 8px; border: 1px solid var(--border-color); padding: 20px; }
         h1, h2, h3 { margin-top: 0; }
-        .btn { background-color: var(--accent-color); color: white; border: none; padding: 10px 15px; border-radius: 5px; cursor: pointer; font-weight: bold; width: 100%; transition: background 0.2s; margin-bottom: 10px; }
+        .btn { background-color: var(--accent-color); color: white; border: none; padding: 10px 15px; border-radius: 5px; cursor: pointer; font-weight: bold; width: 100%; transition: background 0.2s; margin-bottom: 10px; display: block; text-align: center; box-sizing: border-box; }
         .btn:hover { background-color: var(--accent-hover); }
         .btn-secondary { background-color: #5a6268; }
         .btn-secondary:hover { background-color: #4e555b; }
         input, select, textarea { width: 100%; padding: 10px; border-radius: 5px; border: 1px solid var(--border-color); background-color: #333; color: white; margin-bottom: 15px; box-sizing: border-box; }
-        .modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); justify-content: center; align-items: center; z-index: 1000; }
-        .modal-content { background: var(--card-bg); padding: 30px; border-radius: 8px; border: 1px solid var(--border-color); max-width: 450px; width: 100%; position: relative; }
-        .close-btn { position: absolute; top: 10px; right: 15px; color: #aaa; font-size: 24px; cursor: pointer; }
+        .modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); justify-content: center; align-items: center; z-index: 1000; }
+        .modal-content { background: var(--card-bg); padding: 30px; border-radius: 8px; border: 1px solid var(--border-color); max-width: 450px; width: 100%; position: relative; box-sizing: border-box; }
+        .close-btn { position: absolute; top: 10px; right: 15px; color: #aaa; font-size: 28px; cursor: pointer; font-weight: bold; }
+        .close-btn:hover { color: #fff; }
         .marketplace-tabs { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-top: 15px; }
         .tab-btn { background: #444; color: white; border: none; padding: 10px; cursor: pointer; font-weight: bold; border-radius: 5px; }
         .tab-btn.active { background: var(--accent-color); }
@@ -35,17 +36,17 @@
             <!-- Colonne 1 : Importateur IA Pro -->
             <div class="card">
                 <h2>Importateur par Lien IA</h2>
-                <label>URL du produit Fournisseur :</label>
+                <label for="importUrl">URL du produit Fournisseur :</label>
                 <input type="text" id="importUrl" placeholder="Collez un lien AliExpress, Alibaba...">
                 
-                <label>Distributeur / Fournisseur associé :</label>
+                <label for="partnerSelect">Distributeur / Fournisseur associé :</label>
                 <select id="partnerSelect">
                     <option value="aliexpress">AliExpress (Défaut - Marge 1.5x)</option>
                     <option value="alibaba">Alibaba (Défaut - Marge 1.8x)</option>
                 </select>
 
-                <button class="btn" onclick="startIAImport()">Lancer l'importation IA</button>
-                <button class="btn btn-secondary" onclick="togglePartnerModal(true)">Gérer les Fournisseurs & Distributeurs</button>
+                <button class="btn" id="btnImport">Lancer l'importation IA</button>
+                <button class="btn btn-secondary" id="btnManagePartners">Gérer les Fournisseurs & Distributeurs</button>
             </div>
 
             <!-- Colonne 2 : Canaux connectés -->
@@ -64,7 +65,7 @@
             <div class="card">
                 <h2>Qualifier un message client</h2>
                 <textarea id="clientMessage" rows="4" placeholder="Collez ici le message du client..."></textarea>
-                <button class="btn">Qualifier avec l'IA</button>
+                <button class="btn" id="btnQualifier">Qualifier avec l'IA</button>
             </div>
         </div>
 
@@ -75,10 +76,10 @@
             
             <h3>Fiches réécrites par l'IA sur mesure :</h3>
             <div class="marketplace-tabs">
-                <button class="tab-btn active" onclick="switchMarketplaceTab('ebay')">eBay</button>
-                <button class="tab-btn" onclick="switchMarketplaceTab('amazon')">Amazon</button>
-                <button class="tab-btn" onclick="switchMarketplaceTab('tiktok')">TikTok Shop</button>
-                <button class="tab-btn" onclick="switchMarketplaceTab('allegro')">Allegro</button>
+                <button class="tab-btn active" data-target="ebay">eBay</button>
+                <button class="tab-btn" data-target="amazon">Amazon</button>
+                <button class="tab-btn" data-target="tiktok">TikTok Shop</button>
+                <button class="tab-btn" data-target="allegro">Allegro</button>
             </div>
 
             <div id="ebay-tab" class="tab-content active"></div>
@@ -91,72 +92,72 @@
     <!-- Fenêtre Pop-up Modale : Gestion des Fournisseurs & Distributeurs -->
     <div class="modal" id="partnerModal">
         <div class="modal-content">
-            <span class="close-btn" onclick="togglePartnerModal(false)">&times;</span>
+            <span class="close-btn" id="modalClose">&times;</span>
             <h2>Nouveau Fournisseur / Distributeur</h2>
             
-            <label>Nom du partenaire :</label>
-            <input type="text" id="partnerName" placeholder="Ex: Grossiste Bijoux Paris, Brandless Co...">
+            <label for="partnerName">Nom du partenaire :</label>
+            <input type="text" id="partnerName" placeholder="Ex: Grossiste Bijoux Paris...">
             
-            <label>Coefficient de marge par défaut :</label>
-            <input type="number" id="partnerMargin" step="0.1" value="1.5" placeholder="Ex: 1.5 pour revendre 50% plus cher">
+            <label for="partnerMargin">Coefficient de marge par défaut :</label>
+            <input type="number" id="partnerMargin" step="0.1" value="1.5">
             
-            <label>Statut initial :</label>
+            <label for="partnerStatus">Statut initial :</label>
             <select id="partnerStatus">
                 <option value="actif">Actif / Certifié</option>
                 <option value="inactif">En attente de validation</option>
             </select>
 
-            <button class="btn" onclick="saveNewPartner()">Enregistrer le partenaire</button>
+            <button class="btn" id="btnSavePartner">Enregistrer le partenaire</button>
         </div>
     </div>
 
     <script>
-        function togglePartnerModal(show) {
-            document.getElementById('partnerModal').style.display = show ? 'flex' : 'none';
-        }
+        // Attente du chargement complet du navigateur pour eviter tout bug de clic
+        document.addEventListener('DOMContentLoaded', function() {
+            
+            // Securite 1 : Gestion de la fenetre Pop-up
+            const modal = document.getElementById('partnerModal');
+            document.getElementById('btnManagePartners').addEventListener('click', function() {
+                modal.style.display = 'flex';
+            });
+            
+            document.getElementById('modalClose').addEventListener('click', function() {
+                modal.style.display = 'none';
+            });
 
-        function saveNewPartner() {
-            const name = document.getElementById('partnerName').value;
-            const margin = document.getElementById('partnerMargin').value;
-            if(!name) return alert("Veuillez saisir un nom.");
-            
-            const select = document.getElementById('partnerSelect');
-            const option = document.createElement('option');
-            option.value = name.toLowerCase().replace(/\s+/g, '_');
-            option.text = `${name} (Marge ${margin}x)`;
-            select.add(option);
-            select.value = option.value;
-            
-            alert(`Partenaire "${name}" configuré avec succès !`);
-            togglePartnerModal(false);
-            document.getElementById('partnerName').value = '';
-        }
+            // Securite 2 : Enregistrement d'un nouveau grossiste
+            document.getElementById('btnSavePartner').addEventListener('click', function() {
+                const name = document.getElementById('partnerName').value.trim();
+                const margin = document.getElementById('partnerMargin').value;
+                if(!name) { return alert("Veuillez saisir un nom de partenaire."); }
+                
+                const select = document.getElementById('partnerSelect');
+                const option = document.createElement('option');
+                option.value = name.toLowerCase().replace(/\s+/g, '_');
+                option.text = name + " (Marge " + margin + "x)";
+                select.add(option);
+                select.value = option.value;
+                
+                alert("Partenaire \"" + name + "\" configure avec succes !");
+                modal.style.display = 'none';
+                document.getElementById('partnerName').value = '';
+            });
 
-        function switchMarketplaceTab(platform) {
-            document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
-            document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
-            
-            // Gestion simplifiée pour le clic
-            if(event && event.target) {
-                event.target.classList.add('active');
-            }
-            document.getElementById(`${platform}-tab`).classList.add('active');
-        }
+            // Securite 3 : Gestion du changement d'onglets boutiques
+            document.querySelectorAll('.tab-btn').forEach(button => {
+                button.addEventListener('click', function() {
+                    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+                    document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+                    
+                    this.classList.add('active');
+                    const target = this.getAttribute('data-target');
+                    document.getElementById(target + '-tab').classList.add('active');
+                });
+            });
 
-        async function startIAImport() {
-            const url = document.getElementById('importUrl').value;
-            if(!url) return alert("Veuillez coller un lien valide.");
-            alert("L'IA Claude analyse le lien fournisseur en arrière-plan... (Appel à l'API /api/imports)");
-            
-            document.getElementById('importResultBox').style.display = 'block';
-            document.getElementById('productPreview').innerHTML = `
-                <div style="background:#444; width:80px; height:80px; border-radius:5px; display:flex; align-items:center; justify-content:center;">🖼️ Photo</div>
-                <div><strong>Produit extrait avec succès</strong><br><span style="color:#28a745;">Prix de revient : 4.50 €</span></div>
-            `;
-            
-            const channels = ['ebay', 'amazon', 'tiktok', 'allegro'];
-            channels.forEach(ch => {
-                document.getElementById(`${ch}-tab`).innerHTML = `
-                    <h4>Fiche optimisée automatiquement pour ${ch.toUpperCase()}</h4>
-                    <p><strong>Titre IA :</strong> Produit Sourcing Premium - Synchronisé</p>
-                    <p><strong>Prix calculé (Anti-vente à perte) :</strong> 11.25 €</p>
+            // Securite 4 : Lancement de l'importateur IA par lien
+            document.getElementById('btnImport').addEventListener('click', function() {
+                const url = document.getElementById('importUrl').value.trim();
+                if(!url) { return alert("Veuillez d'abord coller un lien de produit valide."); }
+                
+                alert("L'IA Claude analyse le lien fournisseur en arriere-plan... (Appel a l'API /api/imports)");
