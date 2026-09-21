@@ -34,13 +34,38 @@ export async function runSafely(label, fn, logger = logActivity) {
   }
 }
 
-/** Démarre les tâches périodiques. Ne fait rien si aucun canal n'est configuré (rien à synchroniser). */
-export async function startScheduler() {
+/**
+ * Démarre les tâches périodiques. Ne fait rien si aucun canal n'est configuré (rien à synchroniser).
+ *
+ * Les dépendances sont injectables — mêmes raisons que le `logger` de `runSafely` :
+ * les tests doivent pouvoir vérifier les expressions enregistrées, l'option
+ * `noOverlap` et le filet de sécurité sans planifier de vrai timer, sans base de
+ * données et sans réseau. Les valeurs par défaut reproduisent exactement le
+ * comportement de production, donc `startScheduler()` reste l'appel unique de
+ * server.js.
+ */
+export async function startScheduler({
+  schedule = cron.schedule,
+  stockJob = syncStockFromAllChannels,
+  ordersJob = syncOrdersFromAllChannels,
+  logger = logActivity,
+} = {}) {
+  /*
+   * `noOverlap: true` sur les deux tâches. Elles sont périodiques et
+   * idempotentes : deux exécutions simultanées n'apportent aucun résultat
+   * supplémentaire, mais doublent les écritures en base et surtout la
+   * consommation du quota d'appels eBay (≈ 5 000/jour, voir orderSync.js). Si un
+   * cycle dépasse son intervalle, node-cron 4 saute donc le tick suivant au lieu
+   * d'empiler une seconde synchronisation. Contrepartie assumée : un cycle qui
+   * ne se terminerait jamais gèlerait les ticks suivants — c'est préférable à des
+   * requêtes suspendues qui s'accumulent sans limite, et node-cron journalise
+   * l'événement `execution:overlap` à chaque tick sauté.
+   */
   // Stock : toutes les 15 minutes
-  cron.schedule('*/15 * * * *', () => runSafely('stock', syncStockFromAllChannels));
+  schedule('*/15 * * * *', () => runSafely('stock', stockJob, logger), { noOverlap: true });
 
   // Commandes : toutes les 5 minutes
-  cron.schedule('*/5 * * * *', () => runSafely('commandes', syncOrdersFromAllChannels));
+  schedule('*/5 * * * *', () => runSafely('commandes', ordersJob, logger), { noOverlap: true });
 
   /*
    * Pas de tâche périodique de PUSH.
@@ -57,5 +82,5 @@ export async function startScheduler() {
    * À rebrancher le jour où un connecteur exposera updateStock.
    */
 
-  await logSafely('DEMARRAGE', 'Planificateur de synchronisation démarré (stock: 15 min, commandes: 5 min).');
+  await logSafely('DEMARRAGE', 'Planificateur de synchronisation démarré (stock: 15 min, commandes: 5 min).', logger);
 }
