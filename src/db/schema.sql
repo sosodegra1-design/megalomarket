@@ -49,14 +49,17 @@ CREATE TABLE IF NOT EXISTS activity_log (
   created_at INTEGER NOT NULL
 );
 
--- Partenaires (plateformes de gros, distributeurs locaux…) enregistrés une fois
--- pour toutes, afin qu'un import se rattache à une fiche au lieu d'un texte
--- retapé. margin_coefficient NULL est volontaire et signifie « utiliser le
--- coefficient global » : un fournisseur sans marge négociée n'a pas de marge
--- propre, et confondre les deux ferait disparaître la distinction.
+-- Partenaires (plateformes de gros, distributeurs locaux, transporteurs
+-- internationaux…) enregistrés une fois pour toutes, afin qu'un import se
+-- rattache à une fiche au lieu d'un texte retapé. margin_coefficient NULL est
+-- volontaire et signifie « utiliser le coefficient global » : un fournisseur
+-- sans marge négociée n'a pas de marge propre, et confondre les deux ferait
+-- disparaître la distinction. Pour un transporteur la colonne garde la même
+-- signification technique mais n'a pas de sens métier : un transporteur vend un
+-- service, pas une marchandise — voir le commentaire de carrier-catalogue.js.
 CREATE TABLE IF NOT EXISTS suppliers (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
-  kind TEXT NOT NULL CHECK (kind IN ('fournisseur', 'distributeur')),
+  kind TEXT NOT NULL CHECK (kind IN ('fournisseur', 'distributeur', 'transporteur')),
   name TEXT NOT NULL,
   site_url TEXT,
   margin_coefficient REAL,

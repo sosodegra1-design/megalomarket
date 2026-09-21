@@ -29,7 +29,7 @@ async function resolveSupplierId(value) {
 
   const id = Number(value);
   if (!Number.isInteger(id) || id <= 0) {
-    throw new Error("Partenaire invalide : supplierId doit être l'identifiant d'un fournisseur ou distributeur enregistré.");
+    throw new Error("Partenaire invalide : supplierId doit être l'identifiant d'un fournisseur, distributeur ou transporteur enregistré.");
   }
 
   const supplier = await dbGet('SELECT id FROM suppliers WHERE id = ?', [id]);

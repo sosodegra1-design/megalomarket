@@ -10,6 +10,7 @@ import { requireAdmin } from './middleware/auth.js';
 import { startScheduler } from './services/scheduler.js';
 import { initDatabase, logActivity } from './db/database.js';
 import { seedSuppliersIfEmpty } from './db/supplier-catalogue.js';
+import { seedCarriersIfEmpty } from './db/carrier-catalogue.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -135,6 +136,20 @@ export async function start() {
     }
   } catch (error) {
     console.error('Catalogue de partenaires non installé (le service démarre quand même) :', error);
+  }
+
+  /* Même principe pour les transporteurs, mais avec son propre garde-fou et son
+     propre try/catch : le catalogue logistique ne dépend pas de celui des
+     fournisseurs, et un échec de l'un ne doit jamais empêcher l'autre ni le
+     démarrage. Le seed ne remplit la table que s'il n'existe encore AUCUN
+     transporteur, il est donc sans effet sur une base déjà garnie. */
+  try {
+    const { seeded } = await seedCarriersIfEmpty();
+    if (seeded > 0) {
+      console.log(`Catalogue de transporteurs installé : ${seeded} transporteurs internationaux par défaut.`);
+    }
+  } catch (error) {
+    console.error('Catalogue de transporteurs non installé (le service démarre quand même) :', error);
   }
 
   return app.listen(config.port, () => {

@@ -3,13 +3,19 @@ import { dbAll, dbGet, dbRun, logActivity } from '../db/database.js';
 import { config } from '../config/env.js';
 
 /*
- * Partenaires (fournisseurs et distributeurs) enregistrés une fois dans le hub.
+ * Partenaires (fournisseurs, distributeurs et transporteurs internationaux)
+ * enregistrés une fois dans le hub.
  *
  * Le propriétaire travaille avec de nombreux acteurs dans le monde entier. Sans
  * ce registre, chaque import obligeait à retaper un nom et surtout à se souvenir
  * de la marge négociée avec chacun — or la plateforme de gros et le
  * distributeur local ne vendent manifestement pas au même prix. On enregistre
  * donc le partenaire une fois, et l'import ne fait plus que le désigner.
+ *
+ * Le troisième type, `transporteur`, couvre la logistique (express, fret,
+ * transitaires, agents d'achat en Chine) : c'est le pendant du sourcing côté
+ * livraison. Il vit dans la même table et suit les mêmes règles ; son
+ * coefficient de marge reste purement technique (voir carrier-catalogue.js).
  */
 
 export const suppliersRouter = Router();
@@ -22,7 +28,7 @@ function asyncRoute(handler) {
   };
 }
 
-export const SUPPLIER_KINDS = ['fournisseur', 'distributeur'];
+export const SUPPLIER_KINDS = ['fournisseur', 'distributeur', 'transporteur'];
 export const SUPPLIER_STATUSES = ['actif', 'inactif'];
 
 /* Le nombre d'imports n'est pas une colonne : il se compte. La sous-requête

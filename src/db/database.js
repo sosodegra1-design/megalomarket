@@ -209,6 +209,81 @@ async function migrateImportsSupplier() {
   return added;
 }
 
+/* Le troisième type de partenaire — `transporteur` (transporteurs
+   internationaux, transitaires, agents d'achat) — doit entrer dans la contrainte
+   CHECK de `suppliers`. SQLite ne modifie pas un CHECK en place : il faut
+   reconstruire la table, comme pour import_listings et channel_listings.
+
+   `suppliers` est pourtant la PREMIÈRE table PARENT reconstruite ici : `imports`
+   s'y rattache par `supplier_id … ON DELETE SET NULL`. Or `DROP TABLE` supprime
+   implicitement toutes les lignes avant de supprimer la table, et cette
+   suppression DÉCLENCHE l'action ON DELETE SET NULL : les imports rattachés
+   seraient détachés en silence, alors même que les ids des partenaires sont
+   recopiés à l'identique. Recopier les ids ne suffit donc PAS.
+
+   Deux précautions, dans cet ordre :
+     1. `PRAGMA foreign_keys = OFF` le temps de la reconstruction atomique — la
+        procédure recommandée par SQLite pour modifier une table référencée —
+        puis retour à ON dans un `finally` ;
+     2. photographier les liens avant, et les réécrire après. Le point 1 suffit
+        sur une connexion unique (fichier local, WebSocket), mais un client HTTP
+        peut exécuter le PRAGMA et le lot sur deux connexions différentes ; le
+        point 2 rend alors les liens à l'identique. Dans le cas nominal il ne
+        réécrit que des valeurs déjà en place : rejouable sans danger.
+*/
+async function migrateSuppliersKinds() {
+  const links = await dbAll('SELECT id, supplier_id FROM imports WHERE supplier_id IS NOT NULL');
+
+  await client.execute('PRAGMA foreign_keys = OFF');
+  let migrated;
+  try {
+    migrated = await rebuildTableIfNeeded({
+      table: 'suppliers',
+      // Marqueur propre à la nouvelle définition : l'ancien CHECK ne contient
+      // pas « transporteur », une base à jour ne sera donc jamais reconstruite.
+      marker: 'transporteur',
+      createTable: (name) => `CREATE TABLE ${name} (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        kind TEXT NOT NULL CHECK (kind IN ('fournisseur', 'distributeur', 'transporteur')),
+        name TEXT NOT NULL,
+        site_url TEXT,
+        margin_coefficient REAL,
+        status TEXT NOT NULL DEFAULT 'actif' CHECK (status IN ('actif', 'inactif')),
+        notes TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      )`,
+      // Toutes les colonnes, recopiées telles quelles : ids, marges négociées,
+      // statuts, notes et dates compris. Aucun NULL de complaisance.
+      columns: ['id', 'kind', 'name', 'site_url', 'margin_coefficient', 'status', 'notes', 'created_at', 'updated_at'],
+      select: ['id', 'kind', 'name', 'site_url', 'margin_coefficient', 'status', 'notes', 'created_at', 'updated_at'],
+    });
+  } finally {
+    await client.execute('PRAGMA foreign_keys = ON');
+  }
+
+  if (!migrated) return false;
+
+  /* Les ids des partenaires sont exactement les mêmes qu'avant la
+     reconstruction : la correspondance (import → partenaire) est directe. Le
+     lot est atomique, comme la reconstruction elle-même. */
+  if (links.length > 0) {
+    await client.batch(
+      links.map((link) => ({
+        sql: 'UPDATE imports SET supplier_id = ? WHERE id = ?',
+        args: [link.supplier_id, link.id],
+      })),
+      'write',
+    );
+  }
+
+  await logActivity(
+    'MIGRATION',
+    "Table suppliers reconstruite : type 'transporteur' autorisé, ids et rattachements d'imports conservés.",
+  );
+  return migrated;
+}
+
 /* Vérifie que la base branchée est bien celle de ce projet.
  *
  * Le réflexe naturel, quand on a déjà une base chez le même hébergeur, est de
@@ -243,7 +318,10 @@ export async function initDatabase() {
   await assertSchemaIsOurs();
   await migrateImportListings();
   await migrateChannelListings();
+  // Après migrateImportsSupplier : la reconstruction de `suppliers` photographie
+  // les liens imports.supplier_id, colonne que cette migration vient d'ajouter.
   await migrateImportsSupplier();
+  await migrateSuppliersKinds();
 }
 
 export async function logActivity(kind, message) {
