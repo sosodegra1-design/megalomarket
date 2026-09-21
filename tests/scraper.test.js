@@ -33,6 +33,46 @@ function forbidFetch() {
   return { state, restore: () => { global.fetch = originalFetch; } };
 }
 
+/**
+ * Sert une réponse différente par appel `fetch` et mémorise les URLs demandées.
+ * Le suivi des redirections étant désormais manuel (`redirect: 'manual'`), une
+ * chaîne déclenche plusieurs `fetch` qu'il faut piloter un par un — toujours sans
+ * toucher au réseau.
+ */
+function mockFetchSequence(responses) {
+  const originalFetch = global.fetch;
+  const state = { calls: 0, urls: [], options: [] };
+  global.fetch = async (url, options = {}) => {
+    state.urls.push(String(url));
+    state.options.push(options);
+    const response = responses[state.calls];
+    state.calls += 1;
+    if (!response) throw new Error(`fetch inattendu (appel n°${state.calls})`);
+    return response;
+  };
+  return { state, restore: () => { global.fetch = originalFetch; } };
+}
+
+/** Réponse 3xx minimale, du même shape que ce qu'attend `readBodyWithLimit`. */
+function redirectResponse(location, { status = 302, body = '' } = {}) {
+  return {
+    ok: false,
+    status,
+    headers: { get: (name) => (String(name).toLowerCase() === 'location' ? location : null) },
+    text: async () => body,
+  };
+}
+
+/** Réponse 200 minimale dont le titre est exploitable par l'extraction. */
+function htmlResponse(title = 'Produit') {
+  return {
+    ok: true,
+    status: 200,
+    headers: { get: () => null },
+    text: async () => `<html><head><title>${title}</title></head></html>`,
+  };
+}
+
 test('extracts title, price and images from JSON-LD product data', async () => {
   const html = `
     <html><head>
@@ -246,6 +286,151 @@ test('aborts with a clear message when the supplier page never responds', async 
     );
     assert.equal(signals.length, 1);
     assert.ok(signals[0] instanceof AbortSignal, 'le fetch doit recevoir un AbortSignal');
+  } finally {
+    global.fetch = originalFetch;
+  }
+});
+
+test('follows a redirect chain within the limit and re-validates every hop', async () => {
+  const lookedUp = [];
+  const lookupHost = async (hostname) => {
+    lookedUp.push(hostname);
+    return ['93.184.216.34'];
+  };
+  const seq = mockFetchSequence([
+    redirectResponse('https://www.alibaba.com/final/1.html'),
+    redirectResponse('/final/2.html'), // relative : doit rester sur www.alibaba.com
+    htmlResponse('Peluche redirigée'),
+  ]);
+  try {
+    const result = await scrapeProductFromUrl('https://supplier.example/start.html', { lookupHost });
+    assert.equal(result.title, 'Peluche redirigée');
+    assert.deepEqual(seq.state.urls, [
+      'https://supplier.example/start.html',
+      'https://www.alibaba.com/final/1.html',
+      'https://www.alibaba.com/final/2.html',
+    ]);
+    assert.ok(lookedUp.includes('supplier.example'));
+    assert.ok(lookedUp.includes('www.alibaba.com'), 'chaque saut doit être résolu et validé');
+    for (const options of seq.state.options) {
+      assert.equal(options.redirect, 'manual', 'le suivi doit rester manuel pour re-valider chaque cible');
+      assert.ok(options.signal instanceof AbortSignal);
+    }
+  } finally {
+    seq.restore();
+  }
+});
+
+test('refuses a redirect to an internal network address', async () => {
+  const seq = mockFetchSequence([redirectResponse('http://169.254.169.254/latest/meta-data/')]);
+  try {
+    await assert.rejects(
+      () => scrapeProductFromUrl('https://supplier.example/product/1.html', { lookupHost: publicLookup }),
+      /interne/,
+    );
+    assert.equal(seq.state.calls, 1, "la cible interne ne doit jamais être requêtée");
+  } finally {
+    seq.restore();
+  }
+});
+
+test('refuses a redirect whose hostname resolves to a private address', async () => {
+  const seq = mockFetchSequence([redirectResponse('https://nas.example.com/product/1.html')]);
+  const lookupHost = async (hostname) =>
+    hostname === 'nas.example.com' ? ['192.168.1.10'] : ['93.184.216.34'];
+  try {
+    await assert.rejects(
+      () => scrapeProductFromUrl('https://supplier.example/product/1.html', { lookupHost }),
+      /interne/,
+    );
+    assert.equal(seq.state.calls, 1);
+  } finally {
+    seq.restore();
+  }
+});
+
+test('refuses a redirect chain longer than the limit', async () => {
+  const responses = Array.from({ length: 10 }, (_, index) =>
+    redirectResponse(`https://supplier.example/hop/${index}.html`),
+  );
+  const seq = mockFetchSequence(responses);
+  try {
+    await assert.rejects(
+      () => scrapeProductFromUrl('https://supplier.example/start.html', { lookupHost: publicLookup }),
+      /redirections/,
+    );
+    // 1 requête initiale + 5 redirections suivies ; la 6e est refusée sans être requêtée.
+    assert.equal(seq.state.calls, 6);
+  } finally {
+    seq.restore();
+  }
+});
+
+test('refuses a redirect to a non-http(s) scheme', async () => {
+  const seq = mockFetchSequence([redirectResponse('file:///etc/passwd')]);
+  try {
+    await assert.rejects(
+      () => scrapeProductFromUrl('https://supplier.example/product/1.html', { lookupHost: publicLookup }),
+      /schéma/,
+    );
+    assert.equal(seq.state.calls, 1);
+  } finally {
+    seq.restore();
+  }
+});
+
+test('refuses a redirect without a Location header', async () => {
+  const seq = mockFetchSequence([
+    { ok: false, status: 302, headers: { get: () => null }, text: async () => '' },
+  ]);
+  try {
+    await assert.rejects(
+      () => scrapeProductFromUrl('https://supplier.example/product/1.html', { lookupHost: publicLookup }),
+      /sans destination/,
+    );
+    assert.equal(seq.state.calls, 1);
+  } finally {
+    seq.restore();
+  }
+});
+
+test('applies the byte cap across the whole redirect chain, not just the final response', async () => {
+  const seq = mockFetchSequence([
+    // Corps de redirection volumineux : sans décompte global, la réponse finale
+    // passerait sous le plafond et l'import téléchargerait plus que maxBytes.
+    redirectResponse('https://supplier.example/hop.html', { body: 'a'.repeat(400) }),
+    htmlResponse('b'.repeat(400)),
+  ]);
+  try {
+    await assert.rejects(
+      () => scrapeProductFromUrl('https://supplier.example/start.html', { lookupHost: publicLookup, maxBytes: 512 }),
+      /volumineuse/,
+    );
+  } finally {
+    seq.restore();
+  }
+});
+
+test('the timeout budget covers the whole redirect chain', async () => {
+  const originalFetch = global.fetch;
+  const signals = [];
+  let calls = 0;
+  global.fetch = async (_url, options = {}) => {
+    calls += 1;
+    signals.push(options.signal);
+    if (calls === 1) return redirectResponse('https://supplier.example/slow.html');
+    return new Promise((_resolve, reject) => {
+      // Le second saut ne répond jamais : c'est le délai restant qui doit le tuer.
+      options.signal.addEventListener('abort', () => reject(options.signal.reason), { once: true });
+    });
+  };
+  try {
+    await assert.rejects(
+      () => scrapeProductFromUrl('https://supplier.example/start.html', { lookupHost: publicLookup, timeoutMs: 100 }),
+      /Délai dépassé/,
+    );
+    assert.equal(calls, 2, 'la chaîne doit avoir été suivie jusqu\'au saut qui bloque');
+    assert.ok(signals.every((signal) => signal instanceof AbortSignal));
   } finally {
     global.fetch = originalFetch;
   }

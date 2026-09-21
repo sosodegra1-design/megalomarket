@@ -22,6 +22,25 @@ const FETCH_TIMEOUT_MS = 10_000;
  */
 const MAX_RESPONSE_BYTES = 5 * 1024 * 1024;
 
+/**
+ * Nombre maximal de redirections suivies. Une page fournisseur peut légitimement
+ * renvoyer vers une URL canonique (http→https, sans www, ajout de locale), mais
+ * une chaîne plus longue est presque toujours une boucle ou un rebondissement
+ * vers une cible inattendue : on refuse plutôt que de laisser l'import dériver.
+ */
+const MAX_REDIRECTS = 5;
+
+/**
+ * En-têtes envoyés à chaque saut. Extraits en constante pour que la requête
+ * initiale et les requêtes de redirection soient strictement identiques — un
+ * en-tête différent selon le saut trahirait le suivi manuel.
+ */
+const BROWSER_HEADERS = {
+  'User-Agent':
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36',
+  'Accept-Language': 'fr-FR,fr;q=0.9,en;q=0.8',
+};
+
 /** Hôtes manifestement internes, refusés avant même toute résolution DNS. */
 const INTERNAL_HOST_SUFFIXES = ['.internal', '.local', '.localhost', '.home.arpa'];
 
@@ -139,12 +158,15 @@ function internalAddressError(hostname, address) {
  *
  * `lookupHost` est injecté (voir `defaultLookup`) pour garder les tests hors ligne.
  *
- * Limites assumées : la vérification porte sur l'URL demandée, pas sur les cibles
- * de redirection (fetch suit les 3xx), et le DNS est résolu deux fois (ici puis
- * par fetch), ce qui laisse une fenêtre de « DNS rebinding » entre les deux. Une
- * protection complète exigerait de re-valider chaque saut de redirection et de
- * forcer fetch à utiliser l'IP déjà validée, au prix d'une complexité
- * disproportionnée pour un outil d'import interne.
+ * Les redirections ne sont PAS une limite : `fetchFollowingRedirects` repasse
+ * chaque `Location` par cette même fonction avant de la suivre.
+ *
+ * Limite assumée : le DNS est résolu ici puis de nouveau par `fetch` au moment de
+ * la connexion, ce qui laisse une fenêtre de « DNS rebinding » entre les deux.
+ * La refermer exigerait d'épingler la connexion sur l'IP déjà validée (dispatcher
+ * undici personnalisé) ; `undici` n'étant pas exposé par Node (`node:undici`
+ * n'existe pas) et n'étant ici qu'une dépendance transitive de cheerio, la
+ * complexité n'est pas justifiée pour un outil d'import interne.
  */
 async function assertHostIsPublic(parsedUrl, lookupHost) {
   if (parsedUrl.username || parsedUrl.password) {
@@ -191,11 +213,15 @@ async function assertHostIsPublic(parsedUrl, lookupHost) {
  * `Content-Length` est vérifié d'abord (cas courant : on évite même d'ouvrir le
  * flux), puis la lecture réelle est plafonnée — un serveur peut mentir sur
  * l'en-tête ou répondre en `chunked` sans longueur annoncée.
+ *
+ * `announcedLimitBytes` sert uniquement au message d'erreur : le long d'une
+ * chaîne de redirections, `limitBytes` n'est que le budget restant, et annoncer
+ * « plus de 0 Mo » parce qu'il ne reste que quelques octets serait absurde.
  */
-async function readBodyWithLimit(response, limitBytes) {
+async function readBodyWithLimit(response, limitBytes, announcedLimitBytes = limitBytes) {
   const tooLarge = () =>
     new Error(
-      `Page trop volumineuse (plus de ${Math.round(limitBytes / (1024 * 1024))} Mo) : ce n'est pas une fiche produit. Réduis la page ou remplis la fiche manuellement.`,
+      `Page trop volumineuse (plus de ${Math.round(announcedLimitBytes / (1024 * 1024))} Mo) : ce n'est pas une fiche produit. Réduis la page ou remplis la fiche manuellement.`,
     );
 
   const declared = Number(response.headers?.get?.('content-length'));
@@ -228,7 +254,104 @@ async function readBodyWithLimit(response, limitBytes) {
   return Buffer.concat(chunks).toString('utf8');
 }
 
+/** Statuts que `fetch` suivrait automatiquement et qu'on doit donc traiter nous-mêmes. */
+function isRedirectStatus(status) {
+  return status === 301 || status === 302 || status === 303 || status === 307 || status === 308;
+}
 
+function timeoutError(timeoutMs) {
+  return new Error(
+    `Délai dépassé (${Math.round(timeoutMs / 1000)} s) : la page fournisseur n'a pas répondu. Le site est trop lent ou bloque les requêtes automatisées — réessaie ou remplis la fiche manuellement.`,
+  );
+}
+
+/**
+ * Récupère la page en suivant les redirections à la main, en re-validant chaque
+ * cible.
+ *
+ * Pourquoi `redirect: 'manual'` plutôt qu'un `dispatcher` undici personnalisé :
+ * Node n'expose pas `undici` comme module intégré (`node:undici` n'existe pas) et
+ * le paquet `undici` présent ici n'est qu'une dépendance transitive de cheerio —
+ * s'y accrocher serait fragile. La boucle manuelle garde le `fetch` global, donc
+ * le point d'injection des tests reste le même et la suite reste hors ligne. La
+ * validation d'un saut est exactement celle de l'URL initiale
+ * (`assertHostIsPublic`), ce qui ferme le trou laissé par le suivi automatique de
+ * `fetch` : un 302 vers 169.254.169.254 ou vers un hôte privé est refusé.
+ *
+ * Le délai et le plafond d'octets courent sur toute la chaîne, pas seulement sur
+ * la première requête : chaque saut ne dispose que du temps restant, et son corps
+ * est décompté du budget global. Une suite de redirections ne peut donc pas
+ * transformer l'import en téléchargement illimité.
+ */
+async function fetchFollowingRedirects(startUrl, { lookupHost, timeoutMs, maxBytes }) {
+  const deadline = Date.now() + timeoutMs;
+  let currentUrl = startUrl;
+  let bytesRead = 0;
+
+  for (let hop = 0; ; hop += 1) {
+    if (hop > MAX_REDIRECTS) {
+      throw new Error(
+        `Trop de redirections (plus de ${MAX_REDIRECTS}) : la page fournisseur renvoie une chaîne de renvois trop longue.`,
+      );
+    }
+
+    const remainingMs = deadline - Date.now();
+    if (remainingMs <= 0) throw timeoutError(timeoutMs);
+
+    let response;
+    try {
+      response = await fetch(currentUrl, {
+        headers: BROWSER_HEADERS,
+        // On suit nous-mêmes les 3xx, sinon une redirection vers une adresse
+        // interne contournerait la validation faite sur l'URL demandée.
+        redirect: 'manual',
+        // Un site qui ne répond jamais ne doit pas retenir la requête Express.
+        signal: AbortSignal.timeout(Math.max(1, remainingMs)),
+      });
+    } catch (error) {
+      if (error?.name === 'TimeoutError' || error?.name === 'AbortError') throw timeoutError(timeoutMs);
+      throw new Error(`Impossible de récupérer la page : ${error?.message ?? error}`);
+    }
+
+    if (!isRedirectStatus(response.status)) {
+      if (!response.ok) {
+        throw new Error(
+          `Impossible de récupérer la page (HTTP ${response.status}). Le site bloque peut-être les requêtes automatisées.`,
+        );
+      }
+      return await readBodyWithLimit(response, maxBytes - bytesRead, maxBytes);
+    }
+
+    // Le corps d'une redirection ne nous intéresse pas, mais il est lu pour
+    // libérer la connexion et surtout pour être décompté du budget global : sans
+    // cela, une chaîne de 5 redirections pourrait faire transiter 5 fois le
+    // plafond avant la réponse finale.
+    const drained = await readBodyWithLimit(response, maxBytes - bytesRead, maxBytes);
+    bytesRead += Buffer.byteLength(drained, 'utf8');
+
+    const location = response.headers?.get?.('location');
+    if (!location) {
+      throw new Error(`Redirection sans destination (HTTP ${response.status}).`);
+    }
+
+    let target;
+    try {
+      // Résolution relative au saut courant : un `Location: /suite` reste sur le
+      // même hôte, un `Location: http://…` peut changer de domaine.
+      target = new URL(location, currentUrl);
+    } catch {
+      throw new Error(`URL de redirection invalide : « ${location} ».`);
+    }
+    // Un saut vers file:, data: ou ftp: contournerait l'allow-list de schémas.
+    if (target.protocol !== 'http:' && target.protocol !== 'https:') {
+      throw new Error(
+        `URL refusée : la redirection vers le schéma « ${target.protocol} » est interdite (seuls http:// et https:// sont autorisés).`,
+      );
+    }
+    await assertHostIsPublic(target, lookupHost);
+    currentUrl = target.toString();
+  }
+}
 
 function detectSourceSite(url) {
   const found = SOURCE_SITE_PATTERNS.find((p) => p.match.test(url));
@@ -323,32 +446,10 @@ export async function scrapeProductFromUrl(url, { lookupHost = defaultLookup, ti
 
   const sourceSite = detectSourceSite(url);
 
-  let response;
-  try {
-    response = await fetch(url, {
-      headers: {
-        'User-Agent':
-          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36',
-        'Accept-Language': 'fr-FR,fr;q=0.9,en;q=0.8',
-      },
-      // Un site qui ne répond jamais ne doit pas retenir la requête Express.
-      signal: AbortSignal.timeout(timeoutMs),
-    });
-  } catch (error) {
-    if (error?.name === 'TimeoutError' || error?.name === 'AbortError') {
-      throw new Error(
-        `Délai dépassé (${Math.round(timeoutMs / 1000)} s) : la page fournisseur n'a pas répondu. Le site est trop lent ou bloque les requêtes automatisées — réessaie ou remplis la fiche manuellement.`,
-      );
-    }
-    throw new Error(`Impossible de récupérer la page : ${error?.message ?? error}`);
-  }
-  if (!response.ok) {
-    throw new Error(
-      `Impossible de récupérer la page (HTTP ${response.status}). Le site bloque peut-être les requêtes automatisées.`,
-    );
-  }
+  // `fetch` suivrait les 3xx tout seul et ne re-validerait pas la cible : on le
+  // remplace par une boucle qui repasse chaque saut par la barrière SSRF.
+  const html = await fetchFollowingRedirects(url, { lookupHost, timeoutMs, maxBytes });
 
-  const html = await readBodyWithLimit(response, maxBytes);
   const $ = cheerio.load(html);
   const jsonLdProduct = parseJsonLdProduct($);
 
