@@ -16,7 +16,7 @@ Service central de recommandations IA et de synchronisation omnicanale pour Mega
 | Canal | État | Fichier |
 |---|---|---|
 | eBay | Implémenté (OAuth2 + Sell API), y compris la publication de nouvelles fiches | `src/connectors/ebay.js` |
-| Site propre | Implémenté (contrat REST générique, à ajuster à ton vrai backend) | `src/connectors/ownSite.js` |
+| Site propre | Implémenté (contrat vérifié contre l'API réelle de BBVOLTEX) | `src/connectors/ownSite.js` |
 | Amazon | En attente d'approbation SP-API — squelette prêt | `src/connectors/amazon.js` |
 | TikTok Shop | En attente d'approbation Partner API — squelette prêt | `src/connectors/tiktokShop.js` |
 | Allegro | En attente d'inscription développeur — squelette prêt | `src/connectors/allegro.js` |
@@ -38,20 +38,29 @@ Permet de créer une fiche produit prête à vendre à partir d'une simple URL f
 4. **Option A (validation manuelle)** : `PATCH /api/imports/:id/listings/:marketplace` `{ title?,
    description?, suggestedPrice? }` pour corriger une fiche avant publication.
 5. **Option B (publication directe)** : `POST /api/imports/:id/listings/:marketplace/publish` —
-   publie réellement sur la marketplace via son connecteur (`src/importer/publisher.js`). Ne
-   fonctionne aujourd'hui que pour eBay (seul canal déjà configuré) ; les autres renvoient une
-   erreur claire "pas encore actif" tant que leurs clés API ne sont pas renseignées.
+   publie réellement sur la marketplace via son connecteur (`src/importer/publisher.js`). eBay et le
+   site propre sont pris en charge ; les autres renvoient une erreur claire "pas encore actif" tant
+   que leurs clés API ne sont pas renseignées.
 
 Un connecteur non configuré (clés manquantes dans `.env`) est automatiquement ignoré par
 les synchronisations — il ne fait jamais planter les autres canaux.
 
-### Connecteur "site propre" — hypothèse à valider
+### Connecteur "site propre" — contrat vérifié
 
-Ce connecteur suppose que ton site expose (ou pourra exposer) trois routes :
-`GET /products`, `POST /products/:sku/price`, `POST /products/:sku/stock`,
-authentifiées par un jeton Bearer. Si ton site (actuellement en HTML) n'a pas encore
-de backend avec ces routes, il faudra les ajouter avant que ce connecteur fonctionne
-réellement — dis-moi comment ton site est hébergé/codé et j'adapterai ce fichier.
+Le contrat a été relevé sur l'API réellement en ligne. L'hypothèse d'origine était fausse sur
+quatre points, ce qui rendait ce connecteur inopérant :
+
+| Hypothèse initiale | Réalité |
+|---|---|
+| `GET /products` | `GET /api/products` |
+| champ `sku` | champ `id` (`p1`, `bj1`…) |
+| champ `stock` | **n'existe pas** — le site ne gère pas de stock |
+| `Authorization: Bearer` | en-tête `X-Admin-Key` |
+
+L'écriture passe par des routes d'administration, et le site exige une fiche bien plus riche que
+les marketplaces (catégorie, univers, âge, clé d'icône, libellés bilingues) : ces champs sont
+stockés dans `import_listings.site_payload` et générés par un appel IA dédié, contraint par la
+taxonomie lue sur `/api/admin/taxonomy`.
 
 ## Installation locale
 
@@ -98,12 +107,46 @@ Solution gratuite : configure un ping régulier (toutes les 10-14 min) vers
 [cron-job.org](https://cron-job.org) (gratuit, sans carte). Ça garde le service éveillé et
 les synchronisations internes tournent normalement.
 
+## Authentification
+
+Tout le service est protégé par une clé partagée (`ADMIN_API_KEY`) : les routes d'API, le module
+d'import **et** le tableau de bord. Seul `/api/health` reste public, pour que la surveillance et le
+ping anti-veille puissent fonctionner sans détenir la clé.
+
+Sans `ADMIN_API_KEY` configurée, le service **refuse tout** (503 partout sauf `/api/health`) :
+l'échec est en fermé, jamais en ouvert. Une variable oubliée lors d'un déploiement verrouille le
+service au lieu de l'exposer.
+
+Trois façons de présenter la clé :
+
+```bash
+# 1. En-tête dédié — le plus simple en script
+curl -H "X-Admin-Key: $ADMIN_API_KEY" https://<ton-service>.onrender.com/api/products
+
+# 2. Jeton Bearer — même usage, plus standard
+curl -H "Authorization: Bearer $ADMIN_API_KEY" https://<ton-service>.onrender.com/api/products
+
+# 3. HTTP Basic — pour le navigateur : mot de passe = la clé, utilisateur libre
+open "https://<ton-service>.onrender.com/"
+```
+
+Le mode Basic n'est pas un détail : le navigateur affiche sa boîte de dialogue native, garde les
+identifiants en cache et les renvoie sur **chaque** requête, y compris celles que le tableau de
+bord déclenche en JavaScript. Le tableau de bord n'a donc aucune page de connexion à gérer.
+
+La comparaison de la clé se fait à durée constante (`crypto.timingSafeEqual`), pour qu'on ne puisse
+pas la deviner caractère par caractère en mesurant les temps de réponse.
+
+Génère une clé solide avec `openssl rand -hex 32`.
+
 ## Prochaines étapes concrètes
 
-1. Confirmer les vraies routes API de ton site (`OWN_SITE_API_URL`) pour finaliser `ownSite.js`.
+1. Renseigner `OWN_SITE_API_URL` (`https://bbhappy.onrender.com`) et `OWN_SITE_API_KEY` — la **même
+   valeur** que `ADMIN_API_KEY` du site — pour activer le canal `own_site`.
 2. Une fois les accès Amazon SP-API et TikTok Shop Partner API approuvés, implémenter
    `src/connectors/amazon.js` et `src/connectors/tiktokShop.js` en suivant exactement
    le même contrat (`listOrders`, `listInventoryItems`, `updateOfferPrice`, `isConfigured`)
-   que `ebay.js` — aucun autre fichier n'a besoin de changer.
-3. Ajouter l'authentification sur le tableau de bord avant toute mise en production
-   publique (il n'y en a aucune pour l'instant).
+   que `ebay.js` — aucun autre fichier n'a besoin de changer. Un canal qui n'implémente pas une
+   méthode est simplement ignoré par les synchronisations.
+3. Réparer le tableau de bord (`src/public/index.html`), aujourd'hui tronqué en pleine instruction
+   et sans aucun appel à l'API.

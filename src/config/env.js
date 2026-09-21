@@ -14,6 +14,16 @@ export const config = {
 
   anthropicApiKey: process.env.ANTHROPIC_API_KEY || null,
 
+  // Clé partagée protégeant l'ensemble du service : routes d'API, module
+  // d'import et tableau de bord. Lue via un getter, donc à chaque requête —
+  // c'est ce qui permet de vérifier le comportement « échec en fermé » quand
+  // elle n'est pas configurée.
+  admin: {
+    get apiKey() {
+      return process.env.ADMIN_API_KEY || null;
+    },
+  },
+
   ebay: {
     env: process.env.EBAY_ENV || 'production',
     appId: process.env.EBAY_APP_ID || null,

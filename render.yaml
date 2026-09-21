@@ -12,6 +12,10 @@ services:
         sync: false
       - key: ANTHROPIC_API_KEY
         sync: false
+      # Protège l'ensemble du service (API, import, tableau de bord). Absente,
+      # le service refuse tout sauf /api/health : échec en fermé.
+      - key: ADMIN_API_KEY
+        sync: false
       - key: EBAY_ENV
         value: production
       - key: EBAY_APP_ID
