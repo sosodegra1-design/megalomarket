@@ -17,48 +17,156 @@
        des vues échangées sans rechargement. Aucune de ces couches n'ajoute de
        fonction : elles rendent visibles celles qui existaient déjà.
        ===================================================================== */
+    /* =====================================================================
+       Jetons de conception.
+
+       Un jeu de jetons volontairement court. La règle tenue ici : une couleur
+       d'interface ne s'écrit jamais en clair dans une règle, elle passe par une
+       variable. C'est ce qui permet de corriger une teinte à un seul endroit
+       au lieu de courir après quinze nuances de gris choisies à la main — et
+       c'est exactement ce qui donnait l'impression de « boîtes uniformes ».
+
+       Trois familles seulement :
+         · les surfaces (--surface-0 … --surface-3, du fond au plus élevé) ;
+         · les traits (--line, --line-strong, --line-soft) ;
+         · le sens (--accent, --ok, --warn, --bad, chacun avec sa version
+           adoucie pour les fonds, et sa version claire pour le texte sur fond
+           teinté — un vert saturé sur fond sombre se lit mal).
+       ===================================================================== */
     :root {
-      --bg: #0b0e14;
-      --panel: #121722;
-      --panel-2: #171d2a;
-      --panel-3: #1e2534;
+      /* Surfaces, du fond de page au bloc le plus élevé. */
+      --surface-0: #0b0e14;
+      --surface-1: #121722;
+      --surface-2: #171d2a;
+      --surface-3: #1e2534;
+      --surface-4: #263041;
+      --bg: var(--surface-0);
+      --panel: var(--surface-1);
+      --panel-2: var(--surface-2);
+      --panel-3: var(--surface-3);
+
+      /* Traits. --line-strong marque les bordures qui doivent se voir (en-têtes
+         de table, séparateurs de sections) ; --line-soft celles qui doivent
+         seulement exister. */
       --line: #242d3d;
       --line-soft: #1b2230;
+      --line-strong: #2f3a4d;
+
+      /* Texte : trois niveaux, pas plus. --text lit, --text-2 accompagne,
+         --muted informe, --muted-2 Chuchote. */
       --text: #e9edf5;
       --text-2: #c6cede;
       --muted: #8c96a9;
       --muted-2: #66718a;
+
+      /* Couleur de marque : une seule, et elle veut dire « action ». */
       --accent: #4c8dff;
       --accent-2: #3a6fd8;
       --accent-soft: rgba(76, 141, 255, .13);
+      --accent-ink: #9dc0ff;
+
       --ok: #3ecf7a;
       --ok-soft: rgba(62, 207, 122, .13);
+      --ok-line: #2a6b45;
+      --ok-ink: #8ce7b1;
       --warn: #e8b23a;
       --warn-soft: rgba(232, 178, 58, .13);
+      --warn-line: #6b552a;
+      --warn-ink: #f0d28a;
       --bad: #f0605a;
       --bad-soft: rgba(240, 96, 90, .13);
-      --radius: 16px;
+      --bad-line: #6b2f2c;
+      --bad-ink: #ffc0ba;
+      /* Bouton de destruction : un rouge plein, plus sombre que la couleur
+         d'état, pour rester lisible avec du texte blanc. */
+      --bad-btn: #a7362f;
+      --bad-btn-hover: #8f2c26;
+      /* Bordure teintée de l'accent : la même valeur servait à six endroits. */
+      --accent-line: rgba(76, 141, 255, .32);
+      /* Deuxième teinte de marque, réservée au dégradé du logo : c'est la seule
+         touche de violet du produit, et elle ne veut rien dire d'autre. */
+      --brand-2: #7b5cff;
+
+      /* Rayons : quatre pas, pas six. */
+      --radius: 14px;
       --radius-sm: 11px;
       --radius-xs: 8px;
+      --radius-pill: 999px;
+
+      /* Rythme vertical. Les marges qui se répètent (titre → aide → champ)
+         utilisent ces pas, ce qui donne une cadence régulière au lieu de
+         valeurs choisies au cas par cas. */
+      --sp-1: 4px;
+      --sp-2: 8px;
+      --sp-3: 12px;
+      --sp-4: 16px;
+      --sp-5: 22px;
+      --sp-6: 30px;
+
+      /* Échelle typographique. Elle est courte exprès : la hiérarchie doit se
+         lire d'un coup d'œil, pas se deviner entre 0.86 et 0.87rem. */
+      --fs-2xs: .68rem;
+      --fs-xs: .73rem;
+      --fs-sm: .8rem;
+      --fs-base: .875rem;
+      --fs-md: .95rem;
+      --fs-lg: 1.08rem;
+      --fs-xl: 1.7rem;
+
       --sidebar-w: 252px;
       --shadow: 0 1px 0 rgba(255, 255, 255, .03), 0 22px 46px -34px #000;
+      --shadow-pop: 0 24px 48px -24px #000, 0 2px 0 rgba(255, 255, 255, .03);
       --ease: cubic-bezier(.22, .8, .3, 1);
+      --ring: 0 0 0 3px rgba(76, 141, 255, .3);
     }
     * { box-sizing: border-box; }
     html { -webkit-text-size-adjust: 100%; }
+    /* L'attribut `hidden` doit gagner sur les `display` de nos composants :
+       une carte masquée mais laissée en `display:flex` par une règle plus
+       spécifique occuperait quand même sa place dans le flux. */
+    [hidden] { display: none !important; }
     body {
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
       background: radial-gradient(1100px 520px at 72% -260px, #182236 0%, var(--bg) 62%) fixed;
-      color: var(--text); margin: 0; line-height: 1.45; min-height: 100vh;
+      color: var(--text); margin: 0; min-height: 100vh;
+      /* Le back-office se lit par blocs denses : un interligne un peu serré
+         (1.5 sur du .875rem) fait tenir plus de lignes sans tasser le texte. */
+      font-size: var(--fs-base); line-height: 1.5;
+      -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale;
     }
-    h1, h2, h3 { letter-spacing: -.02em; }
-    a { color: var(--accent); }
+    /* Une seule échelle de titres, en poids ET en taille : h1 porte le titre de
+       vue, h2 l'en-tête de carte, h3 un sous-groupe. */
+    h1, h2, h3 { letter-spacing: -.02em; margin: 0 0 var(--sp-1); line-height: 1.25; }
+    h1 { font-size: var(--fs-lg); font-weight: 650; }
+    h2 { font-size: var(--fs-md); font-weight: 640; }
+    h3 { font-size: var(--fs-sm); font-weight: 620; }
+    a { color: var(--accent); text-decoration-color: rgba(76, 141, 255, .4); text-underline-offset: 2px; transition: color .16s var(--ease), text-decoration-color .16s var(--ease); }
+    a:hover { color: var(--accent-ink); text-decoration-color: currentColor; }
     button { font: inherit; }
+    b, strong { font-weight: 640; }
+
+    /* ---------- Accessibilité : anneau de focus ----------
+       `:focus-visible` plutôt que `:focus` : la souris ne fait pas clignoter un
+       anneau sur chaque bouton cliqué, mais le clavier voit toujours où il est.
+       L'anneau est posé sur le contrôle lui-même avec un décalage, sinon il se
+       confond avec la bordure du champ. */
+    :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: var(--radius-xs); }
+    .btn:focus-visible, .nav-item:focus-visible, .seg-btn:focus-visible, .icon-btn:focus-visible,
+    .pick-option:focus-visible, .toast-close:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+    input:focus-visible, select:focus-visible, textarea:focus-visible {
+      outline: 2px solid var(--accent); outline-offset: 0;
+      border-color: var(--accent); box-shadow: var(--ring);
+    }
+    /* Le contenu qu'on ne veut que pour les lecteurs d'écran. */
+    .sr-only {
+      position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+      overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+    }
 
     /* ---------- Ossature ---------- */
     .app { display: flex; min-height: 100vh; }
     .main { flex: 1; min-width: 0; margin-left: var(--sidebar-w); display: flex; flex-direction: column; }
-    .content { width: 100%; max-width: 1340px; margin: 0 auto; padding: 22px 26px 72px; display: flex; flex-direction: column; gap: 18px; }
+    .content { width: 100%; max-width: 1340px; margin: 0 auto; padding: var(--sp-5) 26px 72px; display: flex; flex-direction: column; gap: var(--sp-5); }
 
     /* ---------- Barre latérale ---------- */
     .sidebar {
@@ -71,18 +179,18 @@
     .brand { display: flex; align-items: center; gap: 10px; padding: 4px 6px 16px; }
     .brand-mark {
       width: 32px; height: 32px; flex: none; border-radius: 9px; display: grid; place-items: center;
-      background: linear-gradient(150deg, var(--accent), #7b5cff);
-      color: #fff; font-weight: 800; font-size: .95rem; letter-spacing: -.03em;
+      background: linear-gradient(150deg, var(--accent), var(--brand-2));
+      color: #fff; font-weight: 800; font-size: var(--fs-md); letter-spacing: -.03em;
       box-shadow: 0 8px 20px -10px var(--accent);
     }
     .brand-text { display: flex; flex-direction: column; line-height: 1.15; }
-    .brand-name { font-weight: 700; font-size: .96rem; }
-    .brand-sub { color: var(--muted-2); font-size: .7rem; text-transform: uppercase; letter-spacing: .11em; }
+    .brand-name { font-weight: 700; font-size: var(--fs-md); }
+    .brand-sub { color: var(--muted-2); font-size: var(--fs-2xs); text-transform: uppercase; letter-spacing: .11em; }
     .nav { display: flex; flex-direction: column; gap: 3px; }
-    .nav-label { color: var(--muted-2); font-size: .68rem; text-transform: uppercase; letter-spacing: .13em; padding: 12px 10px 6px; }
+    .nav-label { color: var(--muted-2); font-size: var(--fs-2xs); text-transform: uppercase; letter-spacing: .13em; padding: 12px 10px 6px; }
     .nav-item {
-      display: flex; align-items: center; gap: 11px; padding: 9px 11px; border-radius: var(--radius-sm);
-      color: var(--text-2); text-decoration: none; font-size: .875rem; font-weight: 500;
+      position: relative; display: flex; align-items: center; gap: 11px; padding: 9px 11px; border-radius: var(--radius-sm);
+      color: var(--text-2); text-decoration: none; font-size: var(--fs-base); font-weight: 500;
       border: 1px solid transparent; transition: background .16s var(--ease), color .16s, transform .16s var(--ease);
     }
     .nav-item svg { width: 18px; height: 18px; flex: none; opacity: .85; }
@@ -90,7 +198,14 @@
     .nav-item:active { transform: scale(.985); }
     .nav-item.active { background: var(--accent-soft); color: #fff; border-color: rgba(76, 141, 255, .3); }
     .nav-item.active svg { opacity: 1; color: var(--accent); }
-    .sidebar-foot { margin-top: auto; padding: 14px 10px 4px; color: var(--muted-2); font-size: .7rem; line-height: 1.6; }
+    /* Le trait vertical de la vue active : il reste à sa place quand on change
+       d'onglet, ce qui évite au regard de chercher « où je suis » à chaque fois. */
+    .nav-item.active::before {
+      content: ''; position: absolute; left: -9px; top: 8px; bottom: 8px; width: 3px;
+      border-radius: 3px; background: linear-gradient(180deg, var(--accent), var(--brand-2));
+    }
+    .nav-item:focus-visible { outline: 2px solid var(--accent); outline-offset: -1px; }
+    .sidebar-foot { margin-top: auto; padding: 14px 10px 4px; color: var(--muted-2); font-size: var(--fs-2xs); line-height: 1.6; }
     .nav-scrim {
       position: fixed; inset: 0; z-index: 35; background: rgba(4, 7, 12, .62);
       opacity: 0; pointer-events: none; transition: opacity .22s var(--ease);
@@ -102,76 +217,170 @@
       padding: 12px 26px; border-bottom: 1px solid var(--line);
       background: rgba(11, 14, 20, .82); backdrop-filter: blur(10px);
     }
-    .topbar h1 { margin: 0; font-size: 1.1rem; font-weight: 650; }
+    .topbar h1 { margin: 0; font-size: var(--fs-lg); font-weight: 650; }
     .topbar-title { display: flex; flex-direction: column; min-width: 0; }
-    .topbar-sub { color: var(--muted-2); font-size: .72rem; }
+    .topbar-sub { color: var(--muted-2); font-size: var(--fs-xs); }
     .topbar-right { margin-left: auto; display: flex; align-items: center; gap: 9px; flex-wrap: wrap; justify-content: flex-end; }
     .menu-toggle { display: none; }
-    .inflight { display: inline-flex; align-items: center; gap: 7px; color: var(--muted); font-size: .76rem; }
+    .inflight { display: inline-flex; align-items: center; gap: 7px; color: var(--muted); font-size: var(--fs-sm); }
 
-    /* ---------- Boutons ---------- */
+    /* ---------- Boutons ----------
+       Chaque variante a UN sens : pleine = action principale de l'écran,
+       « ghost » = action secondaire, « danger » = destruction. Le retour au clic
+       est immédiat (transform court) : il confirme le geste sans retarder
+       l'action, qui reste le seul juge. */
     .btn {
       display: inline-flex; align-items: center; justify-content: center; gap: 7px;
       background: var(--accent); color: #fff; border: 1px solid transparent; padding: 9px 15px;
-      border-radius: var(--radius-xs); cursor: pointer; font-size: .85rem; font-weight: 600;
-      transition: background .16s var(--ease), transform .12s var(--ease), opacity .16s, box-shadow .16s;
+      border-radius: var(--radius-xs); cursor: pointer; font-size: var(--fs-base); font-weight: 600;
+      white-space: nowrap;
+      transition: background .16s var(--ease), transform .1s var(--ease), opacity .16s, box-shadow .16s;
     }
     .btn:hover:not(:disabled) { background: var(--accent-2); box-shadow: 0 8px 20px -14px var(--accent); }
     .btn:active:not(:disabled) { transform: scale(.97); }
     .btn:disabled { opacity: .45; cursor: not-allowed; }
     .btn.ghost, .btn-ghost { background: var(--panel-3); color: var(--text-2); border-color: var(--line); }
-    .btn.ghost:hover:not(:disabled), .btn-ghost:hover:not(:disabled) { background: #2a3242; color: #fff; box-shadow: none; }
-    .btn.danger, .btn-danger { background: #a7362f; }
-    .btn.danger:hover:not(:disabled), .btn-danger:hover:not(:disabled) { background: #8f2c26; }
-    .btn-xs { padding: 5px 9px; font-size: .75rem; border-radius: 7px; }
-    .btn-sm { padding: 7px 12px; font-size: .8rem; }
-    .btn:focus-visible, .nav-item:focus-visible, input:focus-visible, select:focus-visible,
-    textarea:focus-visible, summary:focus-visible, .toast-close:focus-visible {
-      outline: 2px solid var(--accent); outline-offset: 1px;
+    .btn.ghost:hover:not(:disabled), .btn-ghost:hover:not(:disabled) { background: var(--surface-4); color: #fff; box-shadow: none; }
+    /* Variante « adoucie » : action fréquente mais non principale (enregistrer
+       une fiche, confirmer une sélection). Elle se distingue de l'action
+       principale sans crier. */
+    .btn-soft { background: var(--accent-soft); color: var(--accent-ink); border-color: var(--accent-line); }
+    .btn-soft:hover:not(:disabled) { background: rgba(76, 141, 255, .2); color: #fff; box-shadow: none; }
+    .btn.danger, .btn-danger { background: var(--bad-btn); }
+    .btn.danger:hover:not(:disabled), .btn-danger:hover:not(:disabled) { background: var(--bad-btn-hover); }
+    .btn-danger-ghost { background: transparent; color: var(--bad-ink); border-color: var(--bad-line); }
+    .btn-danger-ghost:hover:not(:disabled) { background: var(--bad-soft); color: #fff; box-shadow: none; }
+    .btn-xs { padding: 5px 9px; font-size: var(--fs-xs); border-radius: 7px; gap: 5px; }
+    .btn-sm { padding: 7px 12px; font-size: var(--fs-sm); }
+    .btn-block { width: 100%; }
+    /* Numéro d'étape dans un bouton : « 1 » puis « 2 » disent l'ordre du flux
+       sans alourdir le libellé. */
+    .step-badge {
+      display: inline-grid; place-items: center; width: 17px; height: 17px; flex: none;
+      border-radius: 50%; background: rgba(255, 255, 255, .18);
+      font-size: var(--fs-2xs); font-weight: 700;
     }
+    .btn-ghost .step-badge { background: var(--panel-2); color: var(--muted); }
+    /* Bouton icône : utilisé quand le libellé serait du bruit (fermer, copier).
+       Il reste un vrai <button> et porte toujours un aria-label. */
+    .icon-btn {
+      display: inline-grid; place-items: center; width: 30px; height: 30px; flex: none;
+      background: transparent; border: 1px solid transparent; border-radius: var(--radius-xs);
+      color: var(--muted); cursor: pointer; padding: 0;
+      transition: background .16s var(--ease), color .16s, border-color .16s;
+    }
+    .icon-btn:hover { background: var(--panel-3); color: var(--text); border-color: var(--line); }
+    .icon-btn:active { transform: scale(.94); }
+    .icon-btn svg { width: 15px; height: 15px; }
+    .btn .spinner { border-color: rgba(255, 255, 255, .32); border-top-color: currentColor; }
 
-    /* ---------- Cartes et grilles ---------- */
+    /* ---------- Cartes, panneaux et grilles ---------- */
     .card {
       background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
       padding: 18px; box-shadow: var(--shadow); min-width: 0;
     }
-    .card h2 { margin: 0 0 4px; font-size: 1rem; }
-    .card .hint, .hint { color: var(--muted); font-size: .81rem; margin: 0 0 12px; }
+    .card h2 { margin: 0 0 4px; }
+    .card .hint, .hint { color: var(--muted); font-size: var(--fs-sm); margin: 0 0 var(--sp-3); }
     .hint-tight { margin: 4px 0 10px; }
     .grid { display: grid; gap: 18px; align-items: start; }
     .grid-2 { grid-template-columns: repeat(auto-fit, minmax(330px, 1fr)); }
     .grid-3 { grid-template-columns: repeat(auto-fit, minmax(290px, 1fr)); }
     .stack { display: flex; flex-direction: column; gap: 18px; }
     .card-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+    /* En-tête de carte avec un trait de séparation : c'est ce qui distingue un
+       panneau (formulaire, réglage) d'une simple boîte de contenu. */
+    .card-head-line { border-bottom: 1px solid var(--line-soft); padding-bottom: var(--sp-3); margin-bottom: var(--sp-4); }
+    .card-head-text { min-width: 0; }
+    .card-head-text h2 { margin: 0 0 3px; }
+    .card-head-text p { margin: 0; color: var(--muted); font-size: var(--fs-sm); }
+    .card-sub { color: var(--muted); font-size: var(--fs-sm); margin: 6px 0 0; }
+    /* Panneau : un bloc de formulaire qui se lit de haut en bas — en-tête, aide,
+       champs, validation, action. Le titre de section interne cadence la
+       lecture quand il y a beaucoup de champs (c'est le cas des partenaires). */
+    .panel { display: flex; flex-direction: column; gap: var(--sp-4); }
+    .panel-section { display: flex; flex-direction: column; gap: var(--sp-2); }
+    .panel-section-title {
+      font-size: var(--fs-2xs); text-transform: uppercase; letter-spacing: .13em;
+      color: var(--muted-2); font-weight: 650;
+      display: flex; align-items: center; gap: var(--sp-2);
+    }
+    .panel-section-title::after { content: ''; flex: 1; height: 1px; background: var(--line-soft); }
+    .panel-foot {
+      display: flex; align-items: center; gap: var(--sp-3); flex-wrap: wrap;
+      border-top: 1px solid var(--line-soft); padding-top: var(--sp-3);
+    }
+    .panel-foot .hint { margin: 0; }
 
-    /* ---------- Formulaires ---------- */
-    label { display: block; font-size: .77rem; color: var(--muted); margin: 10px 0 4px; letter-spacing: .01em; }
+    /* ---------- Formulaires ----------
+       Un champ se lit toujours dans le même ordre : libellé, aide, contrôle,
+       message de validation. L'aide est sous le libellé (donc lue avant la
+       saisie) et le message après (donc lu au moment où il faut corriger). */
+    label { display: block; font-size: var(--fs-xs); color: var(--text-2); margin: 0 0 5px; letter-spacing: .01em; font-weight: 550; }
     .input, input, select, textarea {
       width: 100%; padding: 9px 11px; border-radius: var(--radius-xs); border: 1px solid var(--line);
-      background: #0f131c; color: var(--text); font: inherit; font-size: .88rem;
-      transition: border-color .16s, background .16s;
+      background: #0f131c; color: var(--text); font: inherit; font-size: var(--fs-base);
+      transition: border-color .16s, background .16s, box-shadow .16s;
     }
-    .input:hover, input:hover, textarea:hover, select:hover { border-color: #33405a; }
+    .input:hover, input:hover, textarea:hover, select:hover { border-color: var(--line-strong); }
+    .input:disabled, input:disabled, select:disabled, textarea:disabled { opacity: .55; cursor: not-allowed; }
     .textarea { min-height: 70px; resize: vertical; }
-    .mono, textarea.mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .78rem; }
-    .input-xs { padding: 6px 9px; font-size: .78rem; width: 100%; max-width: 140px; }
-    .field { min-width: 0; }
-    .field-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
+    .mono, textarea.mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: var(--fs-sm); }
+    .input-xs { padding: 6px 9px; font-size: var(--fs-sm); width: 100%; max-width: 140px; }
+    .field { min-width: 0; display: flex; flex-direction: column; }
+    .field-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: var(--sp-3); }
     .field-wide { grid-column: 1 / -1; }
-    .row { display: flex; gap: 8px; align-items: flex-end; flex-wrap: wrap; }
-    .row-inline { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
-    .row-actions { margin-top: 12px; }
+    /* Aide sous un champ : la phrase qui évite l'aller-retour vers la doc. */
+    .field-help { color: var(--muted-2); font-size: var(--fs-xs); margin: 5px 0 0; line-height: 1.45; }
+    .field-help b { color: var(--text-2); font-weight: 600; }
+    /* Le coefficient global est une valeur, pas une phrase : il se lit comme un
+       chiffre, d'où le chiffre tabulaire et la couleur de texte principale. */
+    .field-help .coef, .coef { color: var(--text); font-variant-numeric: tabular-nums; font-weight: 600; }
+    /* Indication de validation : discrète tant que le champ est vide et
+       facultatif, franche quand la valeur saisie ne passera pas le serveur. */
+    .field-hint { display: none; font-size: var(--fs-xs); margin: 5px 0 0; line-height: 1.45; }
+    .field.invalid .field-hint { display: block; color: var(--bad-ink); }
+    .field.invalid input, .field.invalid select { border-color: var(--bad-line); background: rgba(240, 96, 90, .06); }
+    .field.valid .field-hint { display: block; color: var(--ok-ink); }
+    .field.required > label::after { content: ' *'; color: var(--accent); }
+    .input-suffix { position: relative; display: block; }
+    .input-suffix .input { padding-right: 38px; }
+    .input-suffix span {
+      position: absolute; right: 10px; top: 50%; transform: translateY(-50%);
+      color: var(--muted-2); font-size: var(--fs-sm); pointer-events: none;
+    }
+    .row { display: flex; gap: var(--sp-2); align-items: flex-end; flex-wrap: wrap; }
+    .row-inline { display: flex; gap: var(--sp-2); align-items: center; flex-wrap: wrap; }
+    .row-actions { margin-top: var(--sp-4); }
+    .row-between { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3); flex-wrap: wrap; }
+    /* Aperçu du coefficient de marge : un bloc compact à droite du champ, pour
+       que le chiffre et son sens se lisent d'un seul regard. Il reste sur la
+       même ligne tant que la place le permet, et passe dessous en mobile. */
+    .margin-row { display: flex; gap: var(--sp-3); align-items: stretch; flex-wrap: wrap; }
+    .margin-row > input { flex: 0 1 170px; }
+    .coef-preview {
+      display: flex; flex-direction: column; justify-content: center; gap: 1px;
+      flex: 1 1 190px; min-width: 0; padding: 7px 12px;
+      background: var(--panel-2); border: 1px solid var(--line); border-left-width: 3px;
+      border-radius: var(--radius-xs);
+      transition: border-color .2s var(--ease), background .2s var(--ease);
+    }
+    .coef-preview[data-mode="partner"] { border-left-color: var(--accent); }
+    .coef-preview[data-mode="default"] { border-left-color: var(--muted-2); }
+    .coef-preview[data-mode="none"] { border-left-color: var(--bad); }
+    .coef-preview-value { font-size: var(--fs-md); font-weight: 700; font-variant-numeric: tabular-nums; }
+    .coef-preview-note { color: var(--muted-2); font-size: var(--fs-xs); }
 
-    /* ---------- Pilules et états ---------- */
+    /* ---------- Pilules, pastilles et étiquettes ---------- */
     .pill {
-      display: inline-flex; align-items: center; gap: 5px; font-size: .71rem; font-weight: 600;
-      padding: 3px 9px; border-radius: 999px; border: 1px solid var(--line);
+      display: inline-flex; align-items: center; gap: 5px; font-size: var(--fs-xs); font-weight: 600;
+      padding: 3px 9px; border-radius: var(--radius-pill); border: 1px solid var(--line);
       color: var(--muted); white-space: nowrap; transition: background .2s, color .2s, border-color .2s;
     }
-    .pill.ok { color: var(--ok); border-color: #2a6b45; background: var(--ok-soft); }
+    .pill.ok { color: var(--ok-ink); border-color: var(--ok-line); background: var(--ok-soft); }
     .pill.off { color: var(--muted); }
-    .pill.bad { color: var(--bad); border-color: #6b2f2c; background: var(--bad-soft); }
-    .pill.warn { color: var(--warn); border-color: #6b552a; background: var(--warn-soft); }
+    .pill.bad { color: var(--bad-ink); border-color: var(--bad-line); background: var(--bad-soft); }
+    .pill.warn { color: var(--warn-ink); border-color: var(--warn-line); background: var(--warn-soft); }
+    .pill.accent { color: var(--accent-ink); border-color: var(--accent-line); background: var(--accent-soft); }
     /* Une pastille qui demande une décision (à valider, échec) pulse lentement.
        Les pastilles calmes (configuré, brouillon) restent parfaitement fixes :
        seules celles qui attendent quelque chose ont le droit de bouger. */
@@ -185,16 +394,153 @@
       0%, 100% { box-shadow: 0 0 0 0 rgba(240, 96, 90, 0); }
       50% { box-shadow: 0 0 0 4px rgba(240, 96, 90, .1); }
     }
-    .empty { color: var(--muted); font-size: .84rem; font-style: italic; }
+    /* Badge compact : une lettre ou un mot court, pour les colonnes où une
+       pastille complète mangerait la largeur (type de partenaire, par exemple).
+       Sa forme porte l'information autant que sa couleur : carré teinté pour un
+       fournisseur, contour pour un distributeur. */
+    .badge {
+      display: inline-flex; align-items: center; gap: 5px; padding: 2px 7px;
+      border-radius: 6px; font-size: var(--fs-2xs); font-weight: 700;
+      letter-spacing: .04em; text-transform: uppercase; white-space: nowrap;
+      border: 1px solid transparent;
+    }
+    .badge-kind-supplier { background: var(--accent-soft); color: var(--accent-ink); border-color: rgba(76, 141, 255, .3); }
+    .badge-kind-distributor { background: transparent; color: var(--muted); border-color: var(--line); }
+    .badge-dot { width: 6px; height: 6px; border-radius: 50%; flex: none; background: currentColor; }
+    /* Étiquette de ressource : un identifiant qu'on reconnaît (SKU, code) sans
+       lui donner l'importance d'un statut. */
+    .tag {
+      display: inline-block; font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: var(--fs-xs); color: var(--text-2); background: var(--panel-3);
+      border: 1px solid var(--line-soft); border-radius: 6px; padding: 1px 7px;
+      max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: bottom;
+    }
+    /* Marqueur discret : « ce n'est pas la valeur propre de l'objet, c'est le
+       défaut ». Un astérisque et une couleur en retrait, jamais un badge plein
+       — le défaut ne doit pas se confondre avec une valeur négociée. */
+    .marker {
+      font-size: var(--fs-2xs); color: var(--muted-2); border: 1px dashed var(--line-strong);
+      border-radius: 5px; padding: 0 5px; margin-left: 5px; white-space: nowrap;
+    }
+    .marker[title] { cursor: help; }
+    .cell-sub { color: var(--muted-2); font-size: var(--fs-2xs); margin-top: 2px; }
+    .empty { color: var(--muted); font-size: var(--fs-sm); font-style: italic; }
     .cell-strong { font-weight: 600; }
     .cell-muted { color: var(--muted); }
     .num { font-variant-numeric: tabular-nums; }
-    code { background: #10131a; border: 1px solid var(--line); padding: 2px 7px; border-radius: 6px; font-size: .78rem; word-break: break-word; }
-    .pre { white-space: pre-wrap; word-break: break-word; font-size: .82rem; color: #d6dae3; }
+    /* Un lien de table reste du texte tant qu'on ne le survole pas : la colonne
+       « Site » doit se lire comme une donnée, pas comme une invitation. */
+    .link-quiet { color: var(--text-2); text-decoration: none; }
+    .link-quiet:hover { color: var(--accent-ink); text-decoration: underline; text-underline-offset: 2px; }
+    code { background: #10131a; border: 1px solid var(--line); padding: 2px 7px; border-radius: 6px; font-size: var(--fs-sm); word-break: break-word; }
+    .pre { white-space: pre-wrap; word-break: break-word; font-size: var(--fs-sm); color: #d6dae3; }
     .inline-error {
-      margin: 8px 0 0; font-size: .82rem; color: #ffd9d5; background: #2f1a18;
-      border: 1px solid #6b2f2c; border-radius: var(--radius-xs); padding: 8px 11px;
+      margin: 8px 0 0; font-size: var(--fs-sm); color: var(--bad-ink); background: #2f1a18;
+      border: 1px solid var(--bad-line); border-radius: var(--radius-xs); padding: 8px 11px;
     }
+
+    /* ---------- État vide qui enseigne ----------
+       Une table vide n'apprend rien. Cet état explique à quoi sert l'objet,
+       quelle est la première étape, et propose de la lancer — il remplace la
+       table plutôt que de s'afficher dedans, pour ne pas laisser un cadre vide
+       au-dessus d'un message. */
+    .teach {
+      display: flex; flex-direction: column; align-items: center; text-align: center;
+      gap: var(--sp-3); padding: var(--sp-6) var(--sp-4); max-width: 560px; margin: 0 auto;
+    }
+    .teach-icon {
+      width: 46px; height: 46px; border-radius: 14px; display: grid; place-items: center;
+      background: var(--accent-soft); border: 1px solid var(--accent-line); color: var(--accent);
+    }
+    .teach-icon svg { width: 22px; height: 22px; }
+    .teach h3 { font-size: var(--fs-md); margin: 0; }
+    .teach p { margin: 0; color: var(--muted); font-size: var(--fs-sm); max-width: 46ch; }
+    .teach-steps { list-style: none; padding: 0; margin: var(--sp-1) 0 0; display: flex; flex-direction: column; gap: var(--sp-2); text-align: left; }
+    .teach-steps li { display: flex; gap: 10px; align-items: flex-start; font-size: var(--fs-sm); color: var(--text-2); }
+    .teach-num {
+      flex: none; width: 20px; height: 20px; border-radius: 50%; display: grid; place-items: center;
+      background: var(--panel-3); border: 1px solid var(--line); color: var(--muted);
+      font-size: var(--fs-2xs); font-weight: 700; margin-top: 1px;
+    }
+
+    /* ---------- Contrôles segmentés ----------
+       Un filtre à trois états ne mérite pas une liste déroulante : il mérite
+       d'être vu. Les segments montrent TOUTES les valeurs possibles et leur
+       nombre, donc on sait ce qu'on filtre avant de cliquer, et le choix actif
+       se repère sans ouvrir quoi que ce soit. Les vrais <button> conservent le
+       clavier et `aria-pressed`. */
+    .seg {
+      display: inline-flex; align-items: center; gap: 2px; padding: 3px;
+      background: #0f131c; border: 1px solid var(--line); border-radius: var(--radius-xs);
+    }
+    .seg-btn {
+      display: inline-flex; align-items: center; gap: 6px; border: 0; cursor: pointer;
+      background: transparent; color: var(--muted); font-size: var(--fs-sm); font-weight: 550;
+      padding: 5px 11px; border-radius: 6px; white-space: nowrap;
+      transition: background .16s var(--ease), color .16s var(--ease);
+    }
+    .seg-btn:hover { color: var(--text); background: var(--panel-2); }
+    .seg-btn[aria-pressed="true"] {
+      background: var(--panel-3); color: #fff;
+      box-shadow: inset 0 0 0 1px var(--accent-line);
+    }
+    .seg-count {
+      font-size: var(--fs-2xs); font-variant-numeric: tabular-nums; color: var(--muted-2);
+      background: var(--panel-2); border-radius: 5px; padding: 0 5px; min-width: 18px; text-align: center;
+    }
+    .seg-btn[aria-pressed="true"] .seg-count { color: var(--accent-ink); background: var(--accent-soft); }
+
+    /* ---------- Sélecteur de partenaire (combobox) ----------
+       Au-delà d'une poignée de partenaires, une liste déroulante native devient
+       pénible : il faut la dérouler et balayer du regard. On garde donc un
+       champ de recherche et une liste filtrée. Le <select> natif reste dans le
+       DOM (masqué) : c'est lui qui porte la valeur pour le script et les tests,
+       et qui sert de repli si le JavaScript de la liste échoue. */
+    .picker { position: relative; display: flex; flex-direction: column; }
+    .picker-row { display: flex; gap: var(--sp-2); align-items: stretch; }
+    .picker-row .input { flex: 1; }
+    .pick-list {
+      position: absolute; z-index: 20; left: 0; right: 0; top: calc(100% + 5px);
+      max-height: 268px; overflow-y: auto; padding: 5px; margin: 0; list-style: none;
+      background: var(--panel-3); border: 1px solid var(--line-strong); border-radius: var(--radius-sm);
+      box-shadow: var(--shadow-pop);
+    }
+    .pick-group {
+      font-size: var(--fs-2xs); text-transform: uppercase; letter-spacing: .12em;
+      color: var(--muted-2); padding: 8px 9px 4px;
+    }
+    .pick-option {
+      display: flex; align-items: center; gap: 9px; padding: 7px 9px; border-radius: 7px;
+      cursor: pointer; border: 1px solid transparent;
+    }
+    .pick-option:hover, .pick-option.active { background: var(--panel-2); border-color: var(--line); }
+    .pick-option[aria-selected="true"] { background: var(--accent-soft); border-color: var(--accent-line); }
+    .pick-option[aria-selected="true"] .pick-name { color: #fff; }
+    .pick-main { display: flex; flex-direction: column; min-width: 0; flex: 1; }
+    .pick-name { font-size: var(--fs-base); font-weight: 550; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .pick-meta { color: var(--muted-2); font-size: var(--fs-2xs); }
+    .pick-margin { font-size: var(--fs-2xs); color: var(--muted); white-space: nowrap; font-variant-numeric: tabular-nums; }
+    .pick-empty { padding: 12px 10px; color: var(--muted); font-size: var(--fs-sm); text-align: center; }
+    /* Le <select> d'origine reste dans le flux d'accessibilité (donc lisible par
+       les lecteurs d'écran et par les tests) mais ne prend plus la souris. */
+    .picker-native {
+      position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none;
+      margin: 0; padding: 0; border: 0;
+    }
+    /* Rappel de ce qui s'appliquera réellement : le partenaire ET la marge. */
+    .pick-summary {
+      display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+      margin-top: var(--sp-2); padding: 9px 12px; border-radius: var(--radius-xs);
+      background: var(--panel-2); border: 1px solid var(--line); border-left-width: 3px;
+      transition: border-color .2s var(--ease), background .2s var(--ease);
+    }
+    .pick-summary[data-mode="partner"] { border-left-color: var(--accent); }
+    .pick-summary[data-mode="default"] { border-left-color: var(--muted-2); }
+    .pick-summary[data-mode="none"] { border-left-color: var(--line-strong); }
+    .pick-summary-main { display: flex; flex-direction: column; min-width: 0; flex: 1; }
+    .pick-summary-name { font-size: var(--fs-base); font-weight: 600; }
+    .pick-summary-note { color: var(--muted-2); font-size: var(--fs-xs); }
+    .pick-summary-value { font-size: var(--fs-base); font-weight: 650; font-variant-numeric: tabular-nums; }
 
     /* ---------- Bandeau de configuration ----------
        C'est la première chose que l'œil doit heurter. Quand un réglage manque, il
@@ -202,43 +548,43 @@
        en place il devient parfaitement statique — un élément qui bouge en
        permanence finit par ne plus être regardé. */
     .banner { border-radius: var(--radius); padding: 15px 18px; border: 1px solid var(--line); background: var(--panel); }
-    .banner.ok { background: linear-gradient(180deg, #17301f, #14231a); border-color: #2a6b45; }
-    .banner.warn { background: linear-gradient(180deg, #332a16, #241f14); border-color: #6b552a; animation: bannerPulse 3.6s ease-in-out infinite; }
-    .banner.err { background: linear-gradient(180deg, #331d1b, #241614); border-color: #6b2f2c; animation: bannerPulse 3.6s ease-in-out infinite; }
+    .banner.ok { background: linear-gradient(180deg, #17301f, #14231a); border-color: var(--ok-line); }
+    .banner.warn { background: linear-gradient(180deg, #332a16, #241f14); border-color: var(--warn-line); animation: bannerPulse 3.6s ease-in-out infinite; }
+    .banner.err { background: linear-gradient(180deg, #331d1b, #241614); border-color: var(--bad-line); animation: bannerPulse 3.6s ease-in-out infinite; }
     @keyframes bannerPulse {
       0%, 100% { box-shadow: 0 0 0 0 rgba(232, 178, 58, 0); }
       50% { box-shadow: 0 0 0 7px rgba(232, 178, 58, .07); }
     }
-    .banner-head { display: flex; align-items: center; gap: 10px; font-size: .96rem; }
+    .banner-head { display: flex; align-items: center; gap: 10px; font-size: var(--fs-md); }
     .banner-icon {
       display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px;
-      border-radius: 50%; font-size: .8rem; font-weight: 700; flex: none;
+      border-radius: 50%; font-size: var(--fs-sm); font-weight: 700; flex: none;
     }
     .banner.ok .banner-icon { background: #1f5a38; color: #b6f0cd; }
     .banner.warn .banner-icon { background: #5c4a1e; color: #ffe4a3; }
-    .banner.err .banner-icon { background: #5c2723; color: #ffc0ba; }
-    .banner-sub { color: var(--muted); font-size: .83rem; margin: 8px 0 0; }
+    .banner.err .banner-icon { background: #5c2723; color: var(--bad-ink); }
+    .banner-sub { color: var(--muted); font-size: var(--fs-sm); margin: 8px 0 0; }
     .banner-facts { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
     .missing-list { list-style: none; padding: 0; margin: 12px 0 0; display: flex; flex-direction: column; gap: 9px; }
     .missing-list li { border-left: 3px solid var(--warn); padding-left: 11px; }
-    .missing-list .why { display: block; font-size: .86rem; }
+    .missing-list .why { display: block; font-size: var(--fs-base); }
     .missing-list code { display: inline-block; margin-top: 4px; }
     .ai-note {
-      margin: 12px 0 0; font-size: .81rem; color: #f0d28a; background: #2a2317;
-      border: 1px solid #6b552a; border-radius: var(--radius-xs); padding: 9px 11px;
+      margin: 12px 0 0; font-size: var(--fs-sm); color: var(--warn-ink); background: #2a2317;
+      border: 1px solid var(--warn-line); border-radius: var(--radius-xs); padding: 9px 11px;
     }
     .price-warning {
-      margin: 12px 0 0; font-size: .83rem; color: #ffd9d5; background: #2f1a18;
-      border: 1px solid #6b2f2c; border-radius: var(--radius-xs); padding: 10px 12px;
+      margin: 12px 0 0; font-size: var(--fs-sm); color: var(--bad-ink); background: #2f1a18;
+      border: 1px solid var(--bad-line); border-radius: var(--radius-xs); padding: 10px 12px;
     }
 
     /* Emplacement inline des erreurs bloquantes : un toast peut être fermé par
        mégarde, ce bloc-là reste tant que l'action n'a pas été retentée. */
     #status { display: none; }
-    #status.show { display: flex; gap: 9px; align-items: flex-start; font-size: .85rem; padding: 10px 13px; border-radius: var(--radius-xs); }
+    #status.show { display: flex; gap: 9px; align-items: flex-start; font-size: var(--fs-base); padding: 10px 13px; border-radius: var(--radius-xs); }
     #status.info { background: #1b2740; border: 1px solid #35507d; }
-    #status.good { background: #17301f; border: 1px solid #2a6b45; }
-    #status.err { background: #331d1b; border: 1px solid #6b2f2c; }
+    #status.good { background: #17301f; border: 1px solid var(--ok-line); }
+    #status.err { background: #331d1b; border: 1px solid var(--bad-line); }
     .status-icon { flex: none; font-weight: 700; color: var(--bad); }
 
     /* ---------- Vues ---------- */
@@ -252,14 +598,16 @@
     .kpi {
       position: relative; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius-sm);
       padding: 14px 15px; overflow: hidden;
+      transition: border-color .2s var(--ease), background .2s var(--ease);
     }
+    .kpi:hover { border-color: var(--line-strong); background: var(--panel-2); }
     .kpi::after {
       content: ''; position: absolute; inset: 0 auto 0 0; width: 3px;
       background: linear-gradient(180deg, var(--accent), transparent); opacity: .55;
     }
-    .kpi-label { color: var(--muted); font-size: .74rem; text-transform: uppercase; letter-spacing: .08em; }
-    .kpi-value { display: block; font-size: 1.7rem; font-weight: 700; letter-spacing: -.03em; margin-top: 6px; font-variant-numeric: tabular-nums; }
-    .kpi-hint { color: var(--muted-2); font-size: .74rem; margin-top: 2px; }
+    .kpi-label { color: var(--muted); font-size: var(--fs-xs); text-transform: uppercase; letter-spacing: .08em; }
+    .kpi-value { display: block; font-size: var(--fs-xl); font-weight: 700; letter-spacing: -.03em; margin-top: 6px; font-variant-numeric: tabular-nums; }
+    .kpi-hint { color: var(--muted-2); font-size: var(--fs-xs); margin-top: 2px; }
 
     /* ---------- Sparkline ---------- */
     .spark { width: 100%; height: 74px; display: block; overflow: visible; }
@@ -281,11 +629,11 @@
       background: var(--panel-2); border: 1px solid var(--line-soft); border-radius: var(--radius-xs);
       padding: 9px 12px; transition: border-color .16s, transform .16s var(--ease);
     }
-    .mini-row:hover { border-color: #33405a; transform: translateX(2px); }
+    .mini-row:hover { border-color: var(--line-strong); transform: translateX(2px); }
     .mini-main { display: flex; flex-direction: column; min-width: 0; }
-    .mini-title { font-size: .85rem; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .mini-meta { color: var(--muted); font-size: .75rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .mini-time { color: var(--muted-2); font-size: .72rem; flex: none; }
+    .mini-title { font-size: var(--fs-base); font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .mini-meta { color: var(--muted); font-size: var(--fs-xs); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .mini-time { color: var(--muted-2); font-size: var(--fs-xs); flex: none; }
 
     /* ---------- Cartes canaux / recommandations / fiches ---------- */
     .list { display: flex; flex-direction: column; gap: 9px; margin-top: 4px; }
@@ -293,61 +641,89 @@
       background: var(--panel-2); border: 1px solid var(--line); border-radius: var(--radius-sm);
       padding: 13px 15px; transition: border-color .18s var(--ease), background .18s;
     }
-    .channel-card:hover, .rec-card:hover, .listing-card:hover { border-color: #33405a; }
+    .channel-card:hover, .rec-card:hover, .listing-card:hover { border-color: var(--line-strong); }
     .channel-card { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
     .channel-main { display: flex; flex-direction: column; min-width: 0; }
-    .channel-name { font-weight: 600; font-size: .9rem; }
-    .channel-meta { color: var(--muted); font-size: .77rem; }
+    .channel-name { font-weight: 600; font-size: var(--fs-md); }
+    .channel-meta { color: var(--muted); font-size: var(--fs-xs); }
     .rec-top { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
-    .rec-name { font-weight: 600; font-size: .9rem; }
-    .rec-why { color: var(--muted); font-size: .79rem; margin-top: 4px; word-break: break-word; }
+    .rec-name { font-weight: 600; font-size: var(--fs-md); }
+    .rec-why { color: var(--muted); font-size: var(--fs-sm); margin-top: 4px; word-break: break-word; }
     .listing-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; margin-bottom: 10px; }
-    .listing-mp { font-weight: 700; font-size: .92rem; display: block; }
-    .listing-price { color: var(--muted); font-size: .78rem; }
+    .listing-mp { font-weight: 700; font-size: var(--fs-md); display: block; }
+    .listing-price { color: var(--muted); font-size: var(--fs-xs); }
     .actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; align-items: center; }
     .site-details { margin-top: 10px; }
-    summary { cursor: pointer; color: var(--muted); font-size: .79rem; }
-    .kv { display: flex; justify-content: space-between; gap: 12px; font-size: .81rem; padding: 4px 0; border-bottom: 1px solid var(--line-soft); }
+    summary { cursor: pointer; color: var(--muted); font-size: var(--fs-sm); }
+    summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
+    .kv { display: flex; justify-content: space-between; gap: 12px; font-size: var(--fs-sm); padding: 4px 0; border-bottom: 1px solid var(--line-soft); }
     .kv:last-child { border-bottom: 0; }
     .kv span:first-child { color: var(--muted); flex: none; }
     .kv span:last-child { text-align: right; word-break: break-word; }
 
-    /* ---------- Tables de données ---------- */
+    /* ---------- Tables de données ----------
+       Denses par construction : une ligne fait ~40 px, l'en-tête reste collé en
+       haut pendant le défilement, et les colonnes numériques sont alignées à
+       droite pour que les ordres de grandeur se comparent verticalement. */
     .table-card { padding: 0; overflow: hidden; }
     .table-tools {
-      display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+      display: flex; align-items: center; gap: var(--sp-3); flex-wrap: wrap;
       padding: 13px 16px; border-bottom: 1px solid var(--line); background: var(--panel);
     }
-    .table-tools h2 { margin: 0; font-size: .96rem; margin-right: auto; }
+    .table-tools h2 { margin: 0; margin-right: auto; }
+    .table-tools-text { margin-right: auto; min-width: 0; }
+    .table-tools-text h2 { margin: 0; }
+    .table-tools-text p { margin: 3px 0 0; color: var(--muted-2); font-size: var(--fs-xs); }
     .table-filter { max-width: 260px; }
+    .table-filter-sm { max-width: 200px; }
     .table-scroll { overflow-x: auto; }
-    .table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: .865rem; }
+    .table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: var(--fs-base); }
     .table thead th {
       position: sticky; top: 0; z-index: 2; background: var(--panel-2); text-align: left;
-      font-size: .7rem; letter-spacing: .07em; text-transform: uppercase; color: var(--muted);
-      padding: 10px 14px; border-bottom: 1px solid var(--line); white-space: nowrap;
+      font-size: var(--fs-2xs); letter-spacing: .08em; text-transform: uppercase; color: var(--muted);
+      padding: 9px 14px; border-bottom: 1px solid var(--line-strong); white-space: nowrap;
+      font-weight: 650;
     }
     .table thead th[data-sort] { cursor: pointer; user-select: none; }
     .table thead th[data-sort]::after { content: '↕'; margin-left: 6px; opacity: .35; font-size: .85em; }
     .table thead th[data-sort]:hover { color: var(--text); }
+    .table thead th[data-sort]:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
     .table thead th.sorted { color: var(--text); }
     .table thead th.sorted::after { opacity: 1; color: var(--accent); }
     .table thead th.sorted.desc::after { content: '↓'; }
     .table thead th.sorted:not(.desc)::after { content: '↑'; }
-    .table tbody tr { transition: background .16s var(--ease); }
+    .table tbody tr { transition: background .16s var(--ease), box-shadow .16s var(--ease); }
     .table tbody tr:hover { background: var(--panel-2); }
-    .table tbody td { padding: 11px 14px; border-bottom: 1px solid var(--line-soft); vertical-align: top; }
+    .table tbody td { padding: 10px 14px; border-bottom: 1px solid var(--line-soft); vertical-align: middle; }
     .table tbody tr:last-child td { border-bottom: 0; }
+    /* Un liseré à gauche marque la ligne survolée : sur une table large, la
+       couleur de fond seule se perd entre deux colonnes. */
+    .table tbody tr:hover td:first-child { box-shadow: inset 2px 0 0 var(--accent); }
+    .table td.num, .table th.num { text-align: right; font-variant-numeric: tabular-nums; }
     .table-empty { color: var(--muted); font-style: italic; }
     .table-empty td { padding: 18px 14px; }
-    .cell-actions { min-width: 230px; }
+    .cell-actions { min-width: 210px; }
+    /* Ligne d'édition : elle remplace la ligne d'origine et se reconnaît tout de
+       suite (fond plus clair, liseré accentué), sinon on ne sait plus quel
+       partenaire on est en train de modifier. */
+    .edit-row td { background: var(--panel-2); box-shadow: inset 3px 0 0 var(--accent); padding: 14px; }
+    .edit-row-heading {
+      display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3);
+      margin-bottom: var(--sp-3); flex-wrap: wrap;
+    }
+    .edit-row-heading strong { font-size: var(--fs-base); }
+    .edit-row-heading .hint { margin: 2px 0 0; font-size: var(--fs-xs); }
     .table-foot {
       display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;
       padding: 11px 16px; border-top: 1px solid var(--line); background: var(--panel);
     }
     .pager-info { color: var(--muted); font-size: .78rem; }
     .pager-nav { display: flex; align-items: center; gap: 8px; }
-    .pager-page { color: var(--muted); font-size: .78rem; white-space: nowrap; }
+    .pager-page { color: var(--muted); font-size: var(--fs-xs); white-space: nowrap; }
+    /* Barre d'outils secondaire placée sous la table : elle aligne le filtre
+       segmenté à gauche, comme une barre d'état, et non à droite comme la
+       pagination. */
+    .table-foot-tools { justify-content: flex-start; gap: var(--sp-3); }
 
     /* ---------- Squelettes de chargement ----------
        Rien ne doit jamais être un écran vide : chaque bloc affiche la forme de
@@ -369,9 +745,10 @@
 
     /* ---------- Entrée échelonnée des lignes ----------
        Décalage volontairement plafonné : au-delà d'une douzaine de lignes,
-       attendre son tour devient une gêne, pas une élégance. */
-    .row-in { animation: rowIn .34s var(--ease) both; }
-    @keyframes rowIn { from { opacity: 0; transform: translateY(7px); } to { opacity: 1; transform: none; } }
+       attendre son tour devient une gêne, pas une élégance. Le décalage part du
+       haut de la liste et décroît : l'œil suit l'ordre de lecture. */
+    .row-in { animation: rowIn .32s var(--ease) both; }
+    @keyframes rowIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
 
     /* ---------- Rotation / indicateur d'occupation ---------- */
     .spinner {
@@ -390,7 +767,7 @@
     .toast {
       display: flex; align-items: flex-start; gap: 10px; padding: 12px 12px 12px 14px;
       background: var(--panel-2); border: 1px solid var(--line); border-left: 3px solid var(--accent);
-      border-radius: var(--radius-sm); box-shadow: 0 18px 40px -22px #000;
+      border-radius: var(--radius-sm); box-shadow: var(--shadow-pop);
       animation: toastIn .26s var(--ease) both;
     }
     .toast.leaving { animation: toastOut .18s ease forwards; }
@@ -398,14 +775,14 @@
     .toast-err { border-left-color: var(--bad); }
     .toast-warn { border-left-color: var(--warn); }
     .toast-body { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-    .toast-title { font-size: .76rem; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
-    .toast-good .toast-title { color: var(--ok); }
-    .toast-err .toast-title { color: var(--bad); }
-    .toast-warn .toast-title { color: var(--warn); }
-    .toast-text { font-size: .85rem; word-break: break-word; }
+    .toast-title { font-size: var(--fs-2xs); text-transform: uppercase; letter-spacing: .09em; color: var(--muted); font-weight: 700; }
+    .toast-good .toast-title { color: var(--ok-ink); }
+    .toast-err .toast-title { color: var(--bad-ink); }
+    .toast-warn .toast-title { color: var(--warn-ink); }
+    .toast-text { font-size: var(--fs-base); word-break: break-word; }
     .toast-close {
       margin-left: auto; flex: none; background: transparent; border: 0; color: var(--muted);
-      font-size: 1.1rem; line-height: 1; cursor: pointer; padding: 0 4px; border-radius: 5px;
+      font-size: var(--fs-lg); line-height: 1; cursor: pointer; padding: 0 4px; border-radius: 5px;
     }
     .toast-close:hover { color: #fff; background: var(--panel-3); }
     @keyframes toastIn { from { opacity: 0; transform: translateY(10px) scale(.98); } to { opacity: 1; transform: none; } }
@@ -414,9 +791,10 @@
     /* ---------- Étapes de génération ----------
        La génération IA dure ~7 s (deux appels au modèle). Un rond qui tourne ne
        dit rien ; ces étapes nomment ce qui se passe réellement et avancent avec
-       la requête. */
+       la requête. La barre de progression est la seule animation « longue » de
+       l'app : elle informe pendant une attente qu'on ne peut pas raccourcir. */
     .stepper-box { margin-top: 14px; background: var(--panel-2); border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 14px 16px; }
-    .stepper-title { font-size: .84rem; font-weight: 600; margin: 0 0 10px; display: flex; align-items: center; gap: 8px; }
+    .stepper-title { font-size: var(--fs-sm); font-weight: 600; margin: 0 0 10px; display: flex; align-items: center; gap: 8px; }
     .stepper-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
     .step { display: flex; align-items: flex-start; gap: 10px; opacity: .5; transition: opacity .3s var(--ease); }
     .step-dot {
@@ -430,15 +808,20 @@
     .step.done .step-dot { border-color: var(--ok); background: var(--ok); animation: none; }
     .step.done .step-dot::after {
       content: ''; position: absolute; left: 2px; top: -1px; width: 4px; height: 7px;
-      border-right: 2px solid #0b0e14; border-bottom: 2px solid #0b0e14; transform: rotate(42deg);
+      border-right: 2px solid var(--surface-0); border-bottom: 2px solid var(--surface-0); transform: rotate(42deg);
     }
-    .step-label { font-size: .85rem; }
-    .step-note { color: var(--muted-2); font-size: .75rem; }
+    .step-label { font-size: var(--fs-base); }
+    .step-note { color: var(--muted-2); font-size: var(--fs-xs); }
     .stepper-track { height: 4px; border-radius: 4px; background: var(--panel-3); margin-top: 12px; overflow: hidden; }
     .stepper-track span { display: block; height: 100%; width: 0; background: linear-gradient(90deg, var(--accent), var(--ok)); transition: width .5s var(--ease); }
     @keyframes stepPulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(76, 141, 255, .45); } 50% { box-shadow: 0 0 0 5px rgba(76, 141, 255, 0); } }
 
-    /* ---------- Adaptation mobile ---------- */
+    /* ---------- Adaptation mobile ----------
+       Sous 700 px, la barre latérale sort de l'écran et chaque table devient une
+       pile de cartes : une ligne de back-office à sept colonnes ne tient pas dans
+       375 px, et un défilement horizontal cacherait justement la colonne
+       d'actions. Chaque cellule réaffiche donc son en-tête via data-label, pour
+       qu'aucune valeur ne perde son sens. */
     @media (max-width: 700px) {
       .sidebar {
         transform: translateX(-100%); transition: transform .26s var(--ease);
@@ -448,13 +831,25 @@
       .app.nav-open .nav-scrim { opacity: 1; pointer-events: auto; }
       .main { margin-left: 0; }
       .menu-toggle { display: inline-flex; }
-      .content { padding: 16px 13px 64px; }
-      .topbar { padding: 10px 13px; }
-      .topbar h1 { font-size: 1rem; }
-      .kpi-grid { grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); }
+      .content { padding: 14px 12px 64px; gap: var(--sp-4); }
+      .topbar { padding: 10px 12px; gap: 8px; }
+      .topbar h1 { font-size: var(--fs-md); }
+      .topbar-sub { display: none; }
+      .kpi-grid { grid-template-columns: repeat(auto-fit, minmax(132px, 1fr)); gap: 9px; }
+      .kpi { padding: 11px 12px; }
       .kpi-value { font-size: 1.4rem; }
       .grid-2, .grid-3 { grid-template-columns: 1fr; }
+      .card { padding: 14px; }
       .toasts { right: 10px; left: 10px; bottom: 10px; width: auto; }
+      .table-tools { padding: 12px 13px; gap: var(--sp-2); }
+      .table-tools-text { flex: 1 1 100%; }
+      .seg { width: 100%; overflow-x: auto; }
+      .seg-btn { flex: 1; justify-content: center; padding: 7px 8px; }
+      /* Le filtre de type ne compte que trois segments courts : il peut rester
+         sur une ligne sans déborder ni être rogné à 375 px. */
+      #suppliersKindSeg { overflow: visible; }
+      #suppliersKindSeg .seg-btn { padding: 7px 6px; font-size: var(--fs-xs); gap: 4px; white-space: nowrap; }
+      .table-filter, .table-filter-sm { max-width: none; flex: 1 1 100%; }
       .table-scroll { overflow: visible; }
       .table thead { display: none; }
       .table, .table tbody, .table tr, .table td { display: block; width: 100%; }
@@ -463,24 +858,38 @@
         margin: 10px; padding: 4px 0; width: calc(100% - 20px);
       }
       .table tbody tr:hover { background: var(--panel-2); }
+      .table tbody tr:hover td:first-child { box-shadow: none; }
       .table tbody td { border: 0; padding: 7px 13px; display: flex; gap: 12px; }
       .table tbody td::before {
         content: attr(data-label); flex: 0 0 40%; color: var(--muted-2);
-        font-size: .7rem; text-transform: uppercase; letter-spacing: .06em; padding-top: 2px;
+        font-size: var(--fs-2xs); text-transform: uppercase; letter-spacing: .06em; padding-top: 2px;
       }
-      .table tbody td.cell-actions { flex-direction: column; min-width: 0; }
+      .table tbody td.cell-actions { flex-direction: column; min-width: 0; align-items: stretch; }
       .table tbody td.cell-actions::before { flex: none; }
-      .table tbody td.num { text-align: left; }
+      .table tbody td.cell-actions .actions { margin-top: 4px; }
+      .table tbody td.cell-actions .btn { flex: 1; }
+      .table tbody td.num, .table td.num { text-align: left; }
       .table-empty td { display: block; }
       .table-empty td::before { content: none; }
+      /* La ligne d'édition occupe toute la carte : ses champs seuls, sans
+         étiquettes de colonne, puisqu'elle n'a plus de colonnes. */
+      .edit-row td { display: block; }
+      .edit-row td::before { content: none; }
+      .edit-row td { box-shadow: inset 0 3px 0 var(--accent); }
+      .field-grid { grid-template-columns: 1fr; }
       .kv { flex-direction: column; gap: 2px; }
       .kv span:last-child { text-align: left; }
+      .teach { padding: var(--sp-5) var(--sp-2); }
+      .pick-list { max-height: 230px; }
     }
 
     /* ---------- Mouvement réduit ----------
        Tout ce qui bouge ci-dessus devient instantané. Le rond d'occupation perd
        sa rotation mais reste visible (un anneau net), pour ne pas supprimer
-       l'information « une requête est en vol ». */
+       l'information « une requête est en vol ». On ne se contente pas de mettre
+       les durées à zéro : les états portés par une animation (la lueur des
+       pastilles qui attendent une décision) reçoivent ici leur équivalent fixe,
+       sinon ils disparaîtraient purement et simplement. */
     @media (prefers-reduced-motion: reduce) {
       *, *::before, *::after {
         animation-duration: .001ms !important;
@@ -492,6 +901,11 @@
       .skel { animation: none !important; background: var(--panel-3); }
       .spark-line { stroke-dashoffset: 0 !important; }
       .view.active.view-enter { animation: none !important; }
+      .row-in { animation: none !important; opacity: 1 !important; transform: none !important; }
+      .pill.warn { animation: none !important; box-shadow: 0 0 0 3px rgba(232, 178, 58, .12); }
+      .pill.bad { animation: none !important; box-shadow: 0 0 0 3px rgba(240, 96, 90, .12); }
+      .step.active .step-dot { animation: none !important; box-shadow: 0 0 0 4px rgba(76, 141, 255, .22); }
+      .banner.warn, .banner.err { animation: none !important; }
     }
   </style>
 </head>
@@ -547,8 +961,9 @@
 
   <div class="main">
     <header class="topbar">
-      <button class="btn btn-ghost btn-sm menu-toggle" id="btnMenu" type="button" aria-expanded="false" aria-controls="sidebar">
-        <span aria-hidden="true">☰</span> Menu
+      <button class="btn btn-ghost btn-sm menu-toggle" id="btnMenu" type="button" aria-expanded="false" aria-controls="sidebar" aria-label="Ouvrir la navigation">
+        <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" aria-hidden="true"><path d="M4 6.5h16M4 12h16M4 17.5h16"/></svg>
+        Menu
       </button>
       <div class="topbar-title">
         <h1 id="viewTitle">Tableau de bord</h1>
@@ -557,7 +972,10 @@
       <div class="topbar-right">
         <span class="inflight" id="loadingIndicator" hidden></span>
         <span class="pill off" id="configPill">Configuration…</span>
-        <button class="btn btn-ghost btn-sm" id="btnRefresh" type="button">Rafraîchir</button>
+        <button class="btn btn-ghost btn-sm" id="btnRefresh" type="button">
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 11.5A8 8 0 1 0 18.5 16"/><path d="M20 5v6h-6"/></svg>
+          Rafraîchir
+        </button>
       </div>
     </header>
 
@@ -650,22 +1068,66 @@
       <!-- ==================== VUE : IMPORTS ==================== -->
       <section class="view" id="view-imports" data-view="imports" hidden>
         <div class="card">
-          <h2>Importer un produit par lien</h2>
-          <p class="hint">Colle une URL fournisseur (AliExpress, Alibaba…). L'extraction puis la génération des fiches se font en deux étapes distinctes, pour que tu voies ce qui a été récupéré avant qu'une IA ne rédige quoi que ce soit.</p>
-          <!-- Le partenaire se choisit AVANT de coller l'URL : c'est lui qui
-               décide de la marge appliquée au prix conseillé de cet import. -->
-          <label for="importSupplier">Partenaire (fournisseur ou distributeur)</label>
-          <select id="importSupplier">
-            <option value="">— Aucun —</option>
-          </select>
-          <p class="hint hint-tight" id="importSupplierMargin">Aucun partenaire choisi : le coefficient de marge global du hub s'appliquera.</p>
-          <label for="importUrl">URL du produit fournisseur</label>
-          <input type="text" id="importUrl" placeholder="https://www.aliexpress.com/item/....html" autocomplete="off">
-          <div class="row row-actions">
-            <button class="btn" id="btnExtract" type="button">1. Extraire la fiche</button>
-            <button class="btn ghost" id="btnGenerate" type="button" disabled>2. Générer les fiches IA</button>
+          <div class="card-head card-head-line">
+            <div class="card-head-text">
+              <h2>Importer un produit par lien</h2>
+              <p>Colle une URL fournisseur (AliExpress, Alibaba…). L'extraction puis la génération des fiches se font en deux étapes distinctes, pour que tu voies ce qui a été récupéré avant qu'une IA ne rédige quoi que ce soit.</p>
+            </div>
           </div>
-          <p class="ai-note" data-ai-note hidden>Génération IA désactivée : aucun fournisseur IA n'est configuré (voir le bandeau ci-dessus). L'extraction, elle, reste disponible.</p>
+
+          <!-- Le partenaire se choisit AVANT de coller l'URL : c'est lui qui
+               décide de la marge appliquée au prix conseillé de cet import.
+               Le résumé sous le champ dit, en toutes lettres, quel partenaire
+               est retenu et quelle marge s'appliquera — c'est la question qu'on
+               se pose à chaque import, et une phrase d'aide ne suffisait pas à y
+               répondre d'un coup d'œil. -->
+          <div class="panel">
+            <section class="panel-section">
+              <h3 class="panel-section-title">Partenaire de cet import</h3>
+              <div class="picker" id="importSupplierPicker">
+                <!-- Le <select> d'origine reste dans le DOM, intact : c'est lui
+                     qui porte la valeur choisie et que le reste du script lit.
+                     La liste ci-dessous ne fait que le piloter. -->
+                <select id="importSupplier" class="picker-native" tabindex="-1" aria-hidden="true">
+                  <option value="">— Aucun —</option>
+                </select>
+                <div class="picker-row">
+                  <label for="importSupplierSearch" class="sr-only">Rechercher un partenaire</label>
+                  <input class="input" type="text" id="importSupplierSearch" role="combobox"
+                    aria-expanded="false" aria-controls="importSupplierList" aria-autocomplete="list"
+                    autocomplete="off" placeholder="Rechercher un partenaire…">
+                  <button class="btn btn-ghost btn-sm" id="btnImportSupplierList" type="button"
+                    aria-expanded="false" aria-controls="importSupplierList">
+                    <span aria-hidden="true">▾</span> Parcourir
+                  </button>
+                </div>
+                <ul class="pick-list" id="importSupplierList" role="listbox" aria-label="Partenaires disponibles" hidden></ul>
+              </div>
+              <div class="pick-summary" id="importSupplierSummary" data-mode="none" aria-live="polite">
+                <span class="spinner spinner-sm" aria-hidden="true"></span>
+                <div class="pick-summary-main">
+                  <span class="pick-summary-name">Chargement des partenaires…</span>
+                  <span class="pick-summary-note">fournisseurs et distributeurs enregistrés</span>
+                </div>
+              </div>
+              <p class="hint hint-tight" id="importSupplierMargin">Aucun partenaire choisi : le coefficient de marge global du hub s'appliquera.</p>
+            </section>
+
+            <section class="panel-section">
+              <h3 class="panel-section-title">Produit à extraire</h3>
+              <label for="importUrl">URL du produit fournisseur</label>
+              <input type="text" id="importUrl" placeholder="https://www.aliexpress.com/item/....html" autocomplete="off">
+              <div class="row row-actions">
+                <button class="btn" id="btnExtract" type="button">
+                  <span class="step-badge" aria-hidden="true">1</span> Extraire la fiche
+                </button>
+                <button class="btn ghost" id="btnGenerate" type="button" disabled>
+                  <span class="step-badge" aria-hidden="true">2</span> Générer les fiches IA
+                </button>
+              </div>
+              <p class="ai-note" data-ai-note hidden>Génération IA désactivée : aucun fournisseur IA n'est configuré (voir le bandeau ci-dessus). L'extraction, elle, reste disponible.</p>
+            </section>
+          </div>
 
           <!-- Étapes réelles de la génération : deux appels au modèle (~7 s) puis
                un calcul local. On les nomme au lieu d'afficher un rond qui tourne. -->
@@ -680,20 +1142,25 @@
                invendables — on l'affiche en clair et on permet de le corriger sans
                recréer l'import. -->
           <div id="importPriceBlock" style="display:none">
-            <div id="importPriceWarning" class="price-warning" role="alert" hidden></div>
-            <div class="field-grid" style="margin-top:6px">
-              <div class="field">
-                <label for="importPrice">Prix d'achat</label>
-                <input type="number" id="importPrice" step="0.01" min="0.01" placeholder="4.90">
+            <section class="panel-section">
+              <h3 class="panel-section-title">Prix d'achat fournisseur</h3>
+              <div id="importPriceWarning" class="price-warning" role="alert" hidden></div>
+              <div class="field-grid">
+                <div class="field">
+                  <label for="importPrice">Prix d'achat</label>
+                  <input type="number" id="importPrice" step="0.01" min="0.01" placeholder="4.90">
+                  <p class="field-help">Corrige-le ici si l'extraction n'a rien lu : les canaux refusent une fiche à 0 €.</p>
+                </div>
+                <div class="field">
+                  <label for="importCurrency">Devise</label>
+                  <input type="text" id="importCurrency" maxlength="3" placeholder="USD" autocomplete="off">
+                  <p class="field-help">Code de 3 lettres (EUR, USD, CNY…).</p>
+                </div>
               </div>
-              <div class="field">
-                <label for="importCurrency">Devise</label>
-                <input type="text" id="importCurrency" maxlength="3" placeholder="USD" autocomplete="off">
+              <div class="row row-actions">
+                <button class="btn btn-sm" id="btnSavePurchasePrice" type="button">Enregistrer le prix d'achat</button>
               </div>
-            </div>
-            <div class="row row-actions">
-              <button class="btn btn-sm" id="btnSavePurchasePrice" type="button">Enregistrer le prix d'achat</button>
-            </div>
+            </section>
           </div>
 
           <details id="importDetail" style="display:none">
@@ -787,67 +1254,137 @@
         </div>
       </section>
 
-      <!-- ==================== VUE : FOURNISSEURS ==================== -->
+      <!-- ==================== VUE : FOURNISSEURS ====================
+           Le registre des partenaires. C'est la vue la plus récente et la plus
+           dense : elle mérite un vrai panneau de saisie, pas une rangée de
+           champs bruts. Trois principes tenus ici :
+             · une section par intention (identité / marge / suivi) ;
+             · l'aide sous le champ qu'elle concerne, jamais dans un paragraphe
+               en bas de carte qu'on ne lit pas ;
+             · la validation parle avant l'envoi (marge < 1, marge non numérique,
+               URL non http), pas après un aller-retour serveur. -->
       <section class="view" id="view-fournisseurs" data-view="fournisseurs" hidden>
         <div class="card">
-          <h2>Enregistrer un partenaire</h2>
-          <p class="hint">Un fournisseur ou un distributeur s'enregistre une fois. À l'import, tu le choisis dans une liste au lieu de retaper son nom — et sa marge s'applique au prix conseillé. C'est ce qui distingue la plateforme de gros du distributeur local, qui ne vendent pas au même prix.</p>
-          <div class="field-grid">
-            <div class="field">
-              <label for="supKind">Type</label>
-              <select id="supKind">
-                <option value="fournisseur">Fournisseur</option>
-                <option value="distributeur">Distributeur</option>
-              </select>
-            </div>
-            <div class="field">
-              <label for="supName">Nom</label>
-              <input type="text" id="supName" placeholder="Shenzhen Toys Ltd" autocomplete="off">
-            </div>
-            <div class="field">
-              <label for="supSite">Site (optionnel)</label>
-              <input type="text" id="supSite" placeholder="https://exemple.com" autocomplete="off">
-            </div>
-            <div class="field">
-              <label for="supMargin">Coefficient de marge (optionnel)</label>
-              <input type="number" id="supMargin" step="0.01" min="1.01" placeholder="ex. 2.4">
-            </div>
-            <div class="field">
-              <label for="supStatus">Statut</label>
-              <select id="supStatus">
-                <option value="actif">Actif</option>
-                <option value="inactif">Inactif</option>
-              </select>
-            </div>
-            <div class="field field-wide">
-              <label for="supNotes">Notes (optionnel)</label>
-              <input type="text" id="supNotes" placeholder="conditions de paiement, délais, contact…" autocomplete="off">
+          <div class="card-head card-head-line">
+            <div class="card-head-text">
+              <h2>Enregistrer un partenaire</h2>
+              <p>Un fournisseur ou un distributeur s'enregistre une fois. À l'import, tu le choisis dans une liste au lieu de retaper son nom — et sa marge s'applique au prix conseillé. C'est ce qui distingue la plateforme de gros du distributeur local, qui ne vendent pas au même prix.</p>
             </div>
           </div>
-          <p class="hint hint-tight">Laisser la marge vide signifie « utiliser le coefficient global du hub » (<span id="suppliersGlobalMargin">…</span>). En dessous de 1, le hub refuse : ce serait vendre à perte.</p>
-          <div class="row row-actions"><button class="btn" id="btnCreateSupplier" type="button">Enregistrer le partenaire</button></div>
+
+          <div class="panel">
+            <section class="panel-section">
+              <h3 class="panel-section-title">Identité</h3>
+              <div class="field-grid">
+                <div class="field field-required" id="supNameField">
+                  <label for="supName">Nom</label>
+                  <input type="text" id="supName" placeholder="Shenzhen Toys Ltd" autocomplete="off" aria-describedby="supNameHint">
+                  <p class="field-hint" id="supNameHint" role="status"></p>
+                </div>
+                <div class="field">
+                  <label for="supKind">Type de partenaire</label>
+                  <select id="supKind" aria-describedby="supKindHelp">
+                    <option value="fournisseur">Fournisseur</option>
+                    <option value="distributeur">Distributeur</option>
+                  </select>
+                  <p class="field-help" id="supKindHelp">Un <b>fournisseur</b> vend en gros à la source ; un <b>distributeur</b> revend localement. Le type ne change pas le calcul, il sert à filtrer et à savoir à qui tu parles.</p>
+                </div>
+                <div class="field" id="supSiteField">
+                  <label for="supSite">Site (optionnel)</label>
+                  <input type="text" id="supSite" placeholder="https://exemple.com" autocomplete="off" aria-describedby="supSiteHint">
+                  <p class="field-hint" id="supSiteHint" role="status"></p>
+                </div>
+              </div>
+            </section>
+
+            <section class="panel-section">
+              <h3 class="panel-section-title">Marge appliquée à ses imports</h3>
+              <div class="field" id="supMarginField">
+                <label for="supMargin">Coefficient de marge (optionnel)</label>
+                <div class="margin-row">
+                  <input type="number" id="supMargin" step="0.01" min="1.01" placeholder="ex. 2.4" aria-describedby="supMarginHelp supMarginHint">
+                  <!-- Aperçu du calcul : le coefficient saisi est traduit tout de
+                       suite. C'est le meilleur endroit pour comprendre ce que
+                       « ×2.4 » veut dire, avant même d'enregistrer. -->
+                  <div class="coef-preview" id="supMarginPreview" data-mode="default">
+                    <span class="coef-preview-value" id="supMarginPreviewValue">×…</span>
+                    <span class="coef-preview-note" id="supMarginPreviewNote">coefficient global du hub</span>
+                  </div>
+                </div>
+                <p class="field-help" id="supMarginHelp">
+                  Le prix conseillé est le prix d'achat <b>multiplié</b> par ce coefficient.
+                  <b>×2.40</b> sur un achat à 10 € donne 24 €. Vide, c'est le coefficient global du hub
+                  (<span id="suppliersGlobalMargin" class="coef">…</span>) qui s'applique — et il suivra ses changements
+                  futurs, alors qu'une marge saisie ici reste la tienne.
+                </p>
+                <p class="field-hint" id="supMarginHint" role="status"></p>
+              </div>
+            </section>
+
+            <section class="panel-section">
+              <h3 class="panel-section-title">Suivi</h3>
+              <div class="field-grid">
+                <div class="field">
+                  <label for="supStatus">Statut</label>
+                  <select id="supStatus" aria-describedby="supStatusHelp">
+                    <option value="actif">Actif</option>
+                    <option value="inactif">Inactif</option>
+                  </select>
+                  <p class="field-help" id="supStatusHelp">Un partenaire <b>inactif</b> reste dans l'historique de ses imports mais n'apparaît plus en tête de liste à l'import.</p>
+                </div>
+                <div class="field field-wide">
+                  <label for="supNotes">Notes (optionnel)</label>
+                  <input type="text" id="supNotes" placeholder="conditions de paiement, délais, contact…" autocomplete="off">
+                  <p class="field-help">Ce que tu ne veux pas avoir à rechercher dans un e-mail : interlocuteur, délai de production, incoterm.</p>
+                </div>
+              </div>
+            </section>
+
+            <div class="panel-foot">
+              <button class="btn" id="btnCreateSupplier" type="button">Enregistrer le partenaire</button>
+              <button class="btn btn-ghost" id="btnResetSupplier" type="button">Vider le formulaire</button>
+              <p class="hint hint-tight">Marge vide = coefficient global du hub (<span id="suppliersGlobalMarginAlt" class="coef">…</span>). En dessous de 1, le hub refuse : ce serait vendre à perte.</p>
+            </div>
+          </div>
         </div>
 
-        <div class="card table-card">
+        <!-- État vide qui enseigne : tant qu'aucun partenaire n'existe, la table
+             n'apprendrait rien. On explique à quoi sert un enregistrement et
+             quelle est la première étape, puis on propose de la faire. -->
+        <div class="card" id="suppliersEmptyCard">
+          <div class="teach">
+            <span class="teach-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 20V9.5l5 2.8V9.5l5 2.8V4.5h8V20H3Z"/><path d="M14 10.5h3M14 14.5h3"/></svg>
+            </span>
+            <h3>Aucun partenaire enregistré</h3>
+            <p>Un partenaire est la fiche d'un fournisseur ou d'un distributeur avec lequel tu travailles. L'enregistrer une fois évite de retaper son nom à chaque import — et surtout de rechercher la marge négociée.</p>
+            <ol class="teach-steps">
+              <li><span class="teach-num" aria-hidden="true">1</span><span>Remplis le nom ci-dessus. Le type sert à distinguer le grossiste du revendeur local.</span></li>
+              <li><span class="teach-num" aria-hidden="true">2</span><span>Indique son coefficient de marge si tu en as négocié un. Laisse vide pour utiliser le coefficient global du hub.</span></li>
+              <li><span class="teach-num" aria-hidden="true">3</span><span>Choisis-le ensuite dans le formulaire d'import : sa marge s'appliquera au prix conseillé, et ses imports seront comptés ici.</span></li>
+            </ol>
+            <button class="btn btn-soft btn-sm" id="btnStartSupplier" type="button">Remplir le formulaire</button>
+          </div>
+        </div>
+
+        <div class="card table-card" id="suppliersTableCard" hidden>
           <div class="table-tools">
-            <h2>Partenaires enregistrés</h2>
-            <select class="input table-filter" id="suppliersKindFilter" aria-label="Filtrer les partenaires par type">
-              <option value="">Tous les types</option>
-              <option value="fournisseur">Fournisseurs</option>
-              <option value="distributeur">Distributeurs</option>
-            </select>
-            <input class="input table-filter" type="search" id="suppliersFilter" placeholder="Filtrer par nom, site, notes…" autocomplete="off" aria-label="Filtrer les partenaires">
+            <div class="table-tools-text">
+              <h2>Partenaires enregistrés</h2>
+              <p id="suppliersCount">…</p>
+            </div>
+            <input class="input table-filter table-filter-sm" type="search" id="suppliersFilter" placeholder="Filtrer par nom, site, notes…" autocomplete="off" aria-label="Filtrer les partenaires">
           </div>
           <div class="table-scroll">
             <table class="table">
               <thead id="suppliersHead">
                 <tr>
-                  <th data-sort="name">Nom</th>
-                  <th data-sort="kind">Type</th>
-                  <th data-sort="site_url">Site</th>
-                  <th data-sort="margin">Marge</th>
-                  <th data-sort="status">Statut</th>
-                  <th data-sort="import_count">Imports</th>
+                  <th data-sort="name" tabindex="0">Nom</th>
+                  <th data-sort="kind" tabindex="0">Type</th>
+                  <th data-sort="site_url" tabindex="0">Site</th>
+                  <th data-sort="margin" tabindex="0" class="num">Marge</th>
+                  <th data-sort="status" tabindex="0">Statut</th>
+                  <th data-sort="import_count" tabindex="0" class="num">Imports</th>
                   <th>Actions</th>
                 </tr>
               </thead>
@@ -858,6 +1395,22 @@
             </table>
           </div>
           <div class="table-foot" id="suppliersPager"></div>
+          <!-- Filtre segmenté : il montre les valeurs possibles ET leur nombre,
+               donc on sait ce qu'on filtre avant de cliquer. Le <select> caché
+               porte l'état pour le script, exactement comme le sélecteur de
+               partenaire de l'import. -->
+          <div class="table-foot table-foot-tools">
+            <select id="suppliersKindFilter" class="picker-native" tabindex="-1" aria-hidden="true">
+              <option value="">Tous les types</option>
+              <option value="fournisseur">Fournisseurs</option>
+              <option value="distributeur">Distributeurs</option>
+            </select>
+            <div class="seg" id="suppliersKindSeg" role="group" aria-label="Filtrer les partenaires par type">
+              <button class="seg-btn" type="button" data-kind="" aria-pressed="true">Tous <span class="seg-count" id="supKindCountAll">0</span></button>
+              <button class="seg-btn" type="button" data-kind="fournisseur" aria-pressed="false">Fournisseurs <span class="seg-count" id="supKindCountFournisseur">0</span></button>
+              <button class="seg-btn" type="button" data-kind="distributeur" aria-pressed="false">Distributeurs <span class="seg-count" id="supKindCountDistributeur">0</span></button>
+            </div>
+          </div>
         </div>
       </section>
 
@@ -1272,6 +1825,9 @@ function createTable(spec) {
       th.classList.toggle('sorted', active);
       th.classList.toggle('desc', active && table.sortDir === 'desc');
       th.setAttribute('aria-sort', active ? (table.sortDir === 'desc' ? 'descending' : 'ascending') : 'none');
+      // Rend la colonne atteignable au clavier une fois pour toutes, plutôt que
+      // de répéter `tabindex` dans les quatre tables du document.
+      if (!th.hasAttribute('tabindex')) th.setAttribute('tabindex', '0');
     });
   }
 
@@ -1325,6 +1881,16 @@ function createTable(spec) {
       else { table.sortKey = key; table.sortDir = 'asc'; }
       table.page = 1;
       render();
+    });
+    /* Une colonne triable est un contrôle : elle doit répondre au clavier comme
+       un bouton. Entrée et Espace déclenchent le même tri que le clic. */
+    head.addEventListener('keydown', (event) => {
+      const key = event.key;
+      if (key !== 'Enter' && key !== ' ' && key !== 'Spacebar') return;
+      const th = event.target && event.target.closest ? event.target.closest('[data-sort]') : null;
+      if (!th) return;
+      event.preventDefault();
+      if (typeof th.click === 'function') th.click();
     });
   }
   if (pager && typeof pager.addEventListener === 'function') {
@@ -1442,6 +2008,13 @@ async function loadConfig() {
     renderBannerError(error.message);
   }
   applyAiState();
+  /* Le coefficient global alimente l'aide du formulaire partenaire et l'aperçu
+     de marge : il se rafraîchit dès que la configuration est connue, sinon le
+     formulaire annoncerait un chiffre périmé après un rechargement. Ces deux
+     rendus tolèrent une configuration absente — ils affichent alors « défaut
+     global » sans chiffre plutôt qu'un faux ×0.00. */
+  renderGlobalMargin();
+  updateImportSupplierMargin();
 }
 
 /* Active ou bloque toutes les actions qui dépendent de l'IA. Le bouton de
@@ -1769,20 +2342,70 @@ async function loadProducts() {
 }
 
 /* ===================== PARTENAIRES =====================
-   Le registre des fournisseurs et distributeurs. Il alimente deux endroits :
-   cette table (créer, modifier, supprimer) et la liste d'import, où le
-   partenaire se choisit avant de coller l'URL — c'est lui qui porte la marge. */
+   Le registre des fournisseurs et distributeurs. Il alimente trois endroits :
+   cette table (créer, modifier, supprimer), la liste de l'import — où le
+   partenaire se choisit avant de coller l'URL, car c'est lui qui porte la marge
+   — et le compteur du tableau de bord. */
 const SUPPLIER_KIND_LABELS = { fournisseur: 'Fournisseur', distributeur: 'Distributeur' };
 const SUPPLIER_STATUS_LABELS = { actif: 'Actif', inactif: 'Inactif' };
+const SUPPLIER_KIND_HELP = {
+  fournisseur: 'vend en gros, à la source',
+  distributeur: 'revend localement, marge plus courte',
+};
 
-/* Marge affichée telle qu'elle sera appliquée : une marge propre (« ×2.40 ») ou,
-   à défaut, le coefficient global du hub (« défaut global ×1.80 »). Les
-   confondre serait grave : le défaut peut changer, pas la marge négociée. */
+/* Le coefficient de marge global du hub, ou null s'il n'est pas encore connu
+   (la configuration arrive en premier, mais rien ne doit casser si elle a
+   échoué : on affiche alors « global » sans chiffre plutôt qu'un faux ×0.00). */
+function globalMarginCoefficient() {
+  const raw = state.config && state.config.pricing ? Number(state.config.pricing.marginCoefficient) : NaN;
+  return Number.isFinite(raw) ? raw : null;
+}
+
+function formatCoefficient(value) {
+  return '×' + Number(value).toFixed(2);
+}
+
+/* Marge EFFECTIVE — celle qui sera réellement appliquée — sous forme de valeur
+   nue, jamais de HTML : la fonction est aussi utilisée par la ligne d'édition,
+   qui interpole son résultat. C'est l'appelant qui ajoute, s'il le faut, le
+   marqueur « défaut global » (voir supplierMarginMarker). */
 function supplierMarginLabel(supplier) {
   const own = supplier ? supplier.margin_coefficient : null;
-  if (own != null) return '×' + Number(own).toFixed(2) + ' (propre)';
-  const global = state.config && state.config.pricing ? Number(state.config.pricing.marginCoefficient) : NaN;
-  return Number.isFinite(global) ? 'défaut global ×' + global.toFixed(2) : 'défaut global';
+  if (own != null) return formatCoefficient(own);
+  const global = globalMarginCoefficient();
+  return global == null ? 'défaut global' : formatCoefficient(global);
+}
+
+/* Marqueur discret quand la valeur affichée n'est PAS celle du partenaire mais
+   le défaut du hub. Les confondre serait grave : le défaut peut changer demain,
+   pas la marge négociée. D'où un simple liseré pointillé et une infobulle,
+   jamais un badge plein qui donnerait au défaut l'air d'un choix. */
+function supplierMarginMarker(supplier) {
+  if (supplier && supplier.margin_coefficient != null) return '';
+  const global = globalMarginCoefficient();
+  return '<span class="marker" title="'
+    + esc(global == null
+      ? "Ce partenaire n'a pas de marge propre : le coefficient global du hub s'appliquera."
+      : "Ce partenaire n'a pas de marge propre : le coefficient global du hub " + formatCoefficient(global) + " s\'appliquera.")
+    + '">défaut global</span>';
+}
+
+/* Badge de type : deux formes distinctes (pleine pour le fournisseur, en
+   contour pour le distributeur) — la couleur seule serait illisible pour qui
+   ne la distingue pas. */
+function supplierKindBadge(kind) {
+  const label = SUPPLIER_KIND_LABELS[kind] || kind || '—';
+  const cls = kind === 'distributeur' ? 'badge-kind-distributor' : 'badge-kind-supplier';
+  const help = SUPPLIER_KIND_HELP[kind] ? ' title="' + esc(SUPPLIER_KIND_HELP[kind]) + '"' : '';
+  return '<span class="badge ' + cls + '"' + help + '><span class="badge-dot" aria-hidden="true"></span>' + esc(label) + '</span>';
+}
+
+/* Badge de statut : « actif » est un état calme, « inactif » un état en retrait.
+   Aucun des deux ne pulse — ils n'attendent aucune décision. */
+function supplierStatusBadge(status) {
+  const actif = status === 'actif';
+  return '<span class="pill ' + (actif ? 'ok' : 'off') + '">'
+    + '<span class="badge-dot" aria-hidden="true"></span>' + esc(SUPPLIER_STATUS_LABELS[status] || status) + '</span>';
 }
 
 /* Options de type / statut réutilisées par l'édition en ligne. */
@@ -1797,7 +2420,13 @@ function selectOptions(labels, current) {
    un tri ou un filtre referme l'édition sans laisser de champs orphelins. */
 function supplierEditRow(supplier) {
   const id = esc(supplier.id);
-  return '<tr class="row-in"><td colspan="7" data-label="Modifier">'
+  const global = globalMarginCoefficient();
+  return '<tr class="row-in edit-row"><td colspan="7" data-label="Modifier">'
+    + '<div class="edit-row-heading">'
+    + '<div><strong>Modifier ' + esc(supplier.name) + '</strong>'
+    + '<p class="hint">Même vocabulaire que le formulaire de création. Vider la marge revient explicitement au coefficient global'
+    + (global == null ? '' : ' (' + formatCoefficient(global) + ')') + '.</p></div>'
+    + '</div>'
     + '<div class="field-grid">'
     + '<div class="field"><label for="sup-edit-name-' + id + '">Nom</label>'
     + '<input class="input" type="text" id="sup-edit-name-' + id + '" value="' + esc(supplier.name) + '"></div>'
@@ -1805,7 +2434,7 @@ function supplierEditRow(supplier) {
     + '<select class="input" id="sup-edit-kind-' + id + '">' + selectOptions(SUPPLIER_KIND_LABELS, supplier.kind) + '</select></div>'
     + '<div class="field"><label for="sup-edit-site-' + id + '">Site</label>'
     + '<input class="input" type="text" id="sup-edit-site-' + id + '" value="' + esc(supplier.site_url || '') + '"></div>'
-    + '<div class="field"><label for="sup-edit-margin-' + id + '">Marge (vide = défaut global)</label>'
+    + '<div class="field"><label for="sup-edit-margin-' + id + '">Coefficient de marge (vide = défaut global)</label>'
     + '<input class="input" type="number" step="0.01" min="1.01" id="sup-edit-margin-' + id + '" value="'
     + (supplier.margin_coefficient == null ? '' : esc(supplier.margin_coefficient)) + '"></div>'
     + '<div class="field"><label for="sup-edit-status-' + id + '">Statut</label>'
@@ -1840,35 +2469,402 @@ const suppliersTable = createTable({
   row: (s) => {
     const id = esc(s.id);
     if (String(state.editingSupplierId) === String(s.id)) return supplierEditRow(s);
+    const imports = Number(s.import_count) || 0;
     return '<tr class="row-in">'
       + '<td data-label="Nom"><span class="cell-strong">' + esc(s.name) + '</span>'
-      + (s.notes ? '<div class="cell-muted" style="font-size:.75rem">' + esc(s.notes) + '</div>' : '') + '</td>'
-      + '<td data-label="Type"><span class="pill off">' + esc(SUPPLIER_KIND_LABELS[s.kind] || s.kind) + '</span></td>'
+      + (s.notes ? '<div class="cell-sub">' + esc(s.notes) + '</div>' : '') + '</td>'
+      + '<td data-label="Type">' + supplierKindBadge(s.kind) + '</td>'
       + '<td data-label="Site" class="cell-muted">'
       + (s.site_url
-        ? '<a href="' + esc(s.site_url) + '" target="_blank" rel="noopener noreferrer">' + esc(s.site_url) + '</a>'
+        // URL échappée jusque dans l'attribut href : `esc` couvre les guillemets,
+        // donc une URL ne peut pas refermer l'attribut et injecter du HTML.
+        ? '<a class="link-quiet" href="' + esc(s.site_url) + '" target="_blank" rel="noopener noreferrer">' + esc(s.site_url) + '</a>'
         : '—') + '</td>'
-      + '<td data-label="Marge" class="num">' + esc(supplierMarginLabel(s)) + '</td>'
-      + '<td data-label="Statut"><span class="pill ' + (s.status === 'actif' ? 'ok' : 'off') + '">' + esc(s.status) + '</span></td>'
-      + '<td data-label="Imports" class="num">' + esc(s.import_count == null ? 0 : s.import_count) + '</td>'
+      + '<td data-label="Marge" class="num">' + esc(supplierMarginLabel(s)) + supplierMarginMarker(s) + '</td>'
+      + '<td data-label="Statut">' + supplierStatusBadge(s.status) + '</td>'
+      + '<td data-label="Imports" class="num">'
+      + (imports
+        ? '<span class="cell-strong">' + formatInt(imports) + '</span>'
+        : '<span class="cell-muted">0</span>') + '</td>'
       + '<td data-label="Actions" class="cell-actions"><div class="actions">'
-      + '<button class="btn btn-ghost btn-xs" type="button" data-action="edit" data-id="' + id + '">Modifier</button>'
-      + '<button class="btn btn-danger btn-xs" type="button" data-action="delete" data-id="' + id + '" data-name="' + esc(s.name) + '">Supprimer</button>'
+      + '<button class="btn btn-ghost btn-xs" type="button" data-action="edit" data-id="' + id + '" aria-label="Modifier ' + esc(s.name) + '">Modifier</button>'
+      + '<button class="btn btn-danger-ghost btn-xs" type="button" data-action="delete" data-id="' + id + '" data-name="' + esc(s.name) + '" aria-label="Supprimer ' + esc(s.name) + '">Supprimer</button>'
       + '</div></td>'
       + '</tr>';
   },
 });
 
 /* Le filtre de type ne s'applique qu'à l'affichage : `state.suppliers` garde la
-   liste complète, car elle alimente aussi la liste déroulante d'import et le
-   compteur du tableau de bord, qui ne doivent pas se réduire au filtre. */
+   liste complète, car elle alimente aussi le sélecteur d'import et le compteur
+   du tableau de bord, qui ne doivent pas se réduire au filtre. */
 function applySupplierFilter() {
   const filter = $('suppliersKindFilter');
   const kind = filter && filter.value ? filter.value : '';
   suppliersTable.setRows(kind ? state.suppliers.filter((s) => s.kind === kind) : state.suppliers);
 }
 
-/* Remplit la liste déroulante de l'import, groupée par type, en conservant la
+/* Compteurs du filtre segmenté et de l'en-tête de table. Ils disent ce qu'on
+   filtre AVANT qu'on clique, et combien de lignes on regarde. */
+function updateSupplierCounts() {
+  const all = state.suppliers.length;
+  const fournisseurs = state.suppliers.filter((s) => s.kind === 'fournisseur').length;
+  const distributeurs = state.suppliers.filter((s) => s.kind === 'distributeur').length;
+  const inactifs = state.suppliers.filter((s) => s.status === 'inactif').length;
+  const put = (id, value) => { const el = $(id); if (el) el.textContent = String(value); };
+  put('supKindCountAll', all);
+  put('supKindCountFournisseur', fournisseurs);
+  put('supKindCountDistributeur', distributeurs);
+  const count = $('suppliersCount');
+  if (count) {
+    count.textContent = all
+      ? all + ' partenaire' + (all > 1 ? 's' : '') + ' · ' + fournisseurs + ' fournisseur' + (fournisseurs > 1 ? 's' : '')
+        + ' · ' + distributeurs + ' distributeur' + (distributeurs > 1 ? 's' : '')
+        + (inactifs ? ' · ' + inactifs + ' inactif' + (inactifs > 1 ? 's' : '') : '')
+      : 'Aucun partenaire enregistré pour le moment.';
+  }
+}
+
+/* Bascule entre l'état vide qui enseigne et la table. Un seul des deux est
+   visible : un cadre de table vide au-dessus d'un message d'accueil ne dit rien
+   de plus et occupe la moitié de l'écran. */
+function updateSupplierEmptyState() {
+  const empty = $('suppliersEmptyCard');
+  const table = $('suppliersTableCard');
+  const has = state.suppliers.length > 0;
+  if (empty) empty.hidden = has;
+  if (table) table.hidden = !has;
+}
+
+/* Reflète le filtre segmenté dans le <select> caché (qui reste la source de
+   vérité du script) puis met à jour les boutons et la table. */
+function setSupplierKindFilter(kind) {
+  const select = $('suppliersKindFilter');
+  const value = kind || '';
+  if (select) select.value = value;
+  const seg = $('suppliersKindSeg');
+  if (seg && typeof seg.querySelectorAll === 'function') {
+    seg.querySelectorAll('[data-kind]').forEach((button) => {
+      button.setAttribute('aria-pressed', String((button.dataset.kind || '') === value));
+    });
+  }
+  applySupplierFilter();
+}
+
+/* ---------- Aperçu de la marge dans le formulaire ----------
+   Le coefficient saisi est traduit tout de suite en une phrase : c'est le
+   meilleur endroit pour comprendre ce que « ×2.4 » veut dire, avant même
+   d'enregistrer. Vide, la ligne annonce le défaut global et son chiffre. */
+function updateSupplierMarginPreview() {
+  const input = $('supMargin');
+  const box = $('supMarginPreview');
+  const valueEl = $('supMarginPreviewValue');
+  const noteEl = $('supMarginPreviewNote');
+  if (!box || !valueEl || !noteEl) return;
+  const raw = input ? String(input.value || '').trim() : '';
+  const global = globalMarginCoefficient();
+  if (raw === '') {
+    box.dataset.mode = 'default';
+    valueEl.textContent = global == null ? 'défaut global' : formatCoefficient(global);
+    // Le type choisi est rappelé ici : un grossiste et un revendeur local ne se
+    // lisent pas de la même façon, et l'aide doit nommer celui qu'on décrit.
+    const kind = $('supKind') ? $('supKind').value : '';
+    const kindNote = kind === 'distributeur' ? ', appliqué à ce distributeur' : (kind === 'fournisseur' ? ', appliqué à ce fournisseur' : '');
+    noteEl.textContent = global == null
+      ? 'coefficient global du hub (inconnu pour le moment)'
+      : 'coefficient global du hub' + kindNote + ' — il suivra ses changements';
+    return;
+  }
+  const n = Number(raw);
+  if (!Number.isFinite(n) || n <= 1) {
+    box.dataset.mode = 'none';
+    valueEl.textContent = 'refusé';
+    noteEl.textContent = 'le coefficient doit être supérieur à 1';
+    return;
+  }
+  box.dataset.mode = 'partner';
+  valueEl.textContent = formatCoefficient(n);
+  noteEl.textContent = '100 € d\'achat donneraient ' + (n * 100).toFixed(0) + ' € de prix conseillé';
+}
+
+/* Affiche le coefficient global partout où le formulaire y renvoie. Les deux
+   emplacements existent : le principal est dans l'aide de la marge, le second
+   dans le pied du panneau, plus près du bouton d'enregistrement. */
+function renderGlobalMargin() {
+  const global = globalMarginCoefficient();
+  const text = global == null ? 'coefficient global' : formatCoefficient(global);
+  const main = $('suppliersGlobalMargin');
+  if (main) main.textContent = text;
+  const alt = $('suppliersGlobalMarginAlt');
+  if (alt) alt.textContent = text;
+  updateSupplierMarginPreview();
+}
+
+/* Validation côté interface, avant l'aller-retour serveur. Le serveur reste
+   seul juge (il revalide tout) : ici on évite juste de faire attendre pour une
+   erreur qu'on connaît déjà. Aucun message n'apparaît tant qu'on n'a rien
+   saisi : un formulaire neuf ne doit pas être couvert de reproches. */
+function setFieldState(fieldId, hintId, message, state_) {
+  const field = $(fieldId);
+  const hint = $(hintId);
+  if (hint) hint.textContent = message || '';
+  if (!field || !field.classList) return;
+  field.classList.remove('invalid', 'valid');
+  if (state_) field.classList.add(state_);
+}
+
+function validateSupplierForm() {
+  const name = $('supName');
+  const site = $('supSite');
+  const margin = $('supMargin');
+  let ok = true;
+
+  const nameValue = name ? name.value.trim() : '';
+  if (!nameValue) { setFieldState('supNameField', 'supNameHint', '', ''); }
+  else { setFieldState('supNameField', 'supNameHint', 'Nom retenu : ' + nameValue, 'valid'); }
+
+  const siteValue = site ? site.value.trim() : '';
+  if (!siteValue) { setFieldState('supSiteField', 'supSiteHint', '', ''); }
+  else if (!/^https?:\/\/\S+$/i.test(siteValue)) {
+    setFieldState('supSiteField', 'supSiteHint', "Une adresse complète est attendue (ex. https://exemple.com).", 'invalid');
+    ok = false;
+  } else {
+    setFieldState('supSiteField', 'supSiteHint', 'Adresse acceptée.', 'valid');
+  }
+
+  const marginValue = margin ? margin.value.trim() : '';
+  if (!marginValue) {
+    setFieldState('supMarginField', 'supMarginHint', 'Aucune marge propre : le coefficient global du hub s\'appliquera.', '');
+  } else {
+    const n = Number(marginValue);
+    if (!Number.isFinite(n)) {
+      setFieldState('supMarginField', 'supMarginHint', 'Un nombre est attendu (ex. 2.4).', 'invalid');
+      ok = false;
+    } else if (n <= 1) {
+      setFieldState('supMarginField', 'supMarginHint', 'Refusé : un coefficient inférieur ou égal à 1 vendrait à perte.', 'invalid');
+      ok = false;
+    } else {
+      setFieldState('supMarginField', 'supMarginHint', 'Retenu : ×' + n.toFixed(2) + '.', 'valid');
+    }
+  }
+  return ok;
+}
+
+/* Recentre l'attention sur le formulaire de création (état vide). Sans cela, le
+   bouton « Remplir le formulaire » ne ferait rien de visible. */
+function focusSupplierForm() {
+  const card = $('view-fournisseurs');
+  const target = $('supName');
+  if (card && typeof card.scrollIntoView === 'function') card.scrollIntoView({ behavior: motionOK() ? 'smooth' : 'auto', block: 'start' });
+  if (target && typeof target.focus === 'function') target.focus();
+}
+
+/* ---------- Sélecteur de partenaire de l'import ----------
+   Au-delà d'une poignée de partenaires, une liste déroulante native devient
+   pénible : il faut la dérouler et balayer du regard. On garde donc un champ de
+   recherche et une liste filtrée. Le <select> d'origine n'est PAS retiré : il
+   reste dans le DOM, porte la valeur choisie (c'est lui que lisent l'extraction
+   et les tests) et sert de repli si cette liste ne s'ouvre pas. */
+let importSupplierFilter = '';
+let importSupplierActive = -1;
+let importPickerWired = false;
+
+function importPickerList() { return $('importSupplierList'); }
+function importPickerInput() { return $('importSupplierSearch'); }
+
+/* Recherche « souple » : on ignore la casse et on accepte qu'un terme soit
+   préfixe d'un mot du nom, du site, des notes ou du type. Le préfixe plutôt que
+   la sous-chaîne nue évite qu'un « ali » saisi au hasard fasse remonter
+   n'importe quoi : ici il trouve bien « Alibaba », mais pas « Salim ». */
+function matchesQuery(supplier, query) {
+  const q = String(query || '').trim().toLowerCase();
+  if (!q) return true;
+  const haystack = [supplier.name, supplier.site_url, supplier.notes, SUPPLIER_KIND_LABELS[supplier.kind]]
+    .join(' ').toLowerCase();
+  // Tous les mots saisis doivent apparaître, pas seulement l'un d'eux.
+  return q.split(/\s+/).filter(Boolean).every((word) => new RegExp('(^|[^a-z0-9])' + word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).test(haystack));
+}
+
+function closeImportPicker() {
+  const list = importPickerList();
+  if (list) list.hidden = true;
+  const input = importPickerInput();
+  if (input) input.setAttribute('aria-expanded', 'false');
+  const button = $('btnImportSupplierList');
+  if (button) button.setAttribute('aria-expanded', 'false');
+  importSupplierActive = -1;
+}
+
+function renderImportPickerList() {
+  const list = importPickerList();
+  if (!list) return;
+  const select = $('importSupplier');
+  const current = select ? String(select.value || '') : '';
+  const matches = state.suppliers.filter((s) => matchesQuery(s, importSupplierFilter));
+  let html = '';
+  if (!state.suppliers.length) {
+    html = '<li class="pick-empty">Aucun partenaire enregistré. Crée-le dans <a href="#/fournisseurs">Fournisseurs</a>.</li>';
+  } else if (!matches.length) {
+    html = '<li class="pick-empty">Aucun partenaire ne correspond à « ' + esc(importSupplierFilter) + ' ».</li>';
+  } else {
+    // L'option « aucun » reste accessible : c'est le retour au coefficient
+    // global, et il doit rester à un clic. Elle disparaît seulement quand la
+    // recherche désigne un partenaire précis — chercher « alibaba » ne doit pas
+    // laisser traîner « Aucun » en tête de liste. D'où le préfixe de mot : taper
+    // « ali » masque « Aucun » (le « a » de « Aucun » n'ouvre pas « ali »),
+    // taper « aucun » le retrouve.
+    if (matchesQuery({ name: 'Aucun', site_url: '', notes: '', kind: '' }, importSupplierFilter)) {
+      html += '<li role="option" class="pick-option" data-id="" aria-selected="' + (current === '' ? 'true' : 'false') + '">'
+        + '<span class="pick-main"><span class="pick-name">Aucun partenaire</span>'
+        + '<span class="pick-meta">le coefficient global du hub s\'appliquera</span></span>'
+        + (current === '' ? '<span class="pill accent">choisi</span>' : '')
+        + '</li>';
+    }
+    for (const [kind, label] of [['fournisseur', 'Fournisseurs'], ['distributeur', 'Distributeurs']]) {
+      const rows = matches.filter((s) => s.kind === kind);
+      if (!rows.length) continue;
+      html += '<li class="pick-group" role="presentation">' + esc(label) + '</li>';
+      for (const s of rows) {
+        const selected = String(s.id) === current;
+        const global = globalMarginCoefficient();
+        const margin = s.margin_coefficient == null
+          ? '<span class="pick-margin">défaut global' + (global == null ? '' : ' ' + formatCoefficient(global)) + '</span>'
+          : '<span class="pick-margin">' + formatCoefficient(s.margin_coefficient) + ' propre</span>';
+        html += '<li role="option" class="pick-option" data-id="' + esc(s.id) + '" aria-selected="' + (selected ? 'true' : 'false') + '">'
+          + '<span class="pick-main"><span class="pick-name">' + esc(s.name) + '</span>'
+          + '<span class="pick-meta">' + esc(SUPPLIER_KIND_LABELS[s.kind] || s.kind)
+          + (s.status === 'inactif' ? ' · inactif' : '')
+          + (s.site_url ? ' · ' + esc(s.site_url) : '') + '</span></span>'
+          + margin
+          + (selected ? '<span class="pill accent">choisi</span>' : '')
+          + '</li>';
+      }
+    }
+  }
+  list.innerHTML = html;
+}
+
+function openImportPicker() {
+  const list = importPickerList();
+  if (!list) return;
+  renderImportPickerList();
+  list.hidden = false;
+  const input = importPickerInput();
+  if (input) input.setAttribute('aria-expanded', 'true');
+  const button = $('btnImportSupplierList');
+  if (button) button.setAttribute('aria-expanded', 'true');
+  importSupplierActive = -1;
+}
+
+/* Applique un choix : on écrit la valeur dans le <select> d'origine puis on
+   laisse son événement `change` faire le reste (résumé, marge affichée). Un
+   seul chemin de mise à jour, donc pas de risque d'affichage divergent. */
+function chooseImportSupplier(id) {
+  const select = $('importSupplier');
+  const value = id == null ? '' : String(id);
+  if (select) {
+    const known = value === '' || state.suppliers.some((s) => String(s.id) === value);
+    select.value = known ? value : '';
+    if (typeof select.dispatchEvent === 'function' && typeof Event === 'function') {
+      select.dispatchEvent(new Event('change'));
+    } else {
+      updateImportSupplierMargin();
+    }
+  } else {
+    updateImportSupplierMargin();
+  }
+  const input = importPickerInput();
+  if (input && !input.__pickerTyping) {
+    const supplier = state.suppliers.find((s) => String(s.id) === String(select ? select.value : ''));
+    input.value = supplier ? supplier.name : '';
+  }
+  closeImportPicker();
+  renderImportPickerList();
+}
+
+/* Points d'entrée clavier de la liste : flèches, Entrée, Échap, Début/Fin.
+   `active` suit l'élément survolé/clavier pour que les deux se répondent. */
+function setImportPickerActive(index) {
+  const list = importPickerList();
+  if (!list || typeof list.querySelectorAll !== 'function') return;
+  const options = list.querySelectorAll('[role="option"]');
+  if (!options || !options.length) return;
+  importSupplierActive = Math.max(0, Math.min(options.length - 1, index));
+  options.forEach((option, i) => option.classList.toggle('active', i === importSupplierActive));
+  const active = options[importSupplierActive];
+  if (active && typeof active.scrollIntoView === 'function') active.scrollIntoView({ block: 'nearest' });
+}
+
+function pickActiveImportSupplier() {
+  const list = importPickerList();
+  if (!list || typeof list.querySelectorAll !== 'function') return;
+  const options = list.querySelectorAll('[role="option"]');
+  if (!options || !options.length) return;
+  const option = options[importSupplierActive < 0 ? 0 : importSupplierActive];
+  if (option) chooseImportSupplier(option.dataset.id || '');
+}
+
+function wireImportPicker() {
+  if (importPickerWired) return;
+  importPickerWired = true;
+  const input = importPickerInput();
+  const button = $('btnImportSupplierList');
+  const list = importPickerList();
+
+  if (input && typeof input.addEventListener === 'function') {
+    // On tape pour filtrer : le champ est un filtre, pas la valeur elle-même.
+    // Tant que rien n'est choisi dans la liste, le <select> reste sur sa valeur
+    // courante — c'est ce qui évite d'envoyer un partenaire au hasard.
+    input.addEventListener('input', () => {
+      input.__pickerTyping = true;
+      importSupplierFilter = input.value;
+      openImportPicker();
+      input.__pickerTyping = false;
+    });
+    input.addEventListener('focus', () => { importSupplierFilter = input.value; openImportPicker(); });
+    input.addEventListener('keydown', (event) => {
+      const key = event.key;
+      if (key === 'ArrowDown') { event.preventDefault(); if (importPickerList() && importPickerList().hidden) openImportPicker(); setImportPickerActive(importSupplierActive + 1); }
+      else if (key === 'ArrowUp') { event.preventDefault(); setImportPickerActive(importSupplierActive - 1); }
+      else if (key === 'Enter') { event.preventDefault(); pickActiveImportSupplier(); }
+      else if (key === 'Escape') { event.preventDefault(); closeImportPicker(); }
+      else if (key === 'Home') { event.preventDefault(); setImportPickerActive(0); }
+      else if (key === 'End') { event.preventDefault(); setImportPickerActive(1e6); }
+    });
+  }
+
+  if (button && typeof button.addEventListener === 'function') {
+    button.addEventListener('click', () => {
+      const open = list ? !list.hidden : false;
+      if (open) closeImportPicker();
+      else { importSupplierFilter = ''; openImportPicker(); }
+    });
+  }
+
+  if (list && typeof list.addEventListener === 'function') {
+    list.addEventListener('mousedown', (event) => {
+      const option = event.target && event.target.closest ? event.target.closest('[role="option"]') : null;
+      const label = event.target && event.target.closest && event.target.closest('.pick-empty');
+      if (!option) { if (label) return; return; }
+      // `mousedown` plutôt que `click` : le champ ne perd pas le focus avant
+      // qu'on ait lu la valeur, donc le choix n'est pas annulé par un blur.
+      event.preventDefault();
+      chooseImportSupplier(option.dataset.id || '');
+    });
+  }
+
+  // Un clic ailleurs referme la liste : sans cela elle resterait ouverte
+  // par-dessus le reste du formulaire.
+  if (typeof document.addEventListener === 'function') {
+    document.addEventListener('click', (event) => {
+      const picker = $('importSupplierPicker');
+      if (!picker || !event.target) return;
+      if (typeof picker.contains === 'function' && picker.contains(event.target)) return;
+      closeImportPicker();
+    });
+  }
+}
+
+/* Remplit la liste déroulante d'origine, groupée par type, en conservant la
    sélection courante : un rechargement ne doit pas changer en silence le
    partenaire déjà choisi. */
 function populateImportSuppliers() {
@@ -1887,24 +2883,84 @@ function populateImportSuppliers() {
   }
   select.innerHTML = html;
   select.value = state.suppliers.some((s) => String(s.id) === String(current)) ? current : '';
+  syncImportSupplierField();
   updateImportSupplierMargin();
+  renderImportPickerList();
+}
+
+/* Le champ de recherche montre le partenaire retenu quand on ne tape pas :
+   c'est ce qui rend la sélection évidente sans dérouler quoi que ce soit. */
+function syncImportSupplierField() {
+  const select = $('importSupplier');
+  const input = importPickerInput();
+  if (!select || !input) return;
+  const supplier = state.suppliers.find((s) => String(s.id) === String(select.value || ''));
+  input.value = supplier ? supplier.name : '';
+  importSupplierFilter = input.value;
+}
+
+/* Résumé de la sélection : quel partenaire, quel type, et quelle marge
+   s'appliquera réellement. C'est la question qu'on se pose à chaque import, et
+   une phrase d'aide en gris ne suffisait pas à y répondre d'un coup d'œil. */
+function updateImportSupplierSummary() {
+  const box = $('importSupplierSummary');
+  const select = $('importSupplier');
+  if (!box || !select) return;
+  const supplier = state.suppliers.find((s) => String(s.id) === String(select.value || ''));
+  const global = globalMarginCoefficient();
+  // Deux formulations distinctes selon la place dans la phrase, pour éviter le
+  // « partira du le coefficient » que produirait un seul gabarit.
+  const globalName = global == null ? 'coefficient global du hub' : 'coefficient global du hub (' + formatCoefficient(global) + ')';
+  let html;
+  if (!supplier) {
+    box.dataset.mode = 'none';
+    html = '<div class="pick-summary-main">'
+      + '<span class="pick-summary-name">Aucun partenaire</span>'
+      + '<span class="pick-summary-note">Le prix conseillé partira du ' + esc(globalName) + '.</span>'
+      + '</div>'
+      + '<span class="pick-summary-value">' + esc(global == null ? 'défaut' : formatCoefficient(global)) + '</span>';
+  } else if (supplier.margin_coefficient == null) {
+    box.dataset.mode = 'default';
+    html = '<span class="badge badge-kind-' + (supplier.kind === 'distributeur' ? 'distributor' : 'supplier') + '">'
+      + esc(SUPPLIER_KIND_LABELS[supplier.kind] || supplier.kind) + '</span>'
+      + '<div class="pick-summary-main">'
+      + '<span class="pick-summary-name">' + esc(supplier.name) + '</span>'
+      + '<span class="pick-summary-note">Pas de marge propre : le ' + esc(globalName) + ' s\'appliquera.</span>'
+      + '</div>'
+      + '<span class="pick-summary-value">' + esc(global == null ? 'défaut' : formatCoefficient(global)) + '</span>';
+  } else {
+    box.dataset.mode = 'partner';
+    html = '<span class="badge badge-kind-' + (supplier.kind === 'distributeur' ? 'distributor' : 'supplier') + '">'
+      + esc(SUPPLIER_KIND_LABELS[supplier.kind] || supplier.kind) + '</span>'
+      + '<div class="pick-summary-main">'
+      + '<span class="pick-summary-name">' + esc(supplier.name) + '</span>'
+      + '<span class="pick-summary-note">Sa marge propre s\'applique au prix conseillé de cet import.</span>'
+      + '</div>'
+      + '<span class="pick-summary-value">' + formatCoefficient(supplier.margin_coefficient) + '</span>';
+  }
+  box.innerHTML = html;
 }
 
 /* Dit en clair quelle marge s'appliquera à l'import en cours de préparation —
-   et surtout quand ce sera le défaut global et non la marge du partenaire. */
+   et surtout quand ce sera le défaut global et non la marge du partenaire. La
+   phrase reste sous le résumé : elle nomme l'origine du chiffre, le résumé
+   nomme le chiffre. */
 function updateImportSupplierMargin() {
+  updateImportSupplierSummary();
   const select = $('importSupplier');
   const hint = $('importSupplierMargin');
   if (!select || !hint) return;
-  const global = state.config && state.config.pricing ? Number(state.config.pricing.marginCoefficient) : NaN;
-  const globalText = Number.isFinite(global) ? ' (×' + global.toFixed(2) + ')' : '';
+  const global = globalMarginCoefficient();
+  const globalText = global == null ? '' : ' (' + formatCoefficient(global) + ')';
   const supplier = state.suppliers.find((s) => String(s.id) === String(select.value || ''));
+  // `textContent` : le nom du partenaire vient de l'API. Il n'est pas interprété
+  // comme du HTML ici — mais on n'écrit jamais dans innerHTML sans `esc()`.
   if (!supplier) {
     hint.textContent = "Aucun partenaire choisi : le coefficient de marge global du hub s'appliquera" + globalText + '.';
   } else if (supplier.margin_coefficient == null) {
     hint.textContent = supplier.name + " n'a pas de marge propre : le coefficient global s'appliquera" + globalText + '.';
   } else {
-    hint.textContent = 'Marge appliquée à cet import : ×' + Number(supplier.margin_coefficient).toFixed(2)
+    hint.textContent = 'Marge appliquée à cet import : ' + formatCoefficient(supplier.margin_coefficient)
       + ' (' + supplier.name + ').';
   }
   hint.className = 'hint hint-tight';
@@ -1917,12 +2973,9 @@ async function loadSuppliers() {
   state.suppliers = rows;
   applySupplierFilter();
   populateImportSuppliers();
-  const globalEl = $('suppliersGlobalMargin');
-  if (globalEl) {
-    const configured = state.config && state.config.pricing
-      && Number.isFinite(Number(state.config.pricing.marginCoefficient));
-    globalEl.textContent = configured ? '×' + Number(state.config.pricing.marginCoefficient).toFixed(2) : 'coefficient global';
-  }
+  updateSupplierCounts();
+  updateSupplierEmptyState();
+  renderGlobalMargin();
   scheduleDashboard();
   return rows;
 }
@@ -1966,6 +3019,9 @@ onAction($('suppliers'), {
 });
 
 $('btnCreateSupplier').addEventListener('click', (event) => action(event.currentTarget, async () => {
+  // La validation d'interface s'exécute aussi ici : cliquer « Enregistrer »
+  // avec un nom vide ne doit pas partir sur le réseau pour se faire refuser.
+  if (!validateSupplierForm()) throw new Error('Corrige les champs signalés avant d\'enregistrer.');
   const name = $('supName').value.trim();
   if (!name) throw new Error('Le nom du partenaire est obligatoire.');
   const siteUrl = $('supSite').value.trim();
@@ -1977,12 +3033,59 @@ $('btnCreateSupplier').addEventListener('click', (event) => action(event.current
   if (notes) body.notes = notes;
 
   await api('/api/suppliers', { method: 'POST', body: JSON.stringify(body) });
-  $('supName').value = ''; $('supSite').value = ''; $('supMargin').value = ''; $('supNotes').value = '';
+  resetSupplierForm();
   await loadSuppliers();
 }, 'Partenaire enregistré.'));
 
-$('suppliersKindFilter').addEventListener('change', applySupplierFilter);
-$('importSupplier').addEventListener('change', updateImportSupplierMargin);
+/* Vide le formulaire ET ses messages de validation : laisser « Refusé : un
+   coefficient… » après un enregistrement réussi ferait douter de ce qui vient
+   de se passer. */
+function resetSupplierForm() {
+  for (const id of ['supName', 'supSite', 'supMargin', 'supNotes']) {
+    const el = $(id);
+    if (el) el.value = '';
+  }
+  setFieldState('supNameField', 'supNameHint', '', '');
+  setFieldState('supSiteField', 'supSiteHint', '', '');
+  setFieldState('supMarginField', 'supMarginHint', '', '');
+  updateSupplierMarginPreview();
+}
+
+$('btnResetSupplier').addEventListener('click', (event) => {
+  event.preventDefault();
+  resetSupplierForm();
+  const name = $('supName');
+  if (name && typeof name.focus === 'function') name.focus();
+});
+
+$('supMargin').addEventListener('input', () => {
+  updateSupplierMarginPreview();
+  validateSupplierForm();
+});
+$('supKind').addEventListener('change', updateSupplierMarginPreview);
+$('supSite').addEventListener('input', validateSupplierForm);
+$('supName').addEventListener('input', validateSupplierForm);
+
+$('btnStartSupplier').addEventListener('click', focusSupplierForm);
+
+// Le filtre segmenté pilote le <select> caché, qui reste la source de vérité.
+if ($('suppliersKindSeg') && typeof $('suppliersKindSeg').addEventListener === 'function') {
+  $('suppliersKindSeg').addEventListener('click', (event) => {
+    const button = event.target && event.target.closest ? event.target.closest('[data-kind]') : null;
+    if (!button) return;
+    setSupplierKindFilter(button.dataset.kind || '');
+  });
+}
+// Le <select> reste écouté : si un jour il redevient visible, il fonctionne.
+$('suppliersKindFilter').addEventListener('change', () => setSupplierKindFilter($('suppliersKindFilter').value));
+
+/* Le <select> d'import reste la source de vérité de la valeur ; le combobox ne
+   fait que le piloter. On écoute donc son `change`, exactement comme avant. */
+$('importSupplier').addEventListener('change', () => {
+  syncImportSupplierField();
+  updateImportSupplierMargin();
+});
+wireImportPicker();
 
 /* ===================== RECOMMANDATIONS ===================== */
 async function loadRecommendations() {
@@ -2302,6 +3405,9 @@ async function showImport(id) {
   if (supplierSelect) {
     const wanted = data.supplier ? String(data.supplier.id) : '';
     supplierSelect.value = state.suppliers.some((s) => String(s.id) === wanted) ? wanted : '';
+    // Le champ de recherche reflète le choix : le combobox et le <select> ne
+    // doivent jamais montrer deux partenaires différents.
+    syncImportSupplierField();
     updateImportSupplierMargin();
   }
   // Le prix d'achat est visible avant les fiches : c'est lui qui explique
@@ -2541,11 +3647,43 @@ function toggleNav(force) {
   const open = typeof force === 'boolean' ? force : !isOpen;
   app.classList.toggle('nav-open', open);
   const button = $('btnMenu');
-  if (button) button.setAttribute('aria-expanded', open ? 'true' : 'false');
+  if (button) {
+    button.setAttribute('aria-expanded', open ? 'true' : 'false');
+    // Le libellé du bouton reste « Menu » : `aria-expanded` porte déjà l'état,
+    // et faire varier le texte ferait douter de ce que le bouton fait.
+    button.setAttribute('aria-label', open ? 'Fermer la navigation' : 'Ouvrir la navigation');
+  }
 }
 
 $('btnMenu').addEventListener('click', () => toggleNav());
 $('navScrim').addEventListener('click', () => toggleNav(false));
+
+/* Échap referme le tiroir mobile et la liste de partenaires ouverte : deux
+   surfaces qui recouvrent le contenu doivent toujours pouvoir être écartées au
+   clavier, sans viser un bouton. */
+if (typeof document.addEventListener === 'function') {
+  document.addEventListener('keydown', (event) => {
+    if (!event || event.key !== 'Escape') return;
+    closeImportPicker();
+    toggleNav(false);
+  });
+}
+
+/* Un clic hors de la barre latérale referme le tiroir mobile. Le bouton Menu
+   est explicitement exempté : sans cela, son propre clic le refermerait dans la
+   foulée (le gestionnaire du document s'exécute après le sien). Sur grand
+   écran, `toggleNav(false)` ne change rien puisque le tiroir est déjà ouvert en
+   permanence. */
+if (typeof document.addEventListener === 'function') {
+  document.addEventListener('click', (event) => {
+    const sidebar = $('sidebar');
+    const menu = $('btnMenu');
+    if (!sidebar || !event.target || typeof sidebar.contains !== 'function') return;
+    if (sidebar.contains(event.target)) return;
+    if (menu && menu.contains && menu.contains(event.target)) return;
+    toggleNav(false);
+  });
+}
 
 /* ===================== DÉMARRAGE ===================== */
 async function loadAll() {
