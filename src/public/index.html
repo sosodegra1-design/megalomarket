@@ -5,254 +5,831 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Megalomarket — AI Core</title>
   <style>
+    /* =====================================================================
+       Coquille applicative (app shell).
+
+       Le tableau de bord précédent empilait des cartes dans une seule page :
+       chaque action importante (générer, publier, pousser un prix) se perdait
+       dans un flux unique, et rien ne distinguait « ce que je regarde » de
+       « ce que je fais ». On passe donc à une coquille d'application : une
+       barre latérale persistante qui situe la section, une barre supérieure
+       qui porte le titre, l'état de la configuration et le rechargement, et
+       des vues échangées sans rechargement. Aucune de ces couches n'ajoute de
+       fonction : elles rendent visibles celles qui existaient déjà.
+       ===================================================================== */
     :root {
-      --bg: #0f1117; --panel: #171a22; --panel-2: #1e222c; --line: #2b313d;
-      --text: #eef1f6; --muted: #9aa3b2; --accent: #4c8dff; --accent-2: #3a6fd8;
-      --ok: #35c46b; --warn: #e8b23a; --bad: #e5544b;
-      --radius: 14px;
+      --bg: #0b0e14;
+      --panel: #121722;
+      --panel-2: #171d2a;
+      --panel-3: #1e2534;
+      --line: #242d3d;
+      --line-soft: #1b2230;
+      --text: #e9edf5;
+      --text-2: #c6cede;
+      --muted: #8c96a9;
+      --muted-2: #66718a;
+      --accent: #4c8dff;
+      --accent-2: #3a6fd8;
+      --accent-soft: rgba(76, 141, 255, .13);
+      --ok: #3ecf7a;
+      --ok-soft: rgba(62, 207, 122, .13);
+      --warn: #e8b23a;
+      --warn-soft: rgba(232, 178, 58, .13);
+      --bad: #f0605a;
+      --bad-soft: rgba(240, 96, 90, .13);
+      --radius: 16px;
+      --radius-sm: 11px;
+      --radius-xs: 8px;
+      --sidebar-w: 252px;
+      --shadow: 0 1px 0 rgba(255, 255, 255, .03), 0 22px 46px -34px #000;
+      --ease: cubic-bezier(.22, .8, .3, 1);
     }
     * { box-sizing: border-box; }
     html { -webkit-text-size-adjust: 100%; }
     body {
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-      background: radial-gradient(1200px 600px at 50% -200px, #1b2130 0%, var(--bg) 60%);
-      color: var(--text); margin: 0; padding: 26px 20px 60px; line-height: 1.45;
+      background: radial-gradient(1100px 520px at 72% -260px, #182236 0%, var(--bg) 62%) fixed;
+      color: var(--text); margin: 0; line-height: 1.45; min-height: 100vh;
     }
-    .wrap { max-width: 1180px; margin: 0 auto; display: flex; flex-direction: column; gap: 18px; }
-    header { display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap; }
-    header h1 { margin: 0; font-size: 1.45rem; letter-spacing: -.02em; }
-    header p { margin: 2px 0 0; color: var(--muted); font-size: .88rem; }
-    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 18px; align-items: start; }
+    h1, h2, h3 { letter-spacing: -.02em; }
+    a { color: var(--accent); }
+    button { font: inherit; }
+
+    /* ---------- Ossature ---------- */
+    .app { display: flex; min-height: 100vh; }
+    .main { flex: 1; min-width: 0; margin-left: var(--sidebar-w); display: flex; flex-direction: column; }
+    .content { width: 100%; max-width: 1340px; margin: 0 auto; padding: 22px 26px 72px; display: flex; flex-direction: column; gap: 18px; }
+
+    /* ---------- Barre latérale ---------- */
+    .sidebar {
+      position: fixed; inset: 0 auto 0 0; width: var(--sidebar-w); z-index: 40;
+      display: flex; flex-direction: column; gap: 6px; padding: 18px 14px;
+      background: linear-gradient(180deg, #10151f, #0c1119 70%);
+      border-right: 1px solid var(--line);
+      overflow-y: auto;
+    }
+    .brand { display: flex; align-items: center; gap: 10px; padding: 4px 6px 16px; }
+    .brand-mark {
+      width: 32px; height: 32px; flex: none; border-radius: 9px; display: grid; place-items: center;
+      background: linear-gradient(150deg, var(--accent), #7b5cff);
+      color: #fff; font-weight: 800; font-size: .95rem; letter-spacing: -.03em;
+      box-shadow: 0 8px 20px -10px var(--accent);
+    }
+    .brand-text { display: flex; flex-direction: column; line-height: 1.15; }
+    .brand-name { font-weight: 700; font-size: .96rem; }
+    .brand-sub { color: var(--muted-2); font-size: .7rem; text-transform: uppercase; letter-spacing: .11em; }
+    .nav { display: flex; flex-direction: column; gap: 3px; }
+    .nav-label { color: var(--muted-2); font-size: .68rem; text-transform: uppercase; letter-spacing: .13em; padding: 12px 10px 6px; }
+    .nav-item {
+      display: flex; align-items: center; gap: 11px; padding: 9px 11px; border-radius: var(--radius-sm);
+      color: var(--text-2); text-decoration: none; font-size: .875rem; font-weight: 500;
+      border: 1px solid transparent; transition: background .16s var(--ease), color .16s, transform .16s var(--ease);
+    }
+    .nav-item svg { width: 18px; height: 18px; flex: none; opacity: .85; }
+    .nav-item:hover { background: var(--panel-2); color: var(--text); }
+    .nav-item:active { transform: scale(.985); }
+    .nav-item.active { background: var(--accent-soft); color: #fff; border-color: rgba(76, 141, 255, .3); }
+    .nav-item.active svg { opacity: 1; color: var(--accent); }
+    .sidebar-foot { margin-top: auto; padding: 14px 10px 4px; color: var(--muted-2); font-size: .7rem; line-height: 1.6; }
+    .nav-scrim {
+      position: fixed; inset: 0; z-index: 35; background: rgba(4, 7, 12, .62);
+      opacity: 0; pointer-events: none; transition: opacity .22s var(--ease);
+    }
+
+    /* ---------- Barre supérieure ---------- */
+    .topbar {
+      position: sticky; top: 0; z-index: 30; display: flex; align-items: center; gap: 12px;
+      padding: 12px 26px; border-bottom: 1px solid var(--line);
+      background: rgba(11, 14, 20, .82); backdrop-filter: blur(10px);
+    }
+    .topbar h1 { margin: 0; font-size: 1.1rem; font-weight: 650; }
+    .topbar-title { display: flex; flex-direction: column; min-width: 0; }
+    .topbar-sub { color: var(--muted-2); font-size: .72rem; }
+    .topbar-right { margin-left: auto; display: flex; align-items: center; gap: 9px; flex-wrap: wrap; justify-content: flex-end; }
+    .menu-toggle { display: none; }
+    .inflight { display: inline-flex; align-items: center; gap: 7px; color: var(--muted); font-size: .76rem; }
+
+    /* ---------- Boutons ---------- */
+    .btn {
+      display: inline-flex; align-items: center; justify-content: center; gap: 7px;
+      background: var(--accent); color: #fff; border: 1px solid transparent; padding: 9px 15px;
+      border-radius: var(--radius-xs); cursor: pointer; font-size: .85rem; font-weight: 600;
+      transition: background .16s var(--ease), transform .12s var(--ease), opacity .16s, box-shadow .16s;
+    }
+    .btn:hover:not(:disabled) { background: var(--accent-2); box-shadow: 0 8px 20px -14px var(--accent); }
+    .btn:active:not(:disabled) { transform: scale(.97); }
+    .btn:disabled { opacity: .45; cursor: not-allowed; }
+    .btn.ghost, .btn-ghost { background: var(--panel-3); color: var(--text-2); border-color: var(--line); }
+    .btn.ghost:hover:not(:disabled), .btn-ghost:hover:not(:disabled) { background: #2a3242; color: #fff; box-shadow: none; }
+    .btn.danger, .btn-danger { background: #a7362f; }
+    .btn.danger:hover:not(:disabled), .btn-danger:hover:not(:disabled) { background: #8f2c26; }
+    .btn-xs { padding: 5px 9px; font-size: .75rem; border-radius: 7px; }
+    .btn-sm { padding: 7px 12px; font-size: .8rem; }
+    .btn:focus-visible, .nav-item:focus-visible, input:focus-visible, select:focus-visible,
+    textarea:focus-visible, summary:focus-visible, .toast-close:focus-visible {
+      outline: 2px solid var(--accent); outline-offset: 1px;
+    }
+
+    /* ---------- Cartes et grilles ---------- */
     .card {
       background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
-      padding: 18px; box-shadow: 0 1px 0 rgba(255,255,255,.02), 0 10px 30px -24px #000;
+      padding: 18px; box-shadow: var(--shadow); min-width: 0;
     }
-    .card h2 { margin: 0 0 4px; font-size: 1.02rem; letter-spacing: -.01em; }
-    .card .hint { color: var(--muted); font-size: .82rem; margin: 0 0 12px; }
-    label { display: block; font-size: .8rem; color: var(--muted); margin: 10px 0 4px; }
-    input, select, textarea {
-      width: 100%; padding: 9px 11px; border-radius: 8px; border: 1px solid var(--line);
-      background: #12151c; color: var(--text); font: inherit; font-size: .9rem;
-    }
-    input:focus, select:focus, textarea:focus, button:focus-visible {
-      outline: 2px solid var(--accent); outline-offset: 1px; border-color: var(--accent);
-    }
-    textarea { min-height: 70px; resize: vertical; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .8rem; }
-    button {
-      display: inline-flex; align-items: center; justify-content: center; gap: 6px;
-      background: var(--accent); color: #fff; border: 0; padding: 9px 15px; border-radius: 8px;
-      cursor: pointer; font: inherit; font-size: .86rem; font-weight: 600; transition: background .15s, opacity .15s;
-    }
-    button:hover:not(:disabled) { background: var(--accent-2); }
-    button:disabled { opacity: .45; cursor: not-allowed; }
-    button.ghost { background: #2c313d; }
-    button.ghost:hover:not(:disabled) { background: #39404e; }
-    button.tiny { padding: 6px 10px; font-size: .78rem; }
-    button.danger { background: #a7362f; }
-    button.danger:hover:not(:disabled) { background: #8f2c26; }
-    .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 12px; }
-    .list { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
-    .item { background: var(--panel-2); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; }
-    .item .top { display: flex; justify-content: space-between; gap: 10px; align-items: baseline; }
-    .item .name { font-weight: 600; font-size: .92rem; word-break: break-word; }
-    .item .meta { color: var(--muted); font-size: .78rem; margin-top: 3px; word-break: break-word; }
-    .pill { font-size: .72rem; padding: 3px 9px; border-radius: 999px; border: 1px solid var(--line); white-space: nowrap; }
-    .pill.ok { color: var(--ok); border-color: #2a6b45; }
-    .pill.off { color: var(--muted); }
-    .pill.bad { color: var(--bad); border-color: #6b2f2c; }
-    .pill.warn { color: var(--warn); border-color: #6b552a; }
+    .card h2 { margin: 0 0 4px; font-size: 1rem; }
+    .card .hint, .hint { color: var(--muted); font-size: .81rem; margin: 0 0 12px; }
+    .hint-tight { margin: 4px 0 10px; }
+    .grid { display: grid; gap: 18px; align-items: start; }
+    .grid-2 { grid-template-columns: repeat(auto-fit, minmax(330px, 1fr)); }
+    .grid-3 { grid-template-columns: repeat(auto-fit, minmax(290px, 1fr)); }
+    .stack { display: flex; flex-direction: column; gap: 18px; }
+    .card-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
 
-    /* Bandeau de configuration : c'est la première chose que l'œil doit heurter. */
-    .banner { border-radius: var(--radius); padding: 16px 18px; border: 1px solid var(--line); background: var(--panel); }
+    /* ---------- Formulaires ---------- */
+    label { display: block; font-size: .77rem; color: var(--muted); margin: 10px 0 4px; letter-spacing: .01em; }
+    .input, input, select, textarea {
+      width: 100%; padding: 9px 11px; border-radius: var(--radius-xs); border: 1px solid var(--line);
+      background: #0f131c; color: var(--text); font: inherit; font-size: .88rem;
+      transition: border-color .16s, background .16s;
+    }
+    .input:hover, input:hover, textarea:hover, select:hover { border-color: #33405a; }
+    .textarea { min-height: 70px; resize: vertical; }
+    .mono, textarea.mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .78rem; }
+    .input-xs { padding: 6px 9px; font-size: .78rem; width: 100%; max-width: 140px; }
+    .field { min-width: 0; }
+    .field-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
+    .field-wide { grid-column: 1 / -1; }
+    .row { display: flex; gap: 8px; align-items: flex-end; flex-wrap: wrap; }
+    .row-inline { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+    .row-actions { margin-top: 12px; }
+
+    /* ---------- Pilules et états ---------- */
+    .pill {
+      display: inline-flex; align-items: center; gap: 5px; font-size: .71rem; font-weight: 600;
+      padding: 3px 9px; border-radius: 999px; border: 1px solid var(--line);
+      color: var(--muted); white-space: nowrap; transition: background .2s, color .2s, border-color .2s;
+    }
+    .pill.ok { color: var(--ok); border-color: #2a6b45; background: var(--ok-soft); }
+    .pill.off { color: var(--muted); }
+    .pill.bad { color: var(--bad); border-color: #6b2f2c; background: var(--bad-soft); }
+    .pill.warn { color: var(--warn); border-color: #6b552a; background: var(--warn-soft); }
+    /* Une pastille qui demande une décision (à valider, échec) pulse lentement.
+       Les pastilles calmes (configuré, brouillon) restent parfaitement fixes :
+       seules celles qui attendent quelque chose ont le droit de bouger. */
+    .pill.warn { animation: pillPulseWarn 3.4s ease-in-out infinite; }
+    .pill.bad { animation: pillPulseBad 3.4s ease-in-out infinite; }
+    @keyframes pillPulseWarn {
+      0%, 100% { box-shadow: 0 0 0 0 rgba(232, 178, 58, 0); }
+      50% { box-shadow: 0 0 0 4px rgba(232, 178, 58, .1); }
+    }
+    @keyframes pillPulseBad {
+      0%, 100% { box-shadow: 0 0 0 0 rgba(240, 96, 90, 0); }
+      50% { box-shadow: 0 0 0 4px rgba(240, 96, 90, .1); }
+    }
+    .empty { color: var(--muted); font-size: .84rem; font-style: italic; }
+    .cell-strong { font-weight: 600; }
+    .cell-muted { color: var(--muted); }
+    .num { font-variant-numeric: tabular-nums; }
+    code { background: #10131a; border: 1px solid var(--line); padding: 2px 7px; border-radius: 6px; font-size: .78rem; word-break: break-word; }
+    .pre { white-space: pre-wrap; word-break: break-word; font-size: .82rem; color: #d6dae3; }
+    .inline-error {
+      margin: 8px 0 0; font-size: .82rem; color: #ffd9d5; background: #2f1a18;
+      border: 1px solid #6b2f2c; border-radius: var(--radius-xs); padding: 8px 11px;
+    }
+
+    /* ---------- Bandeau de configuration ----------
+       C'est la première chose que l'œil doit heurter. Quand un réglage manque, il
+       pulse lentement : l'information reste lisible sans clignoter. Quand tout est
+       en place il devient parfaitement statique — un élément qui bouge en
+       permanence finit par ne plus être regardé. */
+    .banner { border-radius: var(--radius); padding: 15px 18px; border: 1px solid var(--line); background: var(--panel); }
     .banner.ok { background: linear-gradient(180deg, #17301f, #14231a); border-color: #2a6b45; }
-    .banner.warn { background: linear-gradient(180deg, #332a16, #241f14); border-color: #6b552a; }
-    .banner.err { background: linear-gradient(180deg, #331d1b, #241614); border-color: #6b2f2c; }
-    .banner-head { display: flex; align-items: center; gap: 10px; font-size: 1rem; }
+    .banner.warn { background: linear-gradient(180deg, #332a16, #241f14); border-color: #6b552a; animation: bannerPulse 3.6s ease-in-out infinite; }
+    .banner.err { background: linear-gradient(180deg, #331d1b, #241614); border-color: #6b2f2c; animation: bannerPulse 3.6s ease-in-out infinite; }
+    @keyframes bannerPulse {
+      0%, 100% { box-shadow: 0 0 0 0 rgba(232, 178, 58, 0); }
+      50% { box-shadow: 0 0 0 7px rgba(232, 178, 58, .07); }
+    }
+    .banner-head { display: flex; align-items: center; gap: 10px; font-size: .96rem; }
     .banner-icon {
       display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px;
-      border-radius: 50%; font-size: .82rem; font-weight: 700; flex: none;
+      border-radius: 50%; font-size: .8rem; font-weight: 700; flex: none;
     }
     .banner.ok .banner-icon { background: #1f5a38; color: #b6f0cd; }
     .banner.warn .banner-icon { background: #5c4a1e; color: #ffe4a3; }
     .banner.err .banner-icon { background: #5c2723; color: #ffc0ba; }
-    .banner-sub { color: var(--muted); font-size: .84rem; margin: 8px 0 0; }
+    .banner-sub { color: var(--muted); font-size: .83rem; margin: 8px 0 0; }
     .banner-facts { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
     .missing-list { list-style: none; padding: 0; margin: 12px 0 0; display: flex; flex-direction: column; gap: 9px; }
     .missing-list li { border-left: 3px solid var(--warn); padding-left: 11px; }
-    .missing-list .why { display: block; font-size: .87rem; }
+    .missing-list .why { display: block; font-size: .86rem; }
     .missing-list code { display: inline-block; margin-top: 4px; }
-    code { background: #10131a; border: 1px solid var(--line); padding: 2px 7px; border-radius: 6px; font-size: .8rem; word-break: break-word; }
     .ai-note {
-      margin: 12px 0 0; font-size: .82rem; color: #f0d28a; background: #2a2317;
-      border: 1px solid #6b552a; border-radius: 8px; padding: 9px 11px;
+      margin: 12px 0 0; font-size: .81rem; color: #f0d28a; background: #2a2317;
+      border: 1px solid #6b552a; border-radius: var(--radius-xs); padding: 9px 11px;
     }
-
-    /* Prix d'achat manquant : c'est la raison pour laquelle les fiches générées
-       valent 0 € et seront refusées par les canaux. Rouge, donc impossible à
-       confondre avec une simple note d'information. */
     .price-warning {
-      margin: 12px 0 0; font-size: .84rem; color: #ffd9d5; background: #2f1a18;
-      border: 1px solid #6b2f2c; border-radius: 8px; padding: 10px 12px;
+      margin: 12px 0 0; font-size: .83rem; color: #ffd9d5; background: #2f1a18;
+      border: 1px solid #6b2f2c; border-radius: var(--radius-xs); padding: 10px 12px;
     }
 
-    #status { min-height: 20px; font-size: .86rem; padding: 10px 13px; border-radius: 10px; display: none; }
-    #status.show { display: block; }
+    /* Emplacement inline des erreurs bloquantes : un toast peut être fermé par
+       mégarde, ce bloc-là reste tant que l'action n'a pas été retentée. */
+    #status { display: none; }
+    #status.show { display: flex; gap: 9px; align-items: flex-start; font-size: .85rem; padding: 10px 13px; border-radius: var(--radius-xs); }
     #status.info { background: #1b2740; border: 1px solid #35507d; }
     #status.good { background: #17301f; border: 1px solid #2a6b45; }
     #status.err { background: #331d1b; border: 1px solid #6b2f2c; }
-    .empty { color: var(--muted); font-size: .85rem; font-style: italic; }
-    .pre { white-space: pre-wrap; word-break: break-word; font-size: .82rem; color: #d6dae3; }
-    details { margin-top: 10px; }
-    summary { cursor: pointer; color: var(--muted); font-size: .8rem; }
-    .kv { display: flex; justify-content: space-between; gap: 12px; font-size: .82rem; padding: 3px 0; }
+    .status-icon { flex: none; font-weight: 700; color: var(--bad); }
+
+    /* ---------- Vues ---------- */
+    .view { display: none; flex-direction: column; gap: 18px; }
+    .view.active { display: flex; }
+    .view.active.view-enter { animation: viewIn .34s var(--ease) both; }
+    @keyframes viewIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+
+    /* ---------- KPI ---------- */
+    .kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; }
+    .kpi {
+      position: relative; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius-sm);
+      padding: 14px 15px; overflow: hidden;
+    }
+    .kpi::after {
+      content: ''; position: absolute; inset: 0 auto 0 0; width: 3px;
+      background: linear-gradient(180deg, var(--accent), transparent); opacity: .55;
+    }
+    .kpi-label { color: var(--muted); font-size: .74rem; text-transform: uppercase; letter-spacing: .08em; }
+    .kpi-value { display: block; font-size: 1.7rem; font-weight: 700; letter-spacing: -.03em; margin-top: 6px; font-variant-numeric: tabular-nums; }
+    .kpi-hint { color: var(--muted-2); font-size: .74rem; margin-top: 2px; }
+
+    /* ---------- Sparkline ---------- */
+    .spark { width: 100%; height: 74px; display: block; overflow: visible; }
+    .spark-line { fill: none; stroke: var(--accent); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; stroke-dasharray: 640; stroke-dashoffset: 640; animation: sparkDraw 1s var(--ease) .05s forwards; }
+    .spark-area { fill: url(#sparkGrad); opacity: .5; animation: fadeIn .7s ease .25s both; }
+    .spark-dot { fill: var(--panel); stroke: var(--accent); stroke-width: 1.8; }
+    @keyframes sparkDraw { to { stroke-dashoffset: 0; } }
+    @keyframes fadeIn { from { opacity: 0; } to { opacity: .5; } }
+    .spark-legend { display: flex; justify-content: space-between; color: var(--muted-2); font-size: .7rem; margin-top: 6px; }
+    .spark-stats { display: flex; gap: 14px; margin-top: 10px; }
+    .spark-stat { display: flex; flex-direction: column; }
+    .spark-stat b { font-size: 1.05rem; font-variant-numeric: tabular-nums; }
+    .spark-stat span { color: var(--muted-2); font-size: .72rem; }
+
+    /* ---------- Listes compactes (tableau de bord) ---------- */
+    .mini-list { display: flex; flex-direction: column; gap: 6px; }
+    .mini-row {
+      display: flex; align-items: center; justify-content: space-between; gap: 12px;
+      background: var(--panel-2); border: 1px solid var(--line-soft); border-radius: var(--radius-xs);
+      padding: 9px 12px; transition: border-color .16s, transform .16s var(--ease);
+    }
+    .mini-row:hover { border-color: #33405a; transform: translateX(2px); }
+    .mini-main { display: flex; flex-direction: column; min-width: 0; }
+    .mini-title { font-size: .85rem; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .mini-meta { color: var(--muted); font-size: .75rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .mini-time { color: var(--muted-2); font-size: .72rem; flex: none; }
+
+    /* ---------- Cartes canaux / recommandations / fiches ---------- */
+    .list { display: flex; flex-direction: column; gap: 9px; margin-top: 4px; }
+    .channel-card, .rec-card, .listing-card {
+      background: var(--panel-2); border: 1px solid var(--line); border-radius: var(--radius-sm);
+      padding: 13px 15px; transition: border-color .18s var(--ease), background .18s;
+    }
+    .channel-card:hover, .rec-card:hover, .listing-card:hover { border-color: #33405a; }
+    .channel-card { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+    .channel-main { display: flex; flex-direction: column; min-width: 0; }
+    .channel-name { font-weight: 600; font-size: .9rem; }
+    .channel-meta { color: var(--muted); font-size: .77rem; }
+    .rec-top { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+    .rec-name { font-weight: 600; font-size: .9rem; }
+    .rec-why { color: var(--muted); font-size: .79rem; margin-top: 4px; word-break: break-word; }
+    .listing-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; margin-bottom: 10px; }
+    .listing-mp { font-weight: 700; font-size: .92rem; display: block; }
+    .listing-price { color: var(--muted); font-size: .78rem; }
+    .actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; align-items: center; }
+    .site-details { margin-top: 10px; }
+    summary { cursor: pointer; color: var(--muted); font-size: .79rem; }
+    .kv { display: flex; justify-content: space-between; gap: 12px; font-size: .81rem; padding: 4px 0; border-bottom: 1px solid var(--line-soft); }
+    .kv:last-child { border-bottom: 0; }
     .kv span:first-child { color: var(--muted); flex: none; }
     .kv span:last-child { text-align: right; word-break: break-word; }
 
-    /* Rotation visible tant que la requête est en vol : l'utilisateur sait que
-       le clic a été pris en compte, même si le réseau est lent. */
+    /* ---------- Tables de données ---------- */
+    .table-card { padding: 0; overflow: hidden; }
+    .table-tools {
+      display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+      padding: 13px 16px; border-bottom: 1px solid var(--line); background: var(--panel);
+    }
+    .table-tools h2 { margin: 0; font-size: .96rem; margin-right: auto; }
+    .table-filter { max-width: 260px; }
+    .table-scroll { overflow-x: auto; }
+    .table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: .865rem; }
+    .table thead th {
+      position: sticky; top: 0; z-index: 2; background: var(--panel-2); text-align: left;
+      font-size: .7rem; letter-spacing: .07em; text-transform: uppercase; color: var(--muted);
+      padding: 10px 14px; border-bottom: 1px solid var(--line); white-space: nowrap;
+    }
+    .table thead th[data-sort] { cursor: pointer; user-select: none; }
+    .table thead th[data-sort]::after { content: '↕'; margin-left: 6px; opacity: .35; font-size: .85em; }
+    .table thead th[data-sort]:hover { color: var(--text); }
+    .table thead th.sorted { color: var(--text); }
+    .table thead th.sorted::after { opacity: 1; color: var(--accent); }
+    .table thead th.sorted.desc::after { content: '↓'; }
+    .table thead th.sorted:not(.desc)::after { content: '↑'; }
+    .table tbody tr { transition: background .16s var(--ease); }
+    .table tbody tr:hover { background: var(--panel-2); }
+    .table tbody td { padding: 11px 14px; border-bottom: 1px solid var(--line-soft); vertical-align: top; }
+    .table tbody tr:last-child td { border-bottom: 0; }
+    .table-empty { color: var(--muted); font-style: italic; }
+    .table-empty td { padding: 18px 14px; }
+    .cell-actions { min-width: 230px; }
+    .table-foot {
+      display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;
+      padding: 11px 16px; border-top: 1px solid var(--line); background: var(--panel);
+    }
+    .pager-info { color: var(--muted); font-size: .78rem; }
+    .pager-nav { display: flex; align-items: center; gap: 8px; }
+    .pager-page { color: var(--muted); font-size: .78rem; white-space: nowrap; }
+
+    /* ---------- Squelettes de chargement ----------
+       Rien ne doit jamais être un écran vide : chaque bloc affiche la forme de
+       ce qui va le remplacer, avec une lueur lente qui dit « ça arrive ». */
+    .skel {
+      display: inline-block; height: 11px; border-radius: 6px; vertical-align: middle;
+      background: linear-gradient(90deg, var(--panel-2) 25%, var(--panel-3) 37%, var(--panel-2) 63%);
+      background-size: 400% 100%; animation: shimmer 1.5s ease infinite;
+    }
+    .skel-num { width: 58px; height: 22px; border-radius: 7px; }
+    .skel-bar { height: 10px; }
+    .skel-card {
+      display: flex; flex-direction: column; gap: 9px; background: var(--panel-2);
+      border: 1px solid var(--line-soft); border-radius: var(--radius-sm); padding: 14px 15px;
+    }
+    .skel-card .skel { width: 100%; }
+    .skel-row td { padding: 13px 14px; border-bottom: 1px solid var(--line-soft); }
+    @keyframes shimmer { 0% { background-position: 100% 0; } 100% { background-position: -100% 0; } }
+
+    /* ---------- Entrée échelonnée des lignes ----------
+       Décalage volontairement plafonné : au-delà d'une douzaine de lignes,
+       attendre son tour devient une gêne, pas une élégance. */
+    .row-in { animation: rowIn .34s var(--ease) both; }
+    @keyframes rowIn { from { opacity: 0; transform: translateY(7px); } to { opacity: 1; transform: none; } }
+
+    /* ---------- Rotation / indicateur d'occupation ---------- */
     .spinner {
-      width: 13px; height: 13px; border-radius: 50%; flex: none;
-      border: 2px solid rgba(255,255,255,.35); border-top-color: #fff;
+      width: 13px; height: 13px; border-radius: 50%; flex: none; display: inline-block;
+      border: 2px solid rgba(255, 255, 255, .32); border-top-color: #fff;
       animation: spin .7s linear infinite;
     }
+    .spinner-sm { width: 11px; height: 11px; border-width: 2px; }
     @keyframes spin { to { transform: rotate(360deg); } }
-    @media (prefers-reduced-motion: reduce) { .spinner { animation-duration: 1.6s; } }
 
-    @media (max-width: 640px) {
-      body { padding: 16px 12px 48px; }
-      .grid { grid-template-columns: 1fr; }
-      header { align-items: flex-start; }
-      .item .top { flex-direction: column; align-items: flex-start; gap: 4px; }
+    /* ---------- Notifications ---------- */
+    .toasts {
+      position: fixed; right: 18px; bottom: 18px; z-index: 70; display: flex; flex-direction: column;
+      gap: 10px; width: min(420px, calc(100vw - 36px));
+    }
+    .toast {
+      display: flex; align-items: flex-start; gap: 10px; padding: 12px 12px 12px 14px;
+      background: var(--panel-2); border: 1px solid var(--line); border-left: 3px solid var(--accent);
+      border-radius: var(--radius-sm); box-shadow: 0 18px 40px -22px #000;
+      animation: toastIn .26s var(--ease) both;
+    }
+    .toast.leaving { animation: toastOut .18s ease forwards; }
+    .toast-good { border-left-color: var(--ok); }
+    .toast-err { border-left-color: var(--bad); }
+    .toast-warn { border-left-color: var(--warn); }
+    .toast-body { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+    .toast-title { font-size: .76rem; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
+    .toast-good .toast-title { color: var(--ok); }
+    .toast-err .toast-title { color: var(--bad); }
+    .toast-warn .toast-title { color: var(--warn); }
+    .toast-text { font-size: .85rem; word-break: break-word; }
+    .toast-close {
+      margin-left: auto; flex: none; background: transparent; border: 0; color: var(--muted);
+      font-size: 1.1rem; line-height: 1; cursor: pointer; padding: 0 4px; border-radius: 5px;
+    }
+    .toast-close:hover { color: #fff; background: var(--panel-3); }
+    @keyframes toastIn { from { opacity: 0; transform: translateY(10px) scale(.98); } to { opacity: 1; transform: none; } }
+    @keyframes toastOut { to { opacity: 0; transform: translateX(14px); } }
+
+    /* ---------- Étapes de génération ----------
+       La génération IA dure ~7 s (deux appels au modèle). Un rond qui tourne ne
+       dit rien ; ces étapes nomment ce qui se passe réellement et avancent avec
+       la requête. */
+    .stepper-box { margin-top: 14px; background: var(--panel-2); border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 14px 16px; }
+    .stepper-title { font-size: .84rem; font-weight: 600; margin: 0 0 10px; display: flex; align-items: center; gap: 8px; }
+    .stepper-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+    .step { display: flex; align-items: flex-start; gap: 10px; opacity: .5; transition: opacity .3s var(--ease); }
+    .step-dot {
+      width: 12px; height: 12px; border-radius: 50%; flex: none; margin-top: 4px;
+      border: 2px solid var(--line); background: var(--panel); position: relative;
+      transition: background .25s, border-color .25s;
+    }
+    .step.active { opacity: 1; }
+    .step.active .step-dot { border-color: var(--accent); background: var(--accent); animation: stepPulse 1.4s ease-in-out infinite; }
+    .step.done { opacity: .95; }
+    .step.done .step-dot { border-color: var(--ok); background: var(--ok); animation: none; }
+    .step.done .step-dot::after {
+      content: ''; position: absolute; left: 2px; top: -1px; width: 4px; height: 7px;
+      border-right: 2px solid #0b0e14; border-bottom: 2px solid #0b0e14; transform: rotate(42deg);
+    }
+    .step-label { font-size: .85rem; }
+    .step-note { color: var(--muted-2); font-size: .75rem; }
+    .stepper-track { height: 4px; border-radius: 4px; background: var(--panel-3); margin-top: 12px; overflow: hidden; }
+    .stepper-track span { display: block; height: 100%; width: 0; background: linear-gradient(90deg, var(--accent), var(--ok)); transition: width .5s var(--ease); }
+    @keyframes stepPulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(76, 141, 255, .45); } 50% { box-shadow: 0 0 0 5px rgba(76, 141, 255, 0); } }
+
+    /* ---------- Adaptation mobile ---------- */
+    @media (max-width: 700px) {
+      .sidebar {
+        transform: translateX(-100%); transition: transform .26s var(--ease);
+        box-shadow: 0 0 60px -10px #000; width: min(84vw, 290px);
+      }
+      .app.nav-open .sidebar { transform: none; }
+      .app.nav-open .nav-scrim { opacity: 1; pointer-events: auto; }
+      .main { margin-left: 0; }
+      .menu-toggle { display: inline-flex; }
+      .content { padding: 16px 13px 64px; }
+      .topbar { padding: 10px 13px; }
+      .topbar h1 { font-size: 1rem; }
+      .kpi-grid { grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); }
+      .kpi-value { font-size: 1.4rem; }
+      .grid-2, .grid-3 { grid-template-columns: 1fr; }
+      .toasts { right: 10px; left: 10px; bottom: 10px; width: auto; }
+      .table-scroll { overflow: visible; }
+      .table thead { display: none; }
+      .table, .table tbody, .table tr, .table td { display: block; width: 100%; }
+      .table tbody tr {
+        border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--panel-2);
+        margin: 10px; padding: 4px 0; width: calc(100% - 20px);
+      }
+      .table tbody tr:hover { background: var(--panel-2); }
+      .table tbody td { border: 0; padding: 7px 13px; display: flex; gap: 12px; }
+      .table tbody td::before {
+        content: attr(data-label); flex: 0 0 40%; color: var(--muted-2);
+        font-size: .7rem; text-transform: uppercase; letter-spacing: .06em; padding-top: 2px;
+      }
+      .table tbody td.cell-actions { flex-direction: column; min-width: 0; }
+      .table tbody td.cell-actions::before { flex: none; }
+      .table tbody td.num { text-align: left; }
+      .table-empty td { display: block; }
+      .table-empty td::before { content: none; }
       .kv { flex-direction: column; gap: 2px; }
       .kv span:last-child { text-align: left; }
+    }
+
+    /* ---------- Mouvement réduit ----------
+       Tout ce qui bouge ci-dessus devient instantané. Le rond d'occupation perd
+       sa rotation mais reste visible (un anneau net), pour ne pas supprimer
+       l'information « une requête est en vol ». */
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after {
+        animation-duration: .001ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: .001ms !important;
+        scroll-behavior: auto !important;
+      }
+      .spinner { animation: none !important; border-color: rgba(255, 255, 255, .35); border-top-color: #fff; }
+      .skel { animation: none !important; background: var(--panel-3); }
+      .spark-line { stroke-dashoffset: 0 !important; }
+      .view.active.view-enter { animation: none !important; }
     }
   </style>
 </head>
 <body>
-<div class="wrap">
-  <header>
-    <div>
-      <h1>Megalomarket — AI Core</h1>
-      <p>Hub de synchronisation omnicanale et de décision IA.</p>
-    </div>
-    <button class="ghost" id="btnRefresh">Tout recharger</button>
-  </header>
+<div class="app" id="app">
+  <div class="nav-scrim" id="navScrim" aria-hidden="true"></div>
 
-  <!-- État de la configuration : présent en permanence, avant toute action. -->
-  <section id="configBanner" class="banner" aria-live="polite">
-    <div class="banner-head"><span class="banner-icon">…</span><strong>Vérification de la configuration…</strong></div>
-  </section>
-
-  <div id="status"></div>
-
-  <div class="grid">
-    <!-- ============ IMPORT ============ -->
-    <div class="card">
-      <h2>Importer un produit par lien</h2>
-      <p class="hint">Colle une URL fournisseur (AliExpress, Alibaba…). L'extraction puis la génération des fiches se font en deux étapes distinctes, pour que tu voies ce qui a été récupéré avant qu'une IA ne rédige quoi que ce soit.</p>
-      <label for="importUrl">URL du produit fournisseur</label>
-      <input type="text" id="importUrl" placeholder="https://www.aliexpress.com/item/....html" autocomplete="off">
-      <div class="row">
-        <button id="btnExtract">1. Extraire la fiche</button>
-        <button class="ghost" id="btnGenerate" disabled>2. Générer les fiches IA</button>
+  <aside class="sidebar" id="sidebar">
+    <div class="brand">
+      <div class="brand-mark" aria-hidden="true">M</div>
+      <div class="brand-text">
+        <span class="brand-name">Megalomarket</span>
+        <span class="brand-sub">AI Core</span>
       </div>
-      <p class="ai-note" data-ai-note hidden>Génération IA désactivée : aucun fournisseur IA n'est configuré (voir le bandeau ci-dessus). L'extraction, elle, reste disponible.</p>
+    </div>
+    <nav class="nav" id="sidebarNav" aria-label="Navigation principale">
+      <span class="nav-label">Pilotage</span>
+      <a class="nav-item" href="#/dashboard" data-view="dashboard">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.5 3.5h7v7h-7zM13.5 3.5h7v7h-7zM3.5 13.5h7v7h-7zM13.5 13.5h7v7h-7z"/></svg>
+        Tableau de bord
+      </a>
+      <a class="nav-item" href="#/imports" data-view="imports">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12m0 0 4.2-4.2M12 15l-4.2-4.2M4 20h16"/></svg>
+        Imports
+      </a>
+      <a class="nav-item" href="#/produits" data-view="produits">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 8 12 3 3 8v8l9 5 9-5V8Z"/><path d="m3 8 9 5 9-5M12 13v8"/></svg>
+        Produits
+      </a>
+      <span class="nav-label">Exploitation</span>
+      <a class="nav-item" href="#/canaux" data-view="canaux">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="6" cy="12" r="2.6"/><circle cx="18" cy="5.5" r="2.6"/><circle cx="18" cy="18.5" r="2.6"/><path d="m8.3 10.8 7.4-3.9m0 10.2-7.4-3.9"/></svg>
+        Canaux
+      </a>
+      <a class="nav-item" href="#/journal" data-view="journal">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 5.5h16M4 12h16M4 18.5h10"/></svg>
+        Journal
+      </a>
+      <a class="nav-item" href="#/support" data-view="support">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.5 12a8 8 0 0 1-8 8H8.2L4 23v-6.6A8 8 0 0 1 12 4h.5a8 8 0 0 1 8 8Z"/></svg>
+        Support
+      </a>
+    </nav>
+    <div class="sidebar-foot">
+      Back-office omnicanal.<br>
+      Aucune page de connexion : le navigateur présente la clé du service.
+    </div>
+  </aside>
 
-      <!-- Prix d'achat : c'est LA donnée qui rend le prix conseillé exploitable.
-           S'il vaut 0, le scraper n'a rien lu et les fiches générées sont
-           invendables — on l'affiche en clair et on permet de le corriger sans
-           recréer l'import. -->
-      <div id="importPriceBlock" style="display:none">
-        <div id="importPriceWarning" class="price-warning" role="alert" hidden></div>
-        <div class="row">
-          <div style="flex:1 1 150px">
-            <label for="importPrice">Prix d'achat</label>
-            <input type="number" id="importPrice" step="0.01" min="0.01" placeholder="4.90">
+  <div class="main">
+    <header class="topbar">
+      <button class="btn btn-ghost btn-sm menu-toggle" id="btnMenu" type="button" aria-expanded="false" aria-controls="sidebar">
+        <span aria-hidden="true">☰</span> Menu
+      </button>
+      <div class="topbar-title">
+        <h1 id="viewTitle">Tableau de bord</h1>
+        <span class="topbar-sub">Hub de synchronisation omnicanale et de décision IA</span>
+      </div>
+      <div class="topbar-right">
+        <span class="inflight" id="loadingIndicator" hidden></span>
+        <span class="pill off" id="configPill">Configuration…</span>
+        <button class="btn btn-ghost btn-sm" id="btnRefresh" type="button">Rafraîchir</button>
+      </div>
+    </header>
+
+    <main class="content">
+      <!-- État de la configuration : présent en permanence, avant toute action. -->
+      <section id="configBanner" class="banner" aria-live="polite">
+        <div class="banner-head"><span class="banner-icon">…</span><strong>Vérification de la configuration…</strong></div>
+      </section>
+
+      <!-- Emplacement inline des erreurs bloquantes, en plus des toasts. -->
+      <div id="status" role="alert" hidden></div>
+
+      <!-- ==================== VUE : TABLEAU DE BORD ==================== -->
+      <section class="view active" id="view-dashboard" data-view="dashboard">
+        <div class="kpi-grid">
+          <div class="kpi">
+            <span class="kpi-label">Produits</span>
+            <span class="kpi-value" id="kpiProduits"><span class="skel skel-num"></span></span>
+            <span class="kpi-hint" id="kpiProduitsHint">catalogue interne</span>
           </div>
-          <div style="flex:0 1 120px">
-            <label for="importCurrency">Devise</label>
-            <input type="text" id="importCurrency" maxlength="3" placeholder="USD" autocomplete="off">
+          <div class="kpi">
+            <span class="kpi-label">Imports</span>
+            <span class="kpi-value" id="kpiImports"><span class="skel skel-num"></span></span>
+            <span class="kpi-hint" id="kpiImportsHint">extractions</span>
+          </div>
+          <div class="kpi">
+            <span class="kpi-label">Fiches générées</span>
+            <span class="kpi-value" id="kpiFiches"><span class="skel skel-num"></span></span>
+            <span class="kpi-hint" id="kpiFichesHint">toutes marketplaces</span>
+          </div>
+          <div class="kpi">
+            <span class="kpi-label">Fiches publiées</span>
+            <span class="kpi-value" id="kpiPubliees"><span class="skel skel-num"></span></span>
+            <span class="kpi-hint" id="kpiPublieesHint">envoyées pour de bon</span>
+          </div>
+          <div class="kpi">
+            <span class="kpi-label">Canaux configurés</span>
+            <span class="kpi-value" id="kpiCanaux"><span class="skel skel-num"></span></span>
+            <span class="kpi-hint" id="kpiCanauxHint">sur les canaux connus</span>
+          </div>
+          <div class="kpi">
+            <span class="kpi-label">Entrées de journal</span>
+            <span class="kpi-value" id="kpiJournal"><span class="skel skel-num"></span></span>
+            <span class="kpi-hint" id="kpiJournalHint">100 dernières</span>
           </div>
         </div>
-        <div class="row">
-          <button class="tiny" id="btnSavePurchasePrice">Enregistrer le prix d'achat</button>
+
+        <div class="grid grid-3">
+          <div class="card">
+            <div class="card-head">
+              <div>
+                <h2>Volume d'activité — 7 jours</h2>
+                <p class="hint hint-tight">Entrées du journal par jour, calculées à partir de <code>/api/activity</code>.</p>
+              </div>
+            </div>
+            <svg class="spark" id="sparkline" viewBox="0 0 260 74" preserveAspectRatio="none" role="img" aria-label="Volume d'activité des sept derniers jours">
+              <defs>
+                <linearGradient id="sparkGrad" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stop-color="#4c8dff" stop-opacity=".55"></stop>
+                  <stop offset="100%" stop-color="#4c8dff" stop-opacity="0"></stop>
+                </linearGradient>
+              </defs>
+            </svg>
+            <div class="spark-legend" id="sparkLabels"></div>
+            <div class="spark-stats">
+              <div class="spark-stat"><b class="num" id="sparkTotal">0</b><span>entrées sur 7 jours</span></div>
+              <div class="spark-stat"><b class="num" id="sparkPeak">0</b><span>pic quotidien</span></div>
+            </div>
+          </div>
+
+          <div class="card">
+            <h2>Imports récents</h2>
+            <p class="hint hint-tight">Les cinq derniers produits extraits. <a href="#/imports">Voir la file d'imports.</a></p>
+            <div class="mini-list" id="dashImports"><div class="skel-card"><span class="skel skel-bar" style="width:60%"></span><span class="skel skel-bar" style="width:35%"></span></div></div>
+          </div>
+
+          <div class="card">
+            <h2>Derniers événements</h2>
+            <p class="hint hint-tight">Ce que le hub a fait, dans l'ordre. <a href="#/journal">Ouvrir le journal.</a></p>
+            <div class="mini-list" id="dashActivity"><div class="skel-card"><span class="skel skel-bar" style="width:70%"></span><span class="skel skel-bar" style="width:45%"></span></div></div>
+          </div>
         </div>
-      </div>
+      </section>
 
-      <details id="importDetail" style="display:none">
-        <summary>Détail de l'import</summary>
-        <div id="importBody" class="pre" style="margin-top:8px"></div>
-      </details>
-    </div>
+      <!-- ==================== VUE : IMPORTS ==================== -->
+      <section class="view" id="view-imports" data-view="imports" hidden>
+        <div class="card">
+          <h2>Importer un produit par lien</h2>
+          <p class="hint">Colle une URL fournisseur (AliExpress, Alibaba…). L'extraction puis la génération des fiches se font en deux étapes distinctes, pour que tu voies ce qui a été récupéré avant qu'une IA ne rédige quoi que ce soit.</p>
+          <label for="importUrl">URL du produit fournisseur</label>
+          <input type="text" id="importUrl" placeholder="https://www.aliexpress.com/item/....html" autocomplete="off">
+          <div class="row row-actions">
+            <button class="btn" id="btnExtract" type="button">1. Extraire la fiche</button>
+            <button class="btn ghost" id="btnGenerate" type="button" disabled>2. Générer les fiches IA</button>
+          </div>
+          <p class="ai-note" data-ai-note hidden>Génération IA désactivée : aucun fournisseur IA n'est configuré (voir le bandeau ci-dessus). L'extraction, elle, reste disponible.</p>
 
-    <!-- ============ CANAUX ============ -->
-    <div class="card">
-      <h2>Canaux</h2>
-      <p class="hint">Un canal non configuré est ignoré par les synchronisations — il ne fait jamais échouer les autres.</p>
-      <div class="list" id="channels"></div>
-      <div class="row">
-        <button class="ghost tiny" id="btnSyncStock">Synchroniser le stock</button>
-        <button class="ghost tiny" id="btnSyncOrders">Synchroniser les commandes</button>
-      </div>
-    </div>
+          <!-- Étapes réelles de la génération : deux appels au modèle (~7 s) puis
+               un calcul local. On les nomme au lieu d'afficher un rond qui tourne. -->
+          <div class="stepper-box" id="genStepper" hidden>
+            <p class="stepper-title"><span class="spinner" aria-hidden="true"></span><span id="genStepperTitle">Génération en cours…</span></p>
+            <ol class="stepper-list" id="genSteps"></ol>
+            <div class="stepper-track"><span id="genStepperBar"></span></div>
+          </div>
 
-    <!-- ============ SUPPORT ============ -->
-    <div class="card">
-      <h2>Qualifier un message client</h2>
-      <p class="hint">L'IA propose une catégorie, une urgence et une réponse. Elle ne décide jamais d'un remboursement.</p>
-      <label for="supportMsg">Message du client</label>
-      <textarea id="supportMsg" rows="4" placeholder="Bonjour, ma commande n'est toujours pas arrivée..."></textarea>
-      <div class="row"><button id="btnQualify" data-needs-ai disabled>Qualifier</button></div>
-      <p class="ai-note" data-ai-note hidden>Qualification IA désactivée : configure un fournisseur IA (bandeau ci-dessus) pour l'activer.</p>
-      <div id="supportResult" class="pre" style="margin-top:10px"></div>
-    </div>
-  </div>
+          <!-- Prix d'achat : c'est LA donnée qui rend le prix conseillé exploitable.
+               S'il vaut 0, le scraper n'a rien lu et les fiches générées sont
+               invendables — on l'affiche en clair et on permet de le corriger sans
+               recréer l'import. -->
+          <div id="importPriceBlock" style="display:none">
+            <div id="importPriceWarning" class="price-warning" role="alert" hidden></div>
+            <div class="field-grid" style="margin-top:6px">
+              <div class="field">
+                <label for="importPrice">Prix d'achat</label>
+                <input type="number" id="importPrice" step="0.01" min="0.01" placeholder="4.90">
+              </div>
+              <div class="field">
+                <label for="importCurrency">Devise</label>
+                <input type="text" id="importCurrency" maxlength="3" placeholder="USD" autocomplete="off">
+              </div>
+            </div>
+            <div class="row row-actions">
+              <button class="btn btn-sm" id="btnSavePurchasePrice" type="button">Enregistrer le prix d'achat</button>
+            </div>
+          </div>
 
-  <!-- ============ FICHES DE L'IMPORT COURANT ============ -->
-  <div class="card" id="listingsCard" style="display:none">
-    <h2>Fiches générées pour l'import</h2>
-    <p class="hint">Corrige ce qui doit l'être, puis publie. La publication envoie réellement sur le canal — sur eBay comme sur ton site.</p>
-    <div id="listings" class="list"></div>
-  </div>
+          <details id="importDetail" style="display:none">
+            <summary>Détail de l'extraction</summary>
+            <div id="importBody" class="pre" style="margin-top:8px"></div>
+          </details>
+        </div>
 
-  <div class="grid">
-    <!-- ============ PRODUITS ============ -->
-    <div class="card">
-      <h2>Produits internes</h2>
-      <p class="hint">Le catalogue de référence du hub. Les prix suggérés par l'IA partent de son prix de revient.</p>
-      <label for="pSku">SKU</label>
-      <input type="text" id="pSku" placeholder="JOUET-001" autocomplete="off">
-      <label for="pName">Nom</label>
-      <input type="text" id="pName" placeholder="Peluche renard" autocomplete="off">
-      <label for="pCost">Prix de revient (€)</label>
-      <input type="number" id="pCost" step="0.01" min="0" placeholder="8.50">
-      <div class="row"><button id="btnCreateProduct">Créer le produit</button></div>
-      <p class="ai-note" data-ai-note hidden>« Suggérer un prix » et « Générer une description » sont désactivés tant qu'aucun fournisseur IA n'est configuré. La création de produit et l'envoi d'un prix restent disponibles.</p>
-      <div class="list" id="products"></div>
-    </div>
+        <!-- Fiches de l'import courant : édition par marketplace puis publication. -->
+        <div class="card" id="listingsCard" style="display:none">
+          <h2>Fiches générées pour l'import</h2>
+          <p class="hint">Corrige ce qui doit l'être, puis publie. La publication envoie réellement sur le canal — sur eBay comme sur ton site.</p>
+          <div class="list" id="listings"></div>
+        </div>
 
-    <!-- ============ RECOMMANDATIONS ============ -->
-    <div class="card">
-      <h2>Recommandations en attente</h2>
-      <p class="hint">Toute suggestion sous le prix de revient est rejetée avant d'arriver ici. « Appliquer » un prix l'envoie réellement au canal.</p>
-      <div class="list" id="recommendations"></div>
-    </div>
-  </div>
+        <div class="card table-card">
+          <div class="table-tools">
+            <h2>Imports récents</h2>
+            <input class="input table-filter" type="search" id="importsFilter" placeholder="Filtrer par titre, site, statut…" autocomplete="off" aria-label="Filtrer les imports">
+          </div>
+          <div class="table-scroll">
+            <table class="table">
+              <thead id="importsHead">
+                <tr>
+                  <th data-sort="title">Titre</th>
+                  <th data-sort="source_site">Site</th>
+                  <th data-sort="status">Statut</th>
+                  <th data-sort="purchase_price">Prix d'achat</th>
+                  <th data-sort="listings">Fiches</th>
+                  <th data-sort="created_at">Créé le</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="imports">
+                <tr class="skel-row"><td colspan="7"><span class="skel skel-bar" style="width:55%"></span></td></tr>
+                <tr class="skel-row"><td colspan="7"><span class="skel skel-bar" style="width:72%"></span></td></tr>
+                <tr class="skel-row"><td colspan="7"><span class="skel skel-bar" style="width:41%"></span></td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="table-foot" id="importsPager"></div>
+        </div>
+      </section>
 
-  <div class="grid">
-    <!-- ============ IMPORTS ============ -->
-    <div class="card">
-      <h2>Imports récents</h2>
-      <div class="list" id="imports"></div>
-    </div>
+      <!-- ==================== VUE : PRODUITS ==================== -->
+      <section class="view" id="view-produits" data-view="produits" hidden>
+        <div class="grid grid-2">
+          <div class="card">
+            <h2>Créer un produit</h2>
+            <p class="hint">Le catalogue de référence du hub. Les prix suggérés par l'IA partent de son prix de revient.</p>
+            <label for="pSku">SKU</label>
+            <input type="text" id="pSku" placeholder="JOUET-001" autocomplete="off">
+            <label for="pName">Nom</label>
+            <input type="text" id="pName" placeholder="Peluche renard" autocomplete="off">
+            <label for="pCost">Prix de revient (€)</label>
+            <input type="number" id="pCost" step="0.01" min="0" placeholder="8.50">
+            <div class="row row-actions"><button class="btn" id="btnCreateProduct" type="button">Créer le produit</button></div>
+            <p class="ai-note" data-ai-note hidden>« Suggérer un prix » et « Générer une description » sont désactivés tant qu'aucun fournisseur IA n'est configuré. La création de produit et l'envoi d'un prix restent disponibles.</p>
+          </div>
 
-    <!-- ============ ACTIVITE ============ -->
-    <div class="card">
-      <h2>Journal d'activité</h2>
-      <div class="list" id="activity"></div>
-    </div>
+          <div class="card">
+            <h2>Recommandations en attente</h2>
+            <p class="hint">Toute suggestion sous le prix de revient est rejetée avant d'arriver ici. « Appliquer » un prix l'envoie réellement au canal.</p>
+            <div class="list" id="recommendations"><div class="skel-card"><span class="skel skel-bar" style="width:58%"></span><span class="skel skel-bar" style="width:80%"></span></div></div>
+          </div>
+        </div>
+
+        <div class="card table-card">
+          <div class="table-tools">
+            <h2>Catalogue interne</h2>
+            <input class="input table-filter" type="search" id="productsFilter" placeholder="Filtrer par nom ou SKU…" autocomplete="off" aria-label="Filtrer les produits">
+          </div>
+          <div class="table-scroll">
+            <table class="table">
+              <thead id="productsHead">
+                <tr>
+                  <th data-sort="name">Produit</th>
+                  <th data-sort="sku">SKU</th>
+                  <th data-sort="cost_price">Prix de revient</th>
+                  <th>Fiches canaux</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="products">
+                <tr class="skel-row"><td colspan="5"><span class="skel skel-bar" style="width:48%"></span></td></tr>
+                <tr class="skel-row"><td colspan="5"><span class="skel skel-bar" style="width:66%"></span></td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="table-foot" id="productsPager"></div>
+        </div>
+      </section>
+
+      <!-- ==================== VUE : CANAUX ==================== -->
+      <section class="view" id="view-canaux" data-view="canaux" hidden>
+        <div class="card">
+          <h2>Canaux</h2>
+          <p class="hint">Un canal non configuré est ignoré par les synchronisations — il ne fait jamais échouer les autres.</p>
+          <div class="list" id="channels"><div class="skel-card"><span class="skel skel-bar" style="width:50%"></span><span class="skel skel-bar" style="width:30%"></span></div></div>
+          <div class="row row-actions">
+            <button class="btn ghost btn-sm" id="btnSyncStock" type="button">Synchroniser le stock</button>
+            <button class="btn ghost btn-sm" id="btnSyncOrders" type="button">Synchroniser les commandes</button>
+          </div>
+          <p class="hint hint-tight" style="margin-top:10px">Chaque synchronisation rapporte ses erreurs canal par canal : un succès partiel ne doit jamais passer pour un succès complet.</p>
+        </div>
+      </section>
+
+      <!-- ==================== VUE : JOURNAL ==================== -->
+      <section class="view" id="view-journal" data-view="journal" hidden>
+        <div class="card table-card">
+          <div class="table-tools">
+            <h2>Journal d'activité</h2>
+            <input class="input table-filter" type="search" id="activityFilter" placeholder="Filtrer par type ou message…" autocomplete="off" aria-label="Filtrer le journal">
+          </div>
+          <div class="table-scroll">
+            <table class="table">
+              <thead id="activityHead">
+                <tr>
+                  <th data-sort="created_at">Date</th>
+                  <th data-sort="kind">Type</th>
+                  <th data-sort="message">Message</th>
+                </tr>
+              </thead>
+              <tbody id="activity">
+                <tr class="skel-row"><td colspan="3"><span class="skel skel-bar" style="width:62%"></span></td></tr>
+                <tr class="skel-row"><td colspan="3"><span class="skel skel-bar" style="width:44%"></span></td></tr>
+                <tr class="skel-row"><td colspan="3"><span class="skel skel-bar" style="width:70%"></span></td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="table-foot" id="activityPager"></div>
+        </div>
+      </section>
+
+      <!-- ==================== VUE : SUPPORT ==================== -->
+      <section class="view" id="view-support" data-view="support" hidden>
+        <div class="card">
+          <h2>Qualifier un message client</h2>
+          <p class="hint">L'IA propose une catégorie, une urgence et une réponse. Elle ne décide jamais d'un remboursement.</p>
+          <label for="supportMsg">Message du client</label>
+          <textarea id="supportMsg" rows="4" placeholder="Bonjour, ma commande n'est toujours pas arrivée..."></textarea>
+          <div class="row row-actions"><button class="btn" id="btnQualify" type="button" data-needs-ai disabled>Qualifier</button></div>
+          <p class="ai-note" data-ai-note hidden>Qualification IA désactivée : configure un fournisseur IA (bandeau ci-dessus) pour l'activer.</p>
+          <div id="supportResult" class="pre" style="margin-top:12px"></div>
+        </div>
+      </section>
+    </main>
   </div>
 </div>
+
+<div class="toasts" id="toasts" aria-live="polite"></div>
+<noscript><p style="padding:18px">Ce tableau de bord a besoin de JavaScript : le service est protégé par une clé et toutes les données passent par l'API.</p></noscript>
 
 <script>
 /* ===================== SOCLE ===================== */
@@ -268,36 +845,202 @@ function esc(value) {
   ));
 }
 
-/* État partagé : la configuration connue (donc si l'IA est utilisable) et
-   l'import courant. Tant que /api/config n'a pas répondu, `aiReady` reste faux :
-   en cas de panne de la route, les actions IA restent bloquées plutôt que
-   d'échouer une par une. */
-const state = { config: null, aiReady: false, importId: null };
+/* État partagé : la configuration connue (donc si l'IA est utilisable), l'import
+   courant, et les données déjà chargées. Ces dernières servent au tableau de bord
+   et aux compteurs animés : ils n'inventent rien, ils agrègent ce que les routes
+   existantes renvoient déjà. */
+const state = {
+  config: null,
+  aiReady: false,
+  importId: null,
+  listingsOpen: false,
+  products: [],
+  imports: [],
+  activity: [],
+  channels: [],
+  recommendations: [],
+  importDetails: new Map(),
+  detailsTruncated: false,
+  inflight: 0,
+};
 
-function say(message, kind = 'info') {
-  const box = $('status');
-  box.className = 'show ' + kind;
-  box.textContent = message;
+/* ===================== MOUVEMENT =====================
+   Le mouvement doit servir la lecture : il indique d'où vient un contenu et
+   qu'une action est en cours. Jamais de mouvement purement décoratif — et rien
+   du tout quand le système demande explicitement à en être dispensé. */
+let reducedMotion = false;
+function readReducedMotion() {
+  if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return false;
+  return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+}
+reducedMotion = readReducedMotion();
+function motionOK() { return !reducedMotion; }
+
+/* requestAnimationFrame n'existe pas dans les DOM de test : on retombe sur
+   setTimeout plutôt que de planter. */
+const raf = (fn) => (typeof requestAnimationFrame === 'function'
+  ? requestAnimationFrame(fn)
+  : setTimeout(() => fn(Date.now()), 16));
+
+function formatInt(value) {
+  const n = Number(value) || 0;
+  return n.toLocaleString('fr-FR');
 }
 
-function clearStatus() { $('status').className = ''; }
+/* Compteur animé : la première peinture part de 0, puis chaque changement de
+   valeur s'anime depuis la valeur affichée. Le jeton empêche deux animations
+   concurrentes de se marcher dessus sur le même nœud. */
+function animateCount(el, value) {
+  if (!el) return;
+  const target = Number(value) || 0;
+  const from = Number(el.dataset.count || 0);
+  el.dataset.count = String(target);
+  if (!motionOK() || from === target) {
+    el.textContent = formatInt(target);
+    return;
+  }
+  const token = (el.__countToken || 0) + 1;
+  el.__countToken = token;
+  const start = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+  const duration = 560;
+  const tick = (now) => {
+    if (el.__countToken !== token) return;
+    const t = Math.min(1, (now - start) / duration);
+    const eased = 1 - Math.pow(1 - t, 3);
+    el.textContent = formatInt(Math.round(from + (target - from) * eased));
+    if (t < 1) raf(tick);
+  };
+  raf(tick);
+}
 
+/* Entrée échelonnée : quelques millisecondes entre les lignes, plafonnées pour
+   qu'une longue liste ne se transforme pas en chenille. */
+function stagger(container, selector = '.row-in') {
+  if (!container || typeof container.querySelectorAll !== 'function') return;
+  const rows = container.querySelectorAll(selector);
+  if (!rows || !rows.length) return;
+  rows.forEach((el, i) => {
+    if (el.style) el.style.animationDelay = Math.min(i * 22, 260) + 'ms';
+  });
+}
+
+/* Rejoue l'entrée échelonnée à chaque changement de vue : le contenu « arrive »
+   de nouveau, ce qui rend le changement d'écran lisible. */
+function replayStagger(container) {
+  if (!motionOK() || !container || typeof container.querySelectorAll !== 'function') return;
+  const rows = container.querySelectorAll('.row-in');
+  if (!rows || !rows.length) return;
+  rows.forEach((el) => { if (el.style) el.style.animation = 'none'; });
+  if (typeof container.offsetWidth !== 'undefined') void container.offsetWidth;
+  rows.forEach((el, i) => {
+    if (!el.style) return;
+    el.style.animation = '';
+    el.style.animationDelay = Math.min(i * 22, 260) + 'ms';
+  });
+}
+
+/* ===================== NOTIFICATIONS =====================
+   Une réussite s'efface, une erreur non : une erreur qui disparaît avant d'être
+   lue est une erreur qui sera reproduite. Le bandeau inline (#status) double les
+   erreurs bloquantes, car un toast se ferme d'un clic distrait. */
+const TOAST_TITLES = { good: 'Succès', err: 'Erreur', info: 'Information', warn: 'Attention' };
+
+function toast(message, kind = 'info') {
+  const host = $('toasts');
+  if (!host) return null;
+  const node = document.createElement('div');
+  node.className = 'toast toast-' + kind;
+  node.setAttribute('role', kind === 'err' ? 'alert' : 'status');
+  const body = document.createElement('div');
+  body.className = 'toast-body';
+  const title = document.createElement('strong');
+  title.className = 'toast-title';
+  title.textContent = TOAST_TITLES[kind] || 'Information';
+  const text = document.createElement('span');
+  text.className = 'toast-text';
+  text.textContent = String(message ?? '');
+  body.append(title, text);
+  const close = document.createElement('button');
+  close.className = 'toast-close';
+  close.type = 'button';
+  close.setAttribute('aria-label', 'Fermer la notification');
+  close.textContent = '×';
+  close.addEventListener('click', () => dismissToast(node));
+  node.append(body, close);
+  host.append(node);
+  if (kind !== 'err') {
+    setTimeout(() => dismissToast(node), kind === 'good' ? 4200 : 6200);
+  }
+  return node;
+}
+
+function dismissToast(node) {
+  if (!node) return;
+  if (node.classList) node.classList.add('leaving');
+  setTimeout(() => { if (node.remove) node.remove(); }, motionOK() ? 200 : 0);
+}
+
+function showInlineError(message) {
+  const box = $('status');
+  if (!box) return;
+  box.className = 'show err';
+  // On retire aussi l'attribut : `hidden` est sémantique pour les lecteurs
+  // d'écran, la propriété seule ne suffit pas à le rendre lisible.
+  box.hidden = false;
+  if (box.removeAttribute) box.removeAttribute('hidden');
+  box.innerHTML = '<span class="status-icon" aria-hidden="true">!</span><span>' + esc(message) + '</span>';
+}
+
+function clearStatus() {
+  const box = $('status');
+  if (!box) return;
+  box.className = '';
+  box.hidden = true;
+  if (box.setAttribute) box.setAttribute('hidden', '');
+  box.innerHTML = '';
+}
+
+function say(message, kind = 'info') {
+  toast(message, kind);
+  if (kind === 'err') showInlineError(message);
+  else if (kind === 'good') clearStatus();
+}
+
+/* ===================== API ===================== */
 /* L'API renvoie { error } avec un code 4xx/5xx. On remonte toujours son message
    tel quel : les erreurs de ce projet sont écrites pour être lues. */
 async function api(path, options = {}) {
-  const response = await fetch(path, {
-    credentials: 'same-origin',
-    headers: { 'Content-Type': 'application/json' },
-    ...options,
-  });
-  const text = await response.text();
-  let body;
-  try { body = text ? JSON.parse(text) : null; } catch { body = text; }
-  if (!response.ok) {
-    const detail = body && body.error ? body.error : (typeof body === 'string' ? body : response.statusText);
-    throw new Error(detail + ' (HTTP ' + response.status + ')');
+  setInflight(1);
+  try {
+    const response = await fetch(path, {
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' },
+      ...options,
+    });
+    const text = await response.text();
+    let body;
+    try { body = text ? JSON.parse(text) : null; } catch { body = text; }
+    if (!response.ok) {
+      const detail = body && body.error ? body.error : (typeof body === 'string' ? body : response.statusText);
+      throw new Error(detail + ' (HTTP ' + response.status + ')');
+    }
+    return body;
+  } finally {
+    setInflight(-1);
   }
-  return body;
+}
+
+/* Compteur global de requêtes en vol : l'utilisateur voit que le hub travaille,
+   même quand l'attente est longue (génération IA). */
+function setInflight(delta) {
+  state.inflight = Math.max(0, state.inflight + delta);
+  const el = $('loadingIndicator');
+  if (!el) return;
+  el.hidden = state.inflight === 0;
+  el.innerHTML = state.inflight
+    ? '<span class="spinner spinner-sm" aria-hidden="true"></span>' + state.inflight
+      + ' chargement' + (state.inflight > 1 ? 's' : '') + ' en cours'
+    : '';
 }
 
 function money(value) {
@@ -360,7 +1103,176 @@ function confirmChannelWrite(question) {
   return window.confirm(question + '\n\nCette action est irréversible : elle modifie réellement le canal de vente.');
 }
 
+/* ===================== SQUELETTES ===================== */
+function skeletonRows(count, cols) {
+  let html = '';
+  for (let r = 0; r < count; r++) {
+    html += '<tr class="skel-row" aria-hidden="true">';
+    for (let c = 0; c < cols; c++) {
+      html += '<td><span class="skel skel-bar" style="width:' + (40 + ((r * 13 + c * 23) % 45)) + '%"></span></td>';
+    }
+    html += '</tr>';
+  }
+  return html;
+}
+
+function skeletonCards(count) {
+  let html = '';
+  for (let i = 0; i < count; i++) {
+    html += '<div class="skel-card" aria-hidden="true">'
+      + '<span class="skel skel-bar" style="width:52%"></span>'
+      + '<span class="skel skel-bar" style="width:78%"></span>'
+      + '<span class="skel skel-bar" style="width:34%"></span>'
+      + '</div>';
+  }
+  return html;
+}
+
+/* ===================== TABLES DE DONNÉES =====================
+   Même moteur pour les imports, les produits et le journal : tri par colonne,
+   filtre texte et pagination. La pagination (plutôt qu'un « charger plus ») est
+   un choix assumé : ces tables sont des espaces de travail où l'on compare et
+   où l'on revient à une ligne précise, et la page courante reste alors stable
+   au lieu de s'allonger indéfiniment. Le tri et le filtre sont purement locaux,
+   car l'API renvoie déjà l'ensemble des lignes. */
+function compareValues(a, b) {
+  const na = Number(a);
+  const nb = Number(b);
+  const aNum = a !== '' && a != null && Number.isFinite(na);
+  const bNum = b !== '' && b != null && Number.isFinite(nb);
+  if (aNum && bNum) return na - nb;
+  return String(a ?? '').localeCompare(String(b ?? ''), 'fr', { numeric: true, sensitivity: 'base' });
+}
+
+function createTable(spec) {
+  const table = {
+    rows: [],
+    sortKey: spec.defaultSort || null,
+    sortDir: spec.defaultDir || 'asc',
+    query: '',
+    page: 1,
+    pageSize: spec.pageSize || 10,
+    loaded: false,
+  };
+  const body = $(spec.body);
+  const head = spec.head ? $(spec.head) : null;
+  const filter = spec.filter ? $(spec.filter) : null;
+  const pager = spec.pager ? $(spec.pager) : null;
+  const columns = spec.columns || [];
+
+  const column = (key) => columns.find((c) => c.key === key);
+
+  function filteredRows() {
+    let rows = table.rows.slice();
+    const q = table.query.trim().toLowerCase();
+    if (q) rows = rows.filter((row) => String(spec.search(row) || '').toLowerCase().includes(q));
+    if (table.sortKey && column(table.sortKey)) {
+      const col = column(table.sortKey);
+      rows.sort((a, b) => compareValues(col.value(a), col.value(b)) * (table.sortDir === 'desc' ? -1 : 1));
+    }
+    return rows;
+  }
+
+  function renderHead() {
+    if (!head || typeof head.querySelectorAll !== 'function') return;
+    head.querySelectorAll('[data-sort]').forEach((th) => {
+      const active = th.dataset.sort === table.sortKey;
+      th.classList.toggle('sorted', active);
+      th.classList.toggle('desc', active && table.sortDir === 'desc');
+      th.setAttribute('aria-sort', active ? (table.sortDir === 'desc' ? 'descending' : 'ascending') : 'none');
+    });
+  }
+
+  function renderPager(total, pages) {
+    if (!pager) return;
+    if (!total) { pager.innerHTML = ''; return; }
+    const first = (table.page - 1) * table.pageSize + 1;
+    const last = Math.min(total, table.page * table.pageSize);
+    pager.innerHTML = '<span class="pager-info">' + first + '–' + last + ' sur ' + total + '</span>'
+      + '<span class="pager-nav">'
+      + '<button type="button" class="btn btn-ghost btn-xs" data-page="prev"' + (table.page <= 1 ? ' disabled' : '') + '>Précédent</button>'
+      + '<span class="pager-page">Page ' + table.page + ' / ' + pages + '</span>'
+      + '<button type="button" class="btn btn-ghost btn-xs" data-page="next"' + (table.page >= pages ? ' disabled' : '') + '>Suivant</button>'
+      + '</span>';
+  }
+
+  function render() {
+    if (!body) return;
+    if (!table.loaded) {
+      body.innerHTML = skeletonRows(spec.skeleton || 5, columns.length);
+      renderPager(0, 1);
+      return;
+    }
+    const rows = filteredRows();
+    const total = rows.length;
+    const pages = Math.max(1, Math.ceil(total / table.pageSize));
+    if (table.page > pages) table.page = pages;
+    const start = (table.page - 1) * table.pageSize;
+    const slice = rows.slice(start, start + table.pageSize);
+    if (!table.rows.length) {
+      body.innerHTML = '<tr class="table-empty"><td colspan="' + columns.length + '">' + esc(spec.empty || 'Aucune donnée.') + '</td></tr>';
+    } else if (!slice.length) {
+      body.innerHTML = '<tr class="table-empty"><td colspan="' + columns.length + '">Aucun résultat pour « ' + esc(table.query) + ' ».</td></tr>';
+    } else {
+      body.innerHTML = slice.map((row, i) => spec.row(row, start + i)).join('');
+      stagger(body);
+    }
+    renderHead();
+    renderPager(total, pages);
+  }
+
+  if (filter && typeof filter.addEventListener === 'function') {
+    filter.addEventListener('input', () => { table.query = filter.value || ''; table.page = 1; render(); });
+  }
+  if (head && typeof head.addEventListener === 'function') {
+    head.addEventListener('click', (event) => {
+      const th = event.target && event.target.closest ? event.target.closest('[data-sort]') : null;
+      if (!th) return;
+      const key = th.dataset.sort;
+      if (table.sortKey === key) table.sortDir = table.sortDir === 'asc' ? 'desc' : 'asc';
+      else { table.sortKey = key; table.sortDir = 'asc'; }
+      table.page = 1;
+      render();
+    });
+  }
+  if (pager && typeof pager.addEventListener === 'function') {
+    pager.addEventListener('click', (event) => {
+      const btn = event.target && event.target.closest ? event.target.closest('[data-page]') : null;
+      if (!btn || btn.disabled) return;
+      table.page += btn.dataset.page === 'next' ? 1 : -1;
+      render();
+    });
+  }
+
+  return {
+    setRows(rows) { table.rows = Array.isArray(rows) ? rows : []; table.loaded = true; render(); },
+    setLoading() { table.loaded = false; render(); },
+    render,
+    get rows() { return table.rows; },
+  };
+}
+
+/* Délégation d'action : les lignes sont recréées à chaque tri, filtre ou page,
+   donc on écoute le conteneur plutôt que de rattacher un écouteur par bouton. */
+function onAction(container, handlers) {
+  if (!container || typeof container.addEventListener !== 'function') return;
+  container.addEventListener('click', (event) => {
+    const target = event.target;
+    const button = target && target.closest ? target.closest('[data-action]') : null;
+    if (!button) return;
+    const handler = handlers[button.dataset.action];
+    if (handler) handler(button, event);
+  });
+}
+
 /* ===================== BANDEAU DE CONFIGURATION ===================== */
+function setConfigPill(kind, text) {
+  const pill = $('configPill');
+  if (!pill) return;
+  pill.className = 'pill ' + kind;
+  pill.textContent = text;
+}
+
 function configFacts(cfg) {
   const db = cfg.database || {};
   const facts = [];
@@ -401,6 +1313,7 @@ function renderBanner(cfg) {
     box.innerHTML =
       '<div class="banner-head"><span class="banner-icon">✓</span><strong>Tout est configuré.</strong></div>'
       + '<div class="banner-facts">' + facts + '</div>';
+    setConfigPill('ok', 'Configuration complète');
     return;
   }
 
@@ -415,6 +1328,7 @@ function renderBanner(cfg) {
     )).join('')
     + '</ul>'
     + '<div class="banner-facts">' + facts + '</div>';
+  setConfigPill('warn', missing.length + (missing.length > 1 ? ' réglages manquants' : ' réglage manquant'));
 }
 
 function renderBannerError(message) {
@@ -423,6 +1337,7 @@ function renderBannerError(message) {
   box.innerHTML =
     '<div class="banner-head"><span class="banner-icon">×</span><strong>Configuration illisible.</strong></div>'
     + '<p class="banner-sub">' + esc(message) + ' Les actions IA restent bloquées par prudence.</p>';
+  setConfigPill('bad', 'Configuration illisible');
 }
 
 async function loadConfig() {
@@ -453,6 +1368,7 @@ function applyAiState() {
 
 function updateGenerateButton() {
   const btn = $('btnGenerate');
+  if (!btn) return;
   const ready = state.aiReady && state.importId != null;
   btn.disabled = !ready;
   btn.classList.toggle('blocked', !state.aiReady);
@@ -461,19 +1377,230 @@ function updateGenerateButton() {
   else btn.removeAttribute('title');
 }
 
-/* ===================== CHARGEMENTS ===================== */
+/* ===================== ÉTAPES DE GÉNÉRATION =====================
+   Le serveur ne pousse pas de progression (une seule requête POST) : on cale
+   l'avancement sur la durée réelle observée — deux appels au modèle (~7 s) puis
+   un calcul local — et on force l'état final dès la réponse. */
+const STAGES = [
+  { key: 'extraction', label: 'Extraction de la page', note: 'lit la fiche fournisseur' },
+  { key: 'marketplaces', label: 'Fiches marketplaces', note: 'Amazon · TikTok · Allegro · eBay' },
+  { key: 'site', label: 'Fiche du site', note: 'catégorie, âge, icône — 2ᵉ appel IA' },
+  { key: 'prix', label: 'Prix conseillé', note: 'calcul local, sans appel réseau' },
+];
+let stepperToken = 0;
+let stepperTimers = [];
+
+function renderStepper() {
+  const list = $('genSteps');
+  if (!list) return;
+  list.innerHTML = STAGES.map((s) => (
+    '<li class="step" data-step="' + s.key + '">'
+    + '<span class="step-dot" aria-hidden="true"></span>'
+    + '<span class="step-text"><span class="step-label">' + esc(s.label) + '</span> '
+    + '<span class="step-note">' + esc(s.note) + '</span></span></li>'
+  )).join('');
+}
+
+function setStepperStage(activeKey, done) {
+  const list = $('genSteps');
+  if (!list) return;
+  const idx = STAGES.findIndex((s) => s.key === activeKey);
+  const steps = list.querySelectorAll('.step');
+  if (steps && steps.forEach) {
+    steps.forEach((el, i) => {
+      const isDone = Boolean(done) || i < idx;
+      const isActive = !done && i === idx;
+      el.classList.toggle('done', isDone);
+      el.classList.toggle('active', isActive);
+      if (el.setAttribute) el.setAttribute('aria-current', isActive ? 'step' : 'false');
+    });
+  }
+  const bar = $('genStepperBar');
+  if (bar) bar.style.width = (done ? 100 : Math.round((idx / STAGES.length) * 100)) + '%';
+  const title = $('genStepperTitle');
+  if (title) {
+    title.textContent = done
+      ? 'Terminé'
+      : (STAGES[idx] ? STAGES[idx].label + '…' : 'Génération en cours…');
+  }
+}
+
+function beginStepper(activeKey, title) {
+  renderStepper();
+  const box = $('genStepper');
+  if (box) box.hidden = false;
+  const titleEl = $('genStepperTitle');
+  if (titleEl && title) titleEl.textContent = title;
+  setStepperStage(activeKey, false);
+  stepperTimers.forEach(clearTimeout);
+  stepperTimers = [];
+  const token = ++stepperToken;
+  if (activeKey === 'marketplaces') {
+    stepperTimers.push(setTimeout(() => { if (token === stepperToken) setStepperStage('site', false); }, 3200));
+    stepperTimers.push(setTimeout(() => { if (token === stepperToken) setStepperStage('prix', false); }, 6600));
+  }
+}
+
+function finishStepper() {
+  stepperTimers.forEach(clearTimeout);
+  stepperTimers = [];
+  stepperToken++;
+  setStepperStage('prix', true);
+  setTimeout(() => { const box = $('genStepper'); if (box) box.hidden = true; }, 900);
+}
+
+function failStepper() {
+  stepperTimers.forEach(clearTimeout);
+  stepperTimers = [];
+  stepperToken++;
+  const box = $('genStepper');
+  if (box) box.hidden = true;
+}
+
+/* ===================== SPARKLINE =====================
+   Chemin SVG construit à la main à partir du journal : nombre d'entrées par jour
+   sur sept jours. Aucune bibliothèque, aucune donnée inventée. */
+function renderSparkline() {
+  const svg = $('sparkline');
+  if (!svg) return;
+  const days = [];
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  for (let i = 6; i >= 0; i--) {
+    const d = new Date(today);
+    d.setDate(d.getDate() - i);
+    days.push({ date: d, count: 0 });
+  }
+  for (const row of state.activity) {
+    const t = Number(row.created_at);
+    if (!Number.isFinite(t)) continue;
+    const d = new Date(t);
+    d.setHours(0, 0, 0, 0);
+    const slot = days.find((day) => day.date.getTime() === d.getTime());
+    if (slot) slot.count++;
+  }
+  const max = Math.max(1, ...days.map((d) => d.count));
+  const W = 260;
+  const H = 74;
+  const pad = 8;
+  const stepX = (W - pad * 2) / (days.length - 1);
+  const points = days.map((d, i) => {
+    const x = pad + i * stepX;
+    const y = H - pad - (d.count / max) * (H - pad * 2);
+    return [x, y];
+  });
+  const line = points.map(([x, y], i) => (i ? 'L' : 'M') + x.toFixed(1) + ' ' + y.toFixed(1)).join(' ');
+  const area = line + ' L' + points[points.length - 1][0].toFixed(1) + ' ' + (H - pad)
+    + ' L' + points[0][0].toFixed(1) + ' ' + (H - pad) + ' Z';
+
+  svg.innerHTML = '<defs><linearGradient id="sparkGrad" x1="0" y1="0" x2="0" y2="1">'
+    + '<stop offset="0%" stop-color="#4c8dff" stop-opacity=".55"></stop>'
+    + '<stop offset="100%" stop-color="#4c8dff" stop-opacity="0"></stop>'
+    + '</linearGradient></defs>'
+    + '<path class="spark-area" d="' + area + '"></path>'
+    + '<path class="spark-line" d="' + line + '"></path>'
+    + points.map(([x, y]) => '<circle class="spark-dot" cx="' + x.toFixed(1) + '" cy="' + y.toFixed(1) + '" r="2.4"></circle>').join('');
+
+  const labels = $('sparkLabels');
+  if (labels) {
+    labels.innerHTML = days.map((d) => '<span>' + esc(d.date.toLocaleDateString('fr-FR', { weekday: 'short' })) + '</span>').join('');
+  }
+  const total = days.reduce((sum, d) => sum + d.count, 0);
+  const totalEl = $('sparkTotal');
+  if (totalEl) totalEl.textContent = formatInt(total);
+  const peakEl = $('sparkPeak');
+  if (peakEl) peakEl.textContent = formatInt(days.some((d) => d.count) ? Math.max(...days.map((d) => d.count)) : 0);
+}
+
+/* ===================== TABLEAU DE BORD ===================== */
+let dashboardScheduled = false;
+function scheduleDashboard() {
+  if (dashboardScheduled) return;
+  dashboardScheduled = true;
+  setTimeout(() => { dashboardScheduled = false; renderDashboard(); }, 0);
+}
+
+function renderDashboard() {
+  const details = Array.from(state.importDetails.values());
+  let fiches = 0;
+  let publiees = 0;
+  for (const detail of details) {
+    const listings = Array.isArray(detail.listings) ? detail.listings : [];
+    fiches += listings.length;
+    publiees += listings.filter((l) => l.status === 'publie').length;
+  }
+  const configured = state.channels.filter((c) => c.configured).length;
+
+  animateCount($('kpiProduits'), state.products.length);
+  animateCount($('kpiImports'), state.imports.length);
+  animateCount($('kpiFiches'), fiches);
+  animateCount($('kpiPubliees'), publiees);
+  animateCount($('kpiCanaux'), configured);
+  animateCount($('kpiJournal'), state.activity.length);
+
+  const hint = (id, text) => { const el = $(id); if (el) el.textContent = text; };
+  hint('kpiProduitsHint', state.products.length ? 'catalogue interne' : 'aucun produit');
+  hint('kpiImportsHint', state.imports.length ? 'extractions enregistrées' : 'aucun import');
+  hint('kpiFichesHint', state.detailsTruncated ? 'sur les imports les plus récents' : 'toutes marketplaces');
+  hint('kpiPublieesHint', publiees ? 'envoyées pour de bon' : 'aucune publication');
+  hint('kpiCanauxHint', state.channels.length ? 'sur ' + state.channels.length + ' canaux connus' : 'canaux inconnus');
+  hint('kpiJournalHint', state.activity.length ? '100 dernières' : 'journal vide');
+
+  renderSparkline();
+  renderDashboardLists();
+}
+
+function renderDashboardLists() {
+  const importsBox = $('dashImports');
+  if (importsBox) {
+    const rows = state.imports.slice(0, 5);
+    importsBox.innerHTML = rows.length
+      ? rows.map((i) => (
+        '<div class="mini-row row-in">'
+        + '<div class="mini-main"><span class="mini-title">' + esc(i.title) + '</span>'
+        + '<span class="mini-meta">' + esc(i.source_site) + ' · ' + esc(when(i.created_at)) + '</span></div>'
+        + '<span class="pill ' + (i.status === 'pret' ? 'ok' : 'off') + '">' + esc(i.status) + '</span>'
+        + '</div>'
+      )).join('')
+      : '<p class="empty">Aucun import pour le moment. <a href="#/imports">Extrais une première fiche.</a></p>';
+    stagger(importsBox);
+  }
+
+  const activityBox = $('dashActivity');
+  if (activityBox) {
+    const rows = state.activity.slice(0, 6);
+    activityBox.innerHTML = rows.length
+      ? rows.map((a) => (
+        '<div class="mini-row row-in">'
+        + '<div class="mini-main"><span class="mini-title">' + esc(a.kind) + '</span>'
+        + '<span class="mini-meta">' + esc(a.message) + '</span></div>'
+        + '<span class="mini-time">' + esc(when(a.created_at)) + '</span>'
+        + '</div>'
+      )).join('')
+      : '<p class="empty">Journal vide.</p>';
+    stagger(activityBox);
+  }
+}
+
+/* ===================== CANAUX ===================== */
 async function loadChannels() {
-  const channels = await api('/api/channels');
   const box = $('channels');
-  if (!channels.length) { box.innerHTML = '<p class="empty">Aucun canal enregistré.</p>'; return; }
-  box.innerHTML = channels.map((c) => `
-    <div class="item">
-      <div class="top">
-        <span class="name">${esc(c.channel)}</span>
-        <span class="pill ${c.configured ? 'ok' : 'off'}">${c.configured ? 'configuré' : 'non configuré'}</span>
-      </div>
-    </div>
-  `).join('');
+  if (box) box.innerHTML = skeletonCards(2);
+  const channels = await api('/api/channels');
+  state.channels = channels;
+  if (box) {
+    if (!channels.length) box.innerHTML = '<p class="empty">Aucun canal enregistré.</p>';
+    else box.innerHTML = channels.map((c) => (
+      '<div class="channel-card row-in">'
+      + '<div class="channel-main"><span class="channel-name">' + esc(c.channel) + '</span>'
+      + '<span class="channel-meta">' + (c.configured ? 'Prêt à recevoir des écritures.' : 'Ignoré par les synchronisations.') + '</span></div>'
+      + '<span class="pill ' + (c.configured ? 'ok' : 'off') + '">' + (c.configured ? 'configuré' : 'non configuré') + '</span>'
+      + '</div>'
+    )).join('');
+    stagger(box);
+  }
+  scheduleDashboard();
+  return channels;
 }
 
 /* Résume un push par canal : ce qui a été mis à jour, ce qui est ignoré (le
@@ -497,153 +1624,205 @@ function listingSummary(p) {
   return listings.map((l) => esc(l.channel) + ' ' + money(l.price)).join(' · ');
 }
 
+/* ===================== PRODUITS ===================== */
+const productsTable = createTable({
+  body: 'products',
+  head: 'productsHead',
+  filter: 'productsFilter',
+  pager: 'productsPager',
+  pageSize: 10,
+  skeleton: 4,
+  empty: 'Aucun produit. Crée-en un ci-dessus.',
+  defaultSort: 'name',
+  columns: [
+    { key: 'name', value: (p) => p.name },
+    { key: 'sku', value: (p) => p.sku },
+    { key: 'cost_price', value: (p) => Number(p.cost_price) },
+  ],
+  search: (p) => [p.name, p.sku, p.description].join(' '),
+  row: (p) => {
+    const id = esc(p.id);
+    const aiDisabled = state.aiReady ? '' : ' disabled';
+    return '<tr class="row-in">'
+      + '<td data-label="Produit"><span class="cell-strong">' + esc(p.name) + '</span></td>'
+      + '<td data-label="SKU"><span class="pill off">' + esc(p.sku) + '</span></td>'
+      + '<td data-label="Prix de revient" class="num">' + money(p.cost_price) + '</td>'
+      + '<td data-label="Fiches canaux" class="cell-muted">' + listingSummary(p) + '</td>'
+      + '<td data-label="Actions" class="cell-actions">'
+      + '<div class="actions">'
+      + '<button class="btn btn-ghost btn-xs" type="button" data-action="suggest" data-id="' + id + '" data-needs-ai' + aiDisabled + '>Suggérer un prix</button>'
+      + '<button class="btn btn-ghost btn-xs" type="button" data-action="describe" data-id="' + id + '" data-needs-ai' + aiDisabled + '>Générer une description</button>'
+      + '</div>'
+      + '<div class="actions">'
+      + '<input class="input input-xs" type="number" id="pp-' + id + '" step="0.01" min="0" placeholder="prix à pousser">'
+      + '<button class="btn btn-xs" type="button" data-action="push" data-id="' + id + '">Pousser ce prix</button>'
+      + '</div>'
+      + '</td>'
+      + '</tr>';
+  },
+});
+
 async function loadProducts() {
+  productsTable.setLoading();
   const products = await api('/api/products');
-  const box = $('products');
-  if (!products.length) { box.innerHTML = '<p class="empty">Aucun produit. Crée-en un ci-dessus.</p>'; return; }
-  box.innerHTML = products.slice(0, 40).map((p) => `
-    <div class="item">
-      <div class="top">
-        <span class="name">${esc(p.name)}</span>
-        <span class="pill off">${esc(p.sku)}</span>
-      </div>
-      <div class="meta">Revient ${money(p.cost_price)} · ${listingSummary(p)}</div>
-      <div class="row">
-        <button class="ghost tiny" data-price="${esc(p.id)}" data-needs-ai ${state.aiReady ? '' : 'disabled'}>Suggérer un prix</button>
-        <button class="ghost tiny" data-desc="${esc(p.id)}" data-needs-ai ${state.aiReady ? '' : 'disabled'}>Générer une description</button>
-      </div>
-      <div class="row">
-        <input type="number" id="pp-${esc(p.id)}" step="0.01" min="0" placeholder="prix à pousser" style="width:150px">
-        <button class="tiny" data-push="${esc(p.id)}">Pousser ce prix</button>
-      </div>
-    </div>
-  `).join('');
-
-  box.querySelectorAll('[data-price]').forEach((b) => b.addEventListener('click', () => action(b, async () => {
-    const result = await api('/api/recommendations/price/' + encodeURIComponent(b.dataset.price), { method: 'POST' });
-    await loadRecommendations();
-    return result;
-  }, 'Suggestions de prix générées.')));
-
-  box.querySelectorAll('[data-desc]').forEach((b) => b.addEventListener('click', () => {
-    const channel = prompt('Canal visé (ebay, amazon, tiktok_shop, own_site) :', 'ebay');
-    if (!channel) return;
-    action(b, async () => {
-      const result = await api(
-        '/api/recommendations/description/' + encodeURIComponent(b.dataset.desc) + '/' + encodeURIComponent(channel),
-        { method: 'POST' },
-      );
-      await loadRecommendations();
-      return result;
-    }, 'Description générée.');
-  }));
-
-  /* Pousse réellement le prix vers les canaux. Le hub refuse tout prix sous le
-     prix de revient, avant même d'appeler le canal. Un prix publié est
-     irréversible : on demande confirmation avant d'envoyer. */
-  box.querySelectorAll('[data-push]').forEach((b) => b.addEventListener('click', () => action(b, async () => {
-    const price = Number($('pp-' + b.dataset.push).value);
-    if (!Number.isFinite(price) || price <= 0) throw new Error('Saisis un prix supérieur à zéro.');
-    if (!confirmChannelWrite('Pousser le prix ' + money(price) + ' vers les canaux de vente ?')) return null;
-    const results = await api('/api/products/' + encodeURIComponent(b.dataset.push) + '/price', {
-      method: 'POST', body: JSON.stringify({ price }),
-    });
-    await Promise.all([loadProducts(), loadActivity()]);
-    say('Prix ' + money(price) + ' — ' + summarisePush(results), 'info');
-    return results;
-  })));
+  state.products = products;
+  productsTable.setRows(products);
+  scheduleDashboard();
+  return products;
 }
 
+/* ===================== RECOMMANDATIONS ===================== */
 async function loadRecommendations() {
-  const rows = await api('/api/recommendations?status=pending');
   const box = $('recommendations');
-  if (!rows.length) { box.innerHTML = '<p class="empty">Aucune recommandation en attente.</p>'; return; }
-  box.innerHTML = rows.slice(0, 30).map((r) => {
-    const payload = r.payload || {};
-    const label = payload.suggestedPrice != null ? money(payload.suggestedPrice) : (payload.category || payload.description ? 'texte' : '—');
-    const why = payload.rationale || payload.draftReply || payload.description || '';
-    return `
-      <div class="item">
-        <div class="top">
-          <span class="name">${esc(r.type)} · ${esc(r.channel || '—')}</span>
-          <span class="pill warn">${esc(label)}</span>
-        </div>
-        <div class="meta">${esc(String(why).slice(0, 220))}</div>
-        <div class="row">
-          ${r.type === 'price'
-            ? `<button class="tiny" data-apply="${esc(r.id)}" data-channel="${esc(r.channel || '')}">Appliquer le prix sur ${esc(r.channel || '?')}</button>`
-            : `<button class="ghost tiny" data-apply="${esc(r.id)}">Marquer appliquée</button>`}
-          <button class="ghost tiny" data-dismiss="${esc(r.id)}">Rejeter</button>
-        </div>
-      </div>
-    `;
-  }).join('');
-
-  /* Pour une recommandation de prix, « appliquer » pousse réellement le prix sur
-     le canal : la recommandation n'est marquée appliquée que si le canal a
-     accepté. Un échec laisse la ligne en attente et affiche la raison. */
-  box.querySelectorAll('[data-apply]').forEach((b) => b.addEventListener('click', () => action(b, async () => {
-    if (b.dataset.channel && !confirmChannelWrite('Appliquer le prix conseillé sur ' + b.dataset.channel + ' ?')) return null;
-    const result = await api('/api/recommendations/' + encodeURIComponent(b.dataset.apply) + '/apply', { method: 'POST' });
-    await Promise.all([loadRecommendations(), loadActivity(), loadProducts()]);
-    if (result && result.price != null) {
-      say('Prix ' + money(result.price) + ' appliqué sur ' + result.channel + '.', 'good');
+  if (box) box.innerHTML = skeletonCards(2);
+  const rows = await api('/api/recommendations?status=pending');
+  state.recommendations = rows;
+  if (box) {
+    if (!rows.length) box.innerHTML = '<p class="empty">Aucune recommandation en attente.</p>';
+    else {
+      box.innerHTML = rows.slice(0, 30).map((r) => {
+        const payload = r.payload || {};
+        const label = payload.suggestedPrice != null
+          ? money(payload.suggestedPrice)
+          : (payload.category || payload.description ? 'texte' : '—');
+        const why = payload.rationale || payload.draftReply || payload.description || '';
+        return '<div class="rec-card row-in">'
+          + '<div class="rec-top"><span class="rec-name">' + esc(r.type) + ' · ' + esc(r.channel || '—') + '</span>'
+          + '<span class="pill warn">' + esc(label) + '</span></div>'
+          + '<div class="rec-why">' + esc(String(why).slice(0, 220)) + '</div>'
+          + '<div class="actions">'
+          + (r.type === 'price'
+            ? '<button class="btn btn-xs" type="button" data-action="apply" data-id="' + esc(r.id) + '" data-channel="' + esc(r.channel || '') + '">Appliquer le prix sur ' + esc(r.channel || '?') + '</button>'
+            : '<button class="btn btn-ghost btn-xs" type="button" data-action="apply" data-id="' + esc(r.id) + '">Marquer appliquée</button>')
+          + '<button class="btn btn-ghost btn-xs" type="button" data-action="dismiss" data-id="' + esc(r.id) + '">Rejeter</button>'
+          + '</div></div>';
+      }).join('');
+      stagger(box);
     }
-    return result;
-  })));
-
-  box.querySelectorAll('[data-dismiss]').forEach((b) => b.addEventListener('click', () => action(b, async () => {
-    const result = await api('/api/recommendations/' + encodeURIComponent(b.dataset.dismiss) + '/dismiss', { method: 'POST' });
-    await loadRecommendations();
-    return result;
-  }, 'Recommandation rejetée.')));
+  }
+  scheduleDashboard();
+  return rows;
 }
+
+/* ===================== IMPORTS ===================== */
+function importListingCount(imp) {
+  const detail = state.importDetails.get(String(imp.id));
+  if (!detail) return imp.status === 'pret' ? null : 0;
+  return Array.isArray(detail.listings) ? detail.listings.length : 0;
+}
+
+const importsTable = createTable({
+  body: 'imports',
+  head: 'importsHead',
+  filter: 'importsFilter',
+  pager: 'importsPager',
+  pageSize: 10,
+  skeleton: 4,
+  empty: 'Aucun import.',
+  defaultSort: 'created_at',
+  defaultDir: 'desc',
+  columns: [
+    { key: 'title', value: (i) => i.title },
+    { key: 'source_site', value: (i) => i.source_site },
+    { key: 'status', value: (i) => i.status },
+    { key: 'purchase_price', value: (i) => Number(i.purchase_price) },
+    { key: 'listings', value: (i) => importListingCount(i) ?? -1 },
+    { key: 'created_at', value: (i) => Number(i.created_at) },
+  ],
+  search: (i) => [i.title, i.source_site, i.status, i.currency].join(' '),
+  row: (i) => {
+    const id = esc(i.id);
+    const count = importListingCount(i);
+    const aiDisabled = state.aiReady ? '' : ' disabled';
+    const countCell = count == null
+      ? '<span class="cell-muted">…</span>'
+      : (count ? '<span class="pill ok">' + count + '</span>' : '<span class="pill off">0</span>');
+    return '<tr class="row-in">'
+      + '<td data-label="Titre"><span class="cell-strong">' + esc(i.title) + '</span></td>'
+      + '<td data-label="Site" class="cell-muted">' + esc(i.source_site) + '</td>'
+      + '<td data-label="Statut"><span class="pill ' + (i.status === 'pret' ? 'ok' : 'off') + '">' + esc(i.status) + '</span></td>'
+      + '<td data-label="Prix d\'achat" class="num">' + money(i.purchase_price) + ' ' + esc(i.currency) + '</td>'
+      + '<td data-label="Fiches">' + countCell + '</td>'
+      + '<td data-label="Créé le" class="cell-muted">' + esc(when(i.created_at)) + '</td>'
+      + '<td data-label="Actions" class="cell-actions"><div class="actions">'
+      + '<button class="btn btn-ghost btn-xs" type="button" data-action="open" data-id="' + id + '">Ouvrir les fiches</button>'
+      + '<button class="btn btn-ghost btn-xs" type="button" data-action="regen" data-id="' + id + '" data-needs-ai' + aiDisabled + '>Régénérer</button>'
+      + '</div></td>'
+      + '</tr>';
+  },
+});
 
 async function loadImports() {
+  importsTable.setLoading();
   const rows = await api('/api/imports');
-  const box = $('imports');
-  if (!rows.length) { box.innerHTML = '<p class="empty">Aucun import.</p>'; return; }
-  box.innerHTML = rows.slice(0, 20).map((i) => `
-    <div class="item">
-      <div class="top">
-        <span class="name">${esc(i.title)}</span>
-        <span class="pill ${i.status === 'pret' ? 'ok' : 'off'}">${esc(i.status)}</span>
-      </div>
-      <div class="meta">#${esc(i.id)} · ${esc(i.source_site)} · achat ${money(i.purchase_price)} ${esc(i.currency)}</div>
-      <div class="row">
-        <button class="ghost tiny" data-open="${esc(i.id)}">Ouvrir les fiches</button>
-        <button class="ghost tiny" data-regen="${esc(i.id)}" data-needs-ai ${state.aiReady ? '' : 'disabled'}>Régénérer</button>
-      </div>
-    </div>
-  `).join('');
-
-  box.querySelectorAll('[data-open]').forEach((b) => b.addEventListener('click', () => action(b,
-    () => showImport(Number(b.dataset.open)),
-  )));
-
-  box.querySelectorAll('[data-regen]').forEach((b) => b.addEventListener('click', () => action(b, async () => {
-    const saved = await api('/api/imports/' + encodeURIComponent(b.dataset.regen) + '/generate', { method: 'POST' });
-    await showImport(Number(b.dataset.regen));
-    await loadImports();
-    if (saved && saved.warning) say(saved.warning, 'err');
-    else say('Fiches régénérées.', 'good');
-    return saved;
-  })));
+  state.imports = rows;
+  importsTable.setRows(rows);
+  scheduleDashboard();
+  return rows;
 }
 
+/* Les compteurs « fiches générées / publiées » ne peuvent venir que du détail de
+   chaque import : aucune route n'expose import_listings globalement, et on
+   n'ajoute pas de route pour une décoration. On hydrate donc les imports déjà
+   générés (statut « pret »), avec une concurrence bornée pour ne pas noyer le
+   serveur, et on garde le détail en cache : la table s'en sert aussi. */
+const DETAIL_LIMIT = 50;
+const DETAIL_CONCURRENCY = 4;
+async function hydrateImportDetails() {
+  const targets = state.imports.filter((i) => i.status === 'pret').slice(0, DETAIL_LIMIT);
+  state.detailsTruncated = state.imports.filter((i) => i.status === 'pret').length > DETAIL_LIMIT;
+  const next = new Map();
+  let cursor = 0;
+  const worker = async () => {
+    while (cursor < targets.length) {
+      const imp = targets[cursor++];
+      try {
+        const detail = await api('/api/imports/' + encodeURIComponent(imp.id));
+        next.set(String(imp.id), detail);
+      } catch {
+        // Le détail est un confort d'affichage : son échec ne bloque pas le reste.
+      }
+    }
+  };
+  const workers = [];
+  for (let i = 0; i < Math.min(DETAIL_CONCURRENCY, targets.length); i++) workers.push(worker());
+  await Promise.all(workers);
+  state.importDetails = next;
+  importsTable.render();
+  scheduleDashboard();
+}
+
+/* ===================== JOURNAL ===================== */
+const activityTable = createTable({
+  body: 'activity',
+  head: 'activityHead',
+  filter: 'activityFilter',
+  pager: 'activityPager',
+  pageSize: 12,
+  skeleton: 5,
+  empty: 'Journal vide.',
+  defaultSort: 'created_at',
+  defaultDir: 'desc',
+  columns: [
+    { key: 'created_at', value: (a) => Number(a.created_at) },
+    { key: 'kind', value: (a) => a.kind },
+    { key: 'message', value: (a) => a.message },
+  ],
+  search: (a) => [a.kind, a.message].join(' '),
+  row: (a) => '<tr class="row-in">'
+    + '<td data-label="Date" class="cell-muted">' + esc(when(a.created_at)) + '</td>'
+    + '<td data-label="Type"><span class="pill off">' + esc(a.kind) + '</span></td>'
+    + '<td data-label="Message">' + esc(a.message) + '</td>'
+    + '</tr>',
+});
+
 async function loadActivity() {
+  activityTable.setLoading();
   const rows = await api('/api/activity');
-  const box = $('activity');
-  if (!rows.length) { box.innerHTML = '<p class="empty">Journal vide.</p>'; return; }
-  box.innerHTML = rows.slice(0, 25).map((a) => `
-    <div class="item">
-      <div class="top">
-        <span class="name">${esc(a.kind)}</span>
-        <span class="pill off">${esc(when(a.created_at))}</span>
-      </div>
-      <div class="meta">${esc(a.message)}</div>
-    </div>
-  `).join('');
+  state.activity = rows;
+  activityTable.setRows(rows);
+  scheduleDashboard();
+  return rows;
 }
 
 /* ===================== IMPORT : EXTRACTION ===================== */
@@ -673,6 +1852,13 @@ function renderImportPrice(data) {
   warning.innerHTML = usable ? '' : esc(MISSING_PURCHASE_PRICE_WARNING);
 }
 
+function scrollToListings() {
+  const box = $('listingsCard');
+  if (box && typeof box.scrollIntoView === 'function') {
+    box.scrollIntoView({ behavior: motionOK() ? 'smooth' : 'auto', block: 'start' });
+  }
+}
+
 /* Enregistre la correction via PATCH /api/imports/:id, puis rafraîchit le
    détail : les fiches déjà générées gardent leur ancien prix (c'est voulu, le
    prix conseillé est un choix), mais l'import n'est plus bloqué. */
@@ -689,90 +1875,205 @@ $('btnSavePurchasePrice').addEventListener('click', (event) => action(event.curr
     method: 'PATCH', body: JSON.stringify(body),
   });
   renderImportPrice(updated);
+  state.importDetails.set(String(state.importId), updated);
   // Si les fiches sont déjà ouvertes, on les rafraîchit ; sinon on n'ouvre pas
   // la carte de force — corriger le prix avant de générer reste possible.
-  if ($('listingsCard').style.display === 'block') await showImport(state.importId);
+  if (state.listingsOpen) await showImport(state.importId);
   await loadImports();
+  renderDashboard();
 }, 'Prix d\'achat enregistré.'));
 
 $('btnExtract').addEventListener('click', (event) => action(event.currentTarget, async () => {
   const url = $('importUrl').value.trim();
   if (!url) throw new Error('Colle d\'abord une URL fournisseur.');
-  const data = await api('/api/imports', { method: 'POST', body: JSON.stringify({ url }) });
-  state.importId = data.id;
-  $('importDetail').style.display = 'block';
-  $('importBody').innerHTML = [
-    ['Titre extrait', esc(data.title)],
-    ['Site détecté', esc(data.sourceSite)],
-    ['Prix d\'achat', money(data.purchasePrice) + ' ' + esc(data.currency)],
-    ['Photos trouvées', (data.imageUrls || []).length],
-    ['Description brute', esc((data.rawDescription || '(aucune)').slice(0, 400))],
-  ].map(([k, v]) => `<div class="kv"><span>${k}</span><span>${v}</span></div>`).join('');
-  renderImportPrice(data);
-  await loadImports();
-  updateGenerateButton();
-  return data;
+  beginStepper('extraction', 'Extraction en cours…');
+  try {
+    const data = await api('/api/imports', { method: 'POST', body: JSON.stringify({ url }) });
+    state.importId = data.id;
+    $('importDetail').style.display = 'block';
+    $('importBody').innerHTML = [
+      ['Titre extrait', esc(data.title)],
+      ['Site détecté', esc(data.sourceSite)],
+      ['Prix d\'achat', money(data.purchasePrice) + ' ' + esc(data.currency)],
+      ['Photos trouvées', (data.imageUrls || []).length],
+      ['Description brute', esc((data.rawDescription || '(aucune)').slice(0, 400))],
+    ].map(([k, v]) => '<div class="kv"><span>' + k + '</span><span>' + v + '</span></div>').join('');
+    renderImportPrice(data);
+    await loadImports();
+    updateGenerateButton();
+    renderDashboard();
+    finishStepper();
+    return data;
+  } catch (error) {
+    failStepper();
+    throw error;
+  }
 }, 'Fiche extraite. Tu peux maintenant générer les fiches.'));
 
 $('btnGenerate').addEventListener('click', (event) => action(event.currentTarget, async () => {
   if (state.importId == null) throw new Error('Extrais d\'abord une fiche.');
-  const result = await api('/api/imports/' + encodeURIComponent(state.importId) + '/generate', { method: 'POST' });
-  await showImport(state.importId);
-  await loadImports();
-  // Le serveur signale un prix d'achat illisible : son avertissement est affiché
-  // tel quel (cause + correction), sinon l'utilisateur ne comprendrait pas
-  // pourquoi toutes ses fiches sont à 0 €.
-  if (result && result.warning) say(result.warning, 'err');
-  else say('Fiches générées par l\'IA.', 'good');
-  return result;
+  beginStepper('marketplaces', 'Génération des fiches IA…');
+  try {
+    const result = await api('/api/imports/' + encodeURIComponent(state.importId) + '/generate', { method: 'POST' });
+    await showImport(state.importId);
+    await loadImports();
+    renderDashboard();
+    finishStepper();
+    // Le serveur signale un prix d'achat illisible : son avertissement est affiché
+    // tel quel (cause + correction), sinon l'utilisateur ne comprendrait pas
+    // pourquoi toutes ses fiches sont à 0 €.
+    if (result && result.warning) say(result.warning, 'err');
+    else say('Fiches générées par l\'IA.', 'good');
+    return result;
+  } catch (error) {
+    failStepper();
+    throw error;
+  }
 }));
 
 /* ===================== IMPORT : FICHES ===================== */
+function renderListings(listings) {
+  const box = $('listings');
+  if (!box) return;
+  if (!listings.length) {
+    box.innerHTML = '<p class="empty">Aucune fiche pour cet import. Lance la génération IA.</p>';
+    return;
+  }
+  box.innerHTML = listings.map((l) => (
+    '<article class="listing-card row-in">'
+    + '<header class="listing-head">'
+    + '<div><span class="listing-mp">' + esc(l.marketplace) + '</span>'
+    + '<span class="listing-price">Prix conseillé ' + money(l.suggested_price)
+    + (l.published_external_id ? ' · publié sous ' + esc(l.published_external_id) : '') + '</span></div>'
+    + '<span class="pill ' + (l.status === 'publie' ? 'ok' : l.status === 'echec' ? 'bad' : 'warn') + '">' + esc(l.status) + '</span>'
+    + '</header>'
+    + (l.publish_error ? '<p class="inline-error">' + esc(l.publish_error) + '</p>' : '')
+    + '<div class="field-grid">'
+    + '<div class="field field-wide"><label for="t-' + esc(l.id) + '">Titre</label>'
+    + '<input class="input" type="text" id="t-' + esc(l.id) + '" value="' + esc(l.title) + '"></div>'
+    + '<div class="field"><label for="p-' + esc(l.id) + '">Prix (€)</label>'
+    + '<input class="input" type="number" id="p-' + esc(l.id) + '" step="0.01" min="0" value="' + esc(l.suggested_price) + '"></div>'
+    + '</div>'
+    + '<div class="field" style="margin-top:8px"><label for="d-' + esc(l.id) + '">Description</label>'
+    + '<textarea class="input textarea" id="d-' + esc(l.id) + '" rows="4">' + esc(l.description) + '</textarea></div>'
+    + (l.marketplace === 'own_site'
+      ? '<details class="site-details"><summary>Fiche détaillée du site (catégorie, univers, âge, icône, bilingue)</summary>'
+        + '<p class="hint hint-tight" style="margin-top:8px">Le site exige ces champs, que les marketplaces ne demandent pas. Corrige le JSON si la génération s\'est trompée, puis enregistre avant de publier.</p>'
+        + '<textarea class="input textarea mono" id="s-' + esc(l.id) + '" rows="12">' + esc(l.site_payload || '') + '</textarea></details>'
+      : '')
+    + '<div class="actions">'
+    + '<button class="btn btn-ghost btn-sm" type="button" data-action="save-listing" data-id="' + esc(l.id) + '" data-mp="' + esc(l.marketplace) + '">Enregistrer</button>'
+    + '<button class="btn btn-sm" type="button" data-action="publish-listing" data-id="' + esc(l.id) + '" data-mp="' + esc(l.marketplace) + '">Publier sur ' + esc(l.marketplace) + '</button>'
+    + '</div>'
+    + '</article>'
+  )).join('');
+  stagger(box);
+}
+
 async function showImport(id) {
   const data = await api('/api/imports/' + encodeURIComponent(id));
   state.importId = id;
+  state.listingsOpen = true;
+  state.importDetails.set(String(id), data);
   updateGenerateButton();
   // Le prix d'achat est visible avant les fiches : c'est lui qui explique
   // pourquoi elles valent 0 €, et il se corrige ici même.
   renderImportPrice(data);
   $('listingsCard').style.display = 'block';
-  const listings = data.listings || [];
-  const box = $('listings');
+  renderListings(data.listings || []);
+  scrollToListings();
+  scheduleDashboard();
+  return data;
+}
 
-  if (!listings.length) {
-    box.innerHTML = '<p class="empty">Aucune fiche pour cet import. Lance la génération IA.</p>';
-    return data;
-  }
+/* ===================== PRODUITS : ACTIONS PAR LIGNE ===================== */
+onAction($('products'), {
+  suggest: (button) => action(button, async () => {
+    const result = await api('/api/recommendations/price/' + encodeURIComponent(button.dataset.id), { method: 'POST' });
+    await loadRecommendations();
+    return result;
+  }, 'Suggestions de prix générées.'),
 
-  box.innerHTML = listings.map((l) => `
-    <div class="item">
-      <div class="top">
-        <span class="name">${esc(l.marketplace)}</span>
-        <span class="pill ${l.status === 'publie' ? 'ok' : l.status === 'echec' ? 'bad' : 'warn'}">${esc(l.status)}</span>
-      </div>
-      <div class="meta">Prix conseillé ${money(l.suggested_price)}${l.published_external_id ? ' · publié sous ' + esc(l.published_external_id) : ''}</div>
-      ${l.publish_error ? `<div class="meta" style="color:var(--bad)">${esc(l.publish_error)}</div>` : ''}
-      <label for="t-${esc(l.id)}">Titre</label>
-      <input type="text" id="t-${esc(l.id)}" value="${esc(l.title)}">
-      <label for="p-${esc(l.id)}">Prix (€)</label>
-      <input type="number" id="p-${esc(l.id)}" step="0.01" min="0" value="${esc(l.suggested_price)}">
-      <label for="d-${esc(l.id)}">Description</label>
-      <textarea id="d-${esc(l.id)}" rows="4">${esc(l.description)}</textarea>
-      ${l.marketplace === 'own_site' ? `
-        <details>
-          <summary>Fiche détaillée du site (catégorie, univers, âge, icône, bilingue)</summary>
-          <div class="meta" style="margin:6px 0">Le site exige ces champs, que les marketplaces ne demandent pas. Corrige le JSON si la génération s'est trompée, puis enregistre avant de publier.</div>
-          <textarea id="s-${esc(l.id)}" rows="12">${esc(l.site_payload || '')}</textarea>
-        </details>` : ''}
-      <div class="row">
-        <button class="ghost tiny" data-save="${esc(l.id)}" data-mp="${esc(l.marketplace)}">Enregistrer</button>
-        <button class="tiny" data-publish="${esc(l.id)}" data-mp="${esc(l.marketplace)}">Publier sur ${esc(l.marketplace)}</button>
-      </div>
-    </div>
-  `).join('');
+  describe: (button) => {
+    const channel = prompt('Canal visé (ebay, amazon, tiktok_shop, own_site) :', 'ebay');
+    if (!channel) return;
+    action(button, async () => {
+      const result = await api(
+        '/api/recommendations/description/' + encodeURIComponent(button.dataset.id) + '/' + encodeURIComponent(channel),
+        { method: 'POST' },
+      );
+      await loadRecommendations();
+      return result;
+    }, 'Description générée.');
+  },
 
-  box.querySelectorAll('[data-save]').forEach((b) => b.addEventListener('click', () => action(b, async () => {
-    const id = b.dataset.save;
+  /* Pousse réellement le prix vers les canaux. Le hub refuse tout prix sous le
+     prix de revient, avant même d'appeler le canal. Un prix publié est
+     irréversible : on demande confirmation avant d'envoyer. */
+  push: (button) => action(button, async () => {
+    const field = $('pp-' + button.dataset.id);
+    const price = Number(field ? field.value : NaN);
+    if (!Number.isFinite(price) || price <= 0) throw new Error('Saisis un prix supérieur à zéro.');
+    if (!confirmChannelWrite('Pousser le prix ' + money(price) + ' vers les canaux de vente ?')) return null;
+    const results = await api('/api/products/' + encodeURIComponent(button.dataset.id) + '/price', {
+      method: 'POST', body: JSON.stringify({ price }),
+    });
+    await Promise.all([loadProducts(), loadActivity()]);
+    renderDashboard();
+    say('Prix ' + money(price) + ' — ' + summarisePush(results), 'info');
+    return results;
+  }),
+});
+
+/* ===================== RECOMMANDATIONS : ACTIONS ===================== */
+onAction($('recommendations'), {
+  /* Pour une recommandation de prix, « appliquer » pousse réellement le prix sur
+     le canal : la recommandation n'est marquée appliquée que si le canal a
+     accepté. Un échec laisse la ligne en attente et affiche la raison. */
+  apply: (button) => action(button, async () => {
+    if (button.dataset.channel && !confirmChannelWrite('Appliquer le prix conseillé sur ' + button.dataset.channel + ' ?')) return null;
+    const result = await api('/api/recommendations/' + encodeURIComponent(button.dataset.id) + '/apply', { method: 'POST' });
+    await Promise.all([loadRecommendations(), loadActivity(), loadProducts()]);
+    renderDashboard();
+    if (result && result.price != null) {
+      say('Prix ' + money(result.price) + ' appliqué sur ' + result.channel + '.', 'good');
+    }
+    return result;
+  }),
+
+  dismiss: (button) => action(button, async () => {
+    const result = await api('/api/recommendations/' + encodeURIComponent(button.dataset.id) + '/dismiss', { method: 'POST' });
+    await loadRecommendations();
+    return result;
+  }, 'Recommandation rejetée.'),
+});
+
+/* ===================== IMPORTS : ACTIONS PAR LIGNE ===================== */
+onAction($('imports'), {
+  open: (button) => action(button, () => showImport(Number(button.dataset.id))),
+
+  regen: (button) => action(button, async () => {
+    beginStepper('marketplaces', 'Régénération des fiches IA…');
+    try {
+      const saved = await api('/api/imports/' + encodeURIComponent(button.dataset.id) + '/generate', { method: 'POST' });
+      await showImport(Number(button.dataset.id));
+      await loadImports();
+      renderDashboard();
+      finishStepper();
+      if (saved && saved.warning) say(saved.warning, 'err');
+      else say('Fiches régénérées.', 'good');
+      return saved;
+    } catch (error) {
+      failStepper();
+      throw error;
+    }
+  }),
+});
+
+/* ===================== FICHES : ENREGISTRER / PUBLIER ===================== */
+onAction($('listings'), {
+  'save-listing': (button) => action(button, async () => {
+    const id = button.dataset.id;
     const patch = {
       title: $('t-' + id).value.trim(),
       description: $('d-' + id).value.trim(),
@@ -783,29 +2084,28 @@ async function showImport(id) {
       try { patch.sitePayload = JSON.parse(siteField.value); }
       catch { throw new Error('La fiche site n\'est pas un JSON valide.'); }
     }
-    await api('/api/imports/' + encodeURIComponent(state.importId) + '/listings/' + encodeURIComponent(b.dataset.mp), {
+    await api('/api/imports/' + encodeURIComponent(state.importId) + '/listings/' + encodeURIComponent(button.dataset.mp), {
       method: 'PATCH', body: JSON.stringify(patch),
     });
     await showImport(state.importId);
-  }, 'Fiche enregistrée et marquée validée.')));
+  }, 'Fiche enregistrée et marquée validée.'),
 
   /* La publication écrit pour de bon sur le canal : confirmation obligatoire,
      et bouton occupé jusqu'à la réponse pour éviter une double publication. */
-  box.querySelectorAll('[data-publish]').forEach((b) => b.addEventListener('click', () => action(b, async () => {
-    if (!confirmChannelWrite('Publier réellement sur ' + b.dataset.mp + ' ?')) return null;
+  'publish-listing': (button) => action(button, async () => {
+    if (!confirmChannelWrite('Publier réellement sur ' + button.dataset.mp + ' ?')) return null;
     const result = await api(
-      '/api/imports/' + encodeURIComponent(state.importId) + '/listings/' + encodeURIComponent(b.dataset.mp) + '/publish',
+      '/api/imports/' + encodeURIComponent(state.importId) + '/listings/' + encodeURIComponent(button.dataset.mp) + '/publish',
       { method: 'POST' },
     );
     await showImport(state.importId);
     await loadActivity();
+    renderDashboard();
     return result;
-  }, 'Publication effectuée.')));
+  }, 'Publication effectuée.'),
+});
 
-  return data;
-}
-
-/* ===================== PRODUITS ===================== */
+/* ===================== CRÉATION DE PRODUIT ===================== */
 $('btnCreateProduct').addEventListener('click', (event) => action(event.currentTarget, async () => {
   const sku = $('pSku').value.trim();
   const name = $('pName').value.trim();
@@ -825,7 +2125,7 @@ $('btnQualify').addEventListener('click', (event) => action(event.currentTarget,
     ['Catégorie', esc(result.category)],
     ['Urgence', esc(result.urgency)],
     ['Réponse proposée', esc(result.draftReply)],
-  ].map(([k, v]) => `<div class="kv"><span>${k}</span><span>${v}</span></div>`).join('');
+  ].map(([k, v]) => '<div class="kv"><span>' + k + '</span><span>' + v + '</span></div>').join('');
   await loadActivity();
   return result;
 }));
@@ -847,20 +2147,110 @@ $('btnSyncOrders').addEventListener('click', (event) => action(event.currentTarg
   return result;
 }));
 
-/* ===================== DEMARRAGE ===================== */
+/* ===================== ROUTAGE PAR ANCRE =====================
+   Chaque vue a une ancre (#/imports, #/produits…) : elle est partageable et
+   survit à un rafraîchissement, sans dépendre d'un serveur qui ne connaît que
+   des fichiers statiques. */
+const VIEWS = {
+  dashboard: { el: 'view-dashboard', title: 'Tableau de bord' },
+  imports: { el: 'view-imports', title: 'Imports' },
+  produits: { el: 'view-produits', title: 'Produits' },
+  canaux: { el: 'view-canaux', title: 'Canaux' },
+  journal: { el: 'view-journal', title: 'Journal' },
+  support: { el: 'view-support', title: 'Support' },
+};
+const ROUTES = {
+  '#/dashboard': 'dashboard',
+  '#/imports': 'imports',
+  '#/produits': 'produits',
+  '#/canaux': 'canaux',
+  '#/journal': 'journal',
+  '#/support': 'support',
+};
+
+function routeFromHash() {
+  if (typeof location === 'undefined') return 'dashboard';
+  return ROUTES[String(location.hash || '')] || 'dashboard';
+}
+
+function showView(name, options = {}) {
+  const view = VIEWS[name] ? name : 'dashboard';
+  for (const [key, def] of Object.entries(VIEWS)) {
+    const el = $(def.el);
+    if (!el) continue;
+    const active = key === view;
+    el.hidden = !active;
+    el.classList.toggle('active', active);
+    if (active) {
+      el.classList.remove('view-enter');
+      if (options.animate !== false && motionOK() && typeof el.offsetWidth !== 'undefined') void el.offsetWidth;
+      if (options.animate !== false) el.classList.add('view-enter');
+    }
+  }
+  const title = $('viewTitle');
+  if (title) title.textContent = VIEWS[view].title;
+
+  const nav = $('sidebarNav');
+  if (nav && typeof nav.querySelectorAll === 'function') {
+    nav.querySelectorAll('[data-view]').forEach((link) => {
+      const active = link.dataset.view === view;
+      link.classList.toggle('active', active);
+      if (active) link.setAttribute('aria-current', 'page');
+      else link.removeAttribute('aria-current');
+    });
+  }
+  toggleNav(false);
+  if (options.animate !== false) replayStagger($(VIEWS[view].el));
+}
+
+function toggleNav(force) {
+  const app = $('app');
+  if (!app || !app.classList) return;
+  // `contains` n'existe pas dans les DOM de test : on ne s'en sert que s'il est là.
+  const isOpen = typeof app.classList.contains === 'function' ? app.classList.contains('nav-open') : false;
+  const open = typeof force === 'boolean' ? force : !isOpen;
+  app.classList.toggle('nav-open', open);
+  const button = $('btnMenu');
+  if (button) button.setAttribute('aria-expanded', open ? 'true' : 'false');
+}
+
+$('btnMenu').addEventListener('click', () => toggleNav());
+$('navScrim').addEventListener('click', () => toggleNav(false));
+
+/* ===================== DÉMARRAGE ===================== */
 async function loadAll() {
   // La configuration d'abord : elle décide quelles actions restent bloquées.
   await loadConfig();
   // Chaque bloc est indépendant : une section en erreur ne doit pas vider les autres.
-  const blocks = [loadChannels, loadProducts, loadRecommendations, loadImports, loadActivity];
+  const loadImportsAndDetails = async () => { await loadImports(); await hydrateImportDetails(); };
+  const blocks = [loadChannels, loadProducts, loadRecommendations, loadImportsAndDetails, loadActivity];
   const errors = [];
   await Promise.all(blocks.map((fn) => fn().catch((error) => { errors.push(fn.name + ' : ' + error.message); })));
+  renderDashboard();
   if (errors.length) say(errors.join('  |  '), 'err');
 }
 
 $('btnRefresh').addEventListener('click', (event) => action(event.currentTarget, loadAll, 'Données rechargées.'));
-document.addEventListener('DOMContentLoaded', loadAll);
-if (document.readyState !== 'loading') loadAll();
+
+let booted = false;
+function boot() {
+  if (booted) return;
+  booted = true;
+  showView(routeFromHash());
+  if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
+    window.addEventListener('hashchange', () => showView(routeFromHash()));
+    if (typeof window.matchMedia === 'function') {
+      const media = window.matchMedia('(prefers-reduced-motion: reduce)');
+      if (media && typeof media.addEventListener === 'function') {
+        media.addEventListener('change', () => { reducedMotion = media.matches; });
+      }
+    }
+  }
+  loadAll();
+}
+
+document.addEventListener('DOMContentLoaded', boot);
+if (document.readyState !== 'loading') boot();
 </script>
 </body>
 </html>
