@@ -1,164 +1,501 @@
 <!DOCTYPE html>
 <html lang="fr">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Megalomarket — AI Core</title>
-    <style>
-        :root { --bg-color: #1a1a1a; --card-bg: #2d2d2d; --text-color: #ffffff; --accent-color: #007bff; --accent-hover: #0056b3; --border-color: #444; }
-        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background-color: var(--bg-color); color: var(--text-color); margin: 0; padding: 20px; }
-        .dashboard { max-width: 1200px; margin: 0 auto; display: flex; flex-direction: column; gap: 20px; }
-        .grid-3 { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px; }
-        .card { background-color: var(--card-bg); border-radius: 8px; border: 1px solid var(--border-color); padding: 20px; }
-        h1, h2, h3 { margin-top: 0; }
-        .btn { background-color: var(--accent-color); color: white; border: none; padding: 10px 15px; border-radius: 5px; cursor: pointer; font-weight: bold; width: 100%; transition: background 0.2s; margin-bottom: 10px; display: block; text-align: center; box-sizing: border-box; }
-        .btn:hover { background-color: var(--accent-hover); }
-        .btn-secondary { background-color: #5a6268; }
-        .btn-secondary:hover { background-color: #4e555b; }
-        input, select, textarea { width: 100%; padding: 10px; border-radius: 5px; border: 1px solid var(--border-color); background-color: #333; color: white; margin-bottom: 15px; box-sizing: border-box; }
-        .modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); justify-content: center; align-items: center; z-index: 1000; }
-        .modal-content { background: var(--card-bg); padding: 30px; border-radius: 8px; border: 1px solid var(--border-color); max-width: 450px; width: 100%; position: relative; box-sizing: border-box; }
-        .close-btn { position: absolute; top: 10px; right: 15px; color: #aaa; font-size: 28px; cursor: pointer; font-weight: bold; }
-        .close-btn:hover { color: #fff; }
-        .marketplace-tabs { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-top: 15px; }
-        .tab-btn { background: #444; color: white; border: none; padding: 10px; cursor: pointer; font-weight: bold; border-radius: 5px; }
-        .tab-btn.active { background: var(--accent-color); }
-        .tab-content { display: none; border: 1px solid var(--border-color); padding: 15px; border-radius: 5px; margin-top: 10px; background: #222; }
-        .tab-content.active { display: block; }
-    </style>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Megalomarket — AI Core</title>
+  <style>
+    :root {
+      --bg: #16161c; --card: #21212b; --card-2: #2a2a36; --line: #3a3a48;
+      --text: #f2f2f5; --muted: #9b9baa; --accent: #4c8dff; --accent-2: #3a6fd8;
+      --ok: #35c46b; --warn: #e8b23a; --bad: #e5544b;
+    }
+    * { box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: var(--bg); color: var(--text); margin: 0; padding: 22px;
+    }
+    .wrap { max-width: 1180px; margin: 0 auto; display: flex; flex-direction: column; gap: 18px; }
+    header { display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap; }
+    header h1 { margin: 0; font-size: 1.5rem; }
+    header p { margin: 0; color: var(--muted); font-size: .9rem; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 18px; }
+    .card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 18px; }
+    .card h2 { margin: 0 0 4px; font-size: 1.05rem; }
+    .card .hint { color: var(--muted); font-size: .82rem; margin: 0 0 14px; }
+    label { display: block; font-size: .82rem; color: var(--muted); margin: 10px 0 4px; }
+    input, select, textarea {
+      width: 100%; padding: 9px 10px; border-radius: 6px; border: 1px solid var(--line);
+      background: #1b1b24; color: var(--text); font: inherit; font-size: .9rem;
+    }
+    textarea { min-height: 70px; resize: vertical; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .8rem; }
+    button {
+      background: var(--accent); color: #fff; border: 0; padding: 9px 14px; border-radius: 6px;
+      cursor: pointer; font: inherit; font-size: .87rem; font-weight: 600;
+    }
+    button:hover:not(:disabled) { background: var(--accent-2); }
+    button:disabled { opacity: .45; cursor: not-allowed; }
+    button.ghost { background: #3a3a48; }
+    button.ghost:hover:not(:disabled) { background: #474756; }
+    button.tiny { padding: 5px 9px; font-size: .78rem; }
+    .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 12px; }
+    .list { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
+    .item { background: var(--card-2); border: 1px solid var(--line); border-radius: 8px; padding: 11px 13px; }
+    .item .top { display: flex; justify-content: space-between; gap: 10px; align-items: baseline; }
+    .item .name { font-weight: 600; font-size: .92rem; }
+    .item .meta { color: var(--muted); font-size: .78rem; margin-top: 3px; }
+    .pill { font-size: .72rem; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--line); white-space: nowrap; }
+    .pill.ok { color: var(--ok); border-color: #2a6b45; }
+    .pill.off { color: var(--muted); }
+    .pill.bad { color: var(--bad); border-color: #6b2f2c; }
+    .pill.warn { color: var(--warn); border-color: #6b552a; }
+    #status { min-height: 20px; font-size: .86rem; padding: 9px 12px; border-radius: 6px; display: none; }
+    #status.show { display: block; }
+    #status.info { background: #22304a; border: 1px solid #35507d; }
+    #status.good { background: #1d3a29; border: 1px solid #2a6b45; }
+    #status.err { background: #3d2321; border: 1px solid #6b2f2c; }
+    .empty { color: var(--muted); font-size: .85rem; font-style: italic; }
+    .pre { white-space: pre-wrap; word-break: break-word; font-size: .82rem; color: #d6d6e0; }
+    details { margin-top: 8px; }
+    summary { cursor: pointer; color: var(--muted); font-size: .8rem; }
+    .kv { display: flex; justify-content: space-between; font-size: .82rem; padding: 2px 0; }
+    .kv span:first-child { color: var(--muted); }
+    code { background: #1b1b24; padding: 1px 5px; border-radius: 4px; font-size: .82rem; }
+  </style>
 </head>
 <body>
-    <div class="dashboard">
-        <h1>Megalomarket — AI Core</h1>
-        <p style="color: #aaa; margin-top: -15px;">Tableau de bord de synchronisation omnicanale et de recommandations IA.</p>
+<div class="wrap">
+  <header>
+    <h1>Megalomarket — AI Core</h1>
+    <p>Hub de synchronisation omnicanale et de décision IA.</p>
+    <button class="ghost tiny" id="btnRefresh">Tout recharger</button>
+  </header>
 
-        <div class="grid-3">
-            <div class="card">
-                <h2>Importateur par Lien IA</h2>
-                <label for="importUrl">URL du produit Fournisseur :</label>
-                <input type="text" id="importUrl" placeholder="Collez un lien AliExpress, Alibaba...">
-                
-                <label for="partnerSelect">Distributeur / Fournisseur associé :</label>
-                <select id="partnerSelect">
-                    <option value="aliexpress">AliExpress (Défaut - Marge 1.5x)</option>
-                    <option value="alibaba">Alibaba (Défaut - Marge 1.8x)</option>
-                </select>
+  <div id="status"></div>
 
-                <button class="btn" id="btnImport">Lancer l'importation IA</button>
-                <button class="btn btn-secondary" id="btnManagePartners">Gérer les Fournisseurs & Distributeurs</button>
-            </div>
-
-            <div class="card">
-                <h2>Canaux Connectés</h2>
-                <div style="display: flex; flex-direction: column; gap: 10px;">
-                    <div style="display:flex; justify-content:space-between;"><span>eBay</span> <strong style="color: #ffc107;">En attente</strong></div>
-                    <div style="display:flex; justify-content:space-between;"><span>Own_site</span> <strong style="color: #ffc107;">En attente</strong></div>
-                    <div style="display:flex; justify-content:space-between;"><span>Amazon</span> <strong style="color: #ffc107;">En attente</strong></div>
-                    <div style="display:flex; justify-content:space-between;"><span>TikTok Shop</span> <strong style="color: #ffc107;">En attente</strong></div>
-                    <div style="display:flex; justify-content:space-between;"><span>Allegro</span> <strong style="color: #ffc107;">En attente</strong></div>
-                </div>
-            </div>
-
-            <div class="card">
-                <h2>Qualifier un message client</h2>
-                <textarea id="clientMessage" rows="4" placeholder="Collez ici le message du client..."></textarea>
-                <button class="btn" id="btnQualifier">Qualifier avec l'IA</button>
-            </div>
-        </div>
-
-        <div class="card" id="importResultBox" style="display: none;">
-            <h2>Résultat de l'extraction IA</h2>
-            <div id="productPreview" style="display: flex; gap: 20px; align-items: center; margin-bottom: 20px;"></div>
-            
-            <h3>Fiches réécrites par l'IA sur mesure :</h3>
-            <div class="marketplace-tabs">
-                <button class="tab-btn active" data-target="ebay">eBay</button>
-                <button class="tab-btn" data-target="amazon">Amazon</button>
-                <button class="tab-btn" data-target="tiktok">TikTok Shop</button>
-                <button class="tab-btn" data-target="allegro">Allegro</button>
-            </div>
-
-            <div id="ebay-tab" class="tab-content active"></div>
-            <div id="amazon-tab" class="tab-content"></div>
-            <div id="tiktok-tab" class="tab-content"></div>
-            <div id="allegro-tab" class="tab-content"></div>
-        </div>
+  <div class="grid">
+    <!-- ============ IMPORT ============ -->
+    <div class="card">
+      <h2>Importer un produit par lien</h2>
+      <p class="hint">Colle une URL fournisseur (AliExpress, Alibaba…). L'extraction puis la génération des fiches se font en deux étapes distinctes, pour que tu voies ce qui a été récupéré avant qu'une IA ne rédige quoi que ce soit.</p>
+      <label for="importUrl">URL du produit fournisseur</label>
+      <input type="text" id="importUrl" placeholder="https://www.aliexpress.com/item/....html">
+      <div class="row">
+        <button id="btnExtract">1. Extraire la fiche</button>
+        <button class="ghost" id="btnGenerate" disabled>2. Générer les fiches IA</button>
+      </div>
+      <details id="importDetail" style="display:none">
+        <summary>Détail de l'import</summary>
+        <div id="importBody" class="pre" style="margin-top:8px"></div>
+      </details>
     </div>
 
-    <div class="modal" id="partnerModal">
-        <div class="modal-content">
-            <span class="close-btn" id="modalClose">&times;</span>
-            <h2>Nouveau Fournisseur / Distributeur</h2>
-            
-            <label for="partnerName">Nom du partenaire :</label>
-            <input type="text" id="partnerName" placeholder="Ex: Grossiste Bijoux Paris...">
-            
-            <label for="partnerMargin">Coefficient de marge par défaut :</label>
-            <input type="number" id="partnerMargin" step="0.1" value="1.5">
-            
-            <label for="partnerStatus">Statut initial :</label>
-            <select id="partnerStatus">
-                <option value="actif">Actif / Certifié</option>
-                <option value="inactif">En attente de validation</option>
-            </select>
-
-            <button class="btn" id="btnSavePartner">Enregistrer le partenaire</button>
-        </div>
+    <!-- ============ CANAUX ============ -->
+    <div class="card">
+      <h2>Canaux</h2>
+      <p class="hint">Un canal non configuré est ignoré par les synchronisations — il ne fait jamais échouer les autres.</p>
+      <div class="list" id="channels"></div>
+      <div class="row">
+        <button class="ghost tiny" id="btnSyncStock">Synchroniser le stock</button>
+        <button class="ghost tiny" id="btnSyncOrders">Synchroniser les commandes</button>
+      </div>
     </div>
 
-    <script>
-        document.addEventListener('DOMContentLoaded', function() {
-            const modal = document.getElementById('partnerModal');
-            document.getElementById('btnManagePartners').addEventListener('click', function() {
-                modal.style.display = 'flex';
-            });
-            
-            document.getElementById('modalClose').addEventListener('click', function() {
-                modal.style.display = 'none';
-            });
+    <!-- ============ SUPPORT ============ -->
+    <div class="card">
+      <h2>Qualifier un message client</h2>
+      <p class="hint">L'IA propose une catégorie, une urgence et une réponse. Elle ne décide jamais d'un remboursement.</p>
+      <label for="supportMsg">Message du client</label>
+      <textarea id="supportMsg" rows="4" placeholder="Bonjour, ma commande n'est toujours pas arrivée..."></textarea>
+      <div class="row"><button id="btnQualify">Qualifier</button></div>
+      <div id="supportResult" class="pre" style="margin-top:10px"></div>
+    </div>
+  </div>
 
-            document.getElementById('btnSavePartner').addEventListener('click', function() {
-                const name = document.getElementById('partnerName').value.trim();
-                const margin = document.getElementById('partnerMargin').value;
-                if(!name) { return alert("Veuillez saisir un nom de partenaire."); }
-                
-                const select = document.getElementById('partnerSelect');
-                const option = document.createElement('option');
-                option.value = name.toLowerCase().replace(/\s+/g, '_');
-                option.text = name + " (Marge " + margin + "x)";
-                select.add(option);
-                select.value = option.value;
-                
-                alert("Partenaire \"" + name + "\" configure avec succes !");
-                modal.style.display = 'none';
-                document.getElementById('partnerName').value = '';
-            });
+  <!-- ============ FICHES DE L'IMPORT COURANT ============ -->
+  <div class="card" id="listingsCard" style="display:none">
+    <h2>Fiches générées pour l'import</h2>
+    <p class="hint">Corrige ce qui doit l'être, puis publie. La publication envoie réellement sur le canal — sur eBay comme sur ton site.</p>
+    <div id="listings" class="list"></div>
+  </div>
 
-            document.querySelectorAll('.tab-btn').forEach(button => {
-                button.addEventListener('click', function() {
-                    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
-                    document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
-                    
-                    this.classList.add('active');
-                    const target = this.getAttribute('data-target');
-                    document.getElementById(target + '-tab').classList.add('active');
-                });
-            });
+  <div class="grid">
+    <!-- ============ PRODUITS ============ -->
+    <div class="card">
+      <h2>Produits internes</h2>
+      <p class="hint">Le catalogue de référence du hub. Les prix suggérés par l'IA partent de son prix de revient.</p>
+      <label for="pSku">SKU</label>
+      <input type="text" id="pSku" placeholder="JOUET-001">
+      <label for="pName">Nom</label>
+      <input type="text" id="pName" placeholder="Peluche renard">
+      <label for="pCost">Prix de revient (€)</label>
+      <input type="number" id="pCost" step="0.01" min="0" placeholder="8.50">
+      <div class="row"><button id="btnCreateProduct">Créer le produit</button></div>
+      <div class="list" id="products"></div>
+    </div>
 
-            document.getElementById('btnImport').addEventListener('click', function() {
-                const url = document.getElementById('importUrl').value.trim();
-                if(!url) { return alert("Veuillez d'abord coller un lien de produit valide."); }
-                
-                alert("L'IA Claude analyse le lien fournisseur en arriere-plan... (Appel a l'API /api/imports)");
-                
-                document.getElementById('importResultBox').style.display = 'block';
-                document.getElementById('productPreview').innerHTML = `
-                    <div style="background:#444; width:80px; height:80px; border-radius:5px; display:flex; align-items:center; justify-content:center;">🖼️ Photo</div>
-                    <div><strong>Produit extrait avec succes !</strong><br><span style="color:#28a745;">Prix de revient fournisseur : 4.50 €</span></div>
-                `;
-                
-                const channels = ['ebay', 'amazon', 'tiktok', 'allegro'];
-                channels.forEach(ch => {
+    <!-- ============ RECOMMANDATIONS ============ -->
+    <div class="card">
+      <h2>Recommandations en attente</h2>
+      <p class="hint">Toute suggestion sous le prix de revient est rejetée avant d'arriver ici.</p>
+      <div class="list" id="recommendations"></div>
+    </div>
+  </div>
 
-                
- 
+  <div class="grid">
+    <!-- ============ IMPORTS ============ -->
+    <div class="card">
+      <h2>Imports récents</h2>
+      <div class="list" id="imports"></div>
+    </div>
+
+    <!-- ============ ACTIVITE ============ -->
+    <div class="card">
+      <h2>Journal d'activité</h2>
+      <div class="list" id="activity"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ===================== SOCLE ===================== */
+const $ = (id) => document.getElementById(id);
+
+/* Tout ce qui vient de l'API est inséré via innerHTML : un nom de produit ou un
+   message client est donc du HTML potentiel. On l'échappe systématiquement —
+   même raison qui fait que le site n'accepte qu'une clé d'icône et jamais du SVG
+   arbitraire. */
+function esc(value) {
+  return String(value ?? '').replace(/[&<>"']/g, (c) => (
+    { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
+  ));
+}
+
+function say(message, kind = 'info') {
+  const box = $('status');
+  box.className = 'show ' + kind;
+  box.textContent = message;
+}
+
+function clearStatus() { $('status').className = ''; }
+
+/* L'API renvoie { error } avec un code 4xx/5xx. On remonte toujours son message
+   tel quel : les erreurs de ce projet sont écrites pour être lues. */
+async function api(path, options = {}) {
+  const response = await fetch(path, {
+    credentials: 'same-origin',
+    headers: { 'Content-Type': 'application/json' },
+    ...options,
+  });
+  const text = await response.text();
+  let body;
+  try { body = text ? JSON.parse(text) : null; } catch { body = text; }
+  if (!response.ok) {
+    const detail = body && body.error ? body.error : (typeof body === 'string' ? body : response.statusText);
+    throw new Error(detail + ' (HTTP ' + response.status + ')');
+  }
+  return body;
+}
+
+function money(value) {
+  const n = Number(value);
+  return Number.isFinite(n) ? n.toFixed(2) + ' €' : '—';
+}
+
+function when(ms) {
+  if (!ms) return '—';
+  const d = new Date(Number(ms));
+  return isNaN(d) ? '—' : d.toLocaleString('fr-FR');
+}
+
+async function guard(work, successMessage) {
+  try {
+    clearStatus();
+    const result = await work();
+    if (successMessage) say(successMessage, 'good');
+    return result;
+  } catch (error) {
+    say(error.message, 'err');
+    return null;
+  }
+}
+
+/* ===================== CHARGEMENTS ===================== */
+async function loadChannels() {
+  const channels = await api('/api/channels');
+  const box = $('channels');
+  if (!channels.length) { box.innerHTML = '<p class="empty">Aucun canal enregistré.</p>'; return; }
+  box.innerHTML = channels.map((c) => `
+    <div class="item">
+      <div class="top">
+        <span class="name">${esc(c.channel)}</span>
+        <span class="pill ${c.configured ? 'ok' : 'off'}">${c.configured ? 'configuré' : 'non configuré'}</span>
+      </div>
+    </div>
+  `).join('');
+}
+
+async function loadProducts() {
+  const products = await api('/api/products');
+  const box = $('products');
+  if (!products.length) { box.innerHTML = '<p class="empty">Aucun produit. Crée-en un ci-dessus.</p>'; return; }
+  box.innerHTML = products.slice(0, 40).map((p) => `
+    <div class="item">
+      <div class="top">
+        <span class="name">${esc(p.name)}</span>
+        <span class="pill off">${esc(p.sku)}</span>
+      </div>
+      <div class="meta">Revient ${money(p.cost_price)} · ${(p.listings || []).length} fiche(s) par canal</div>
+      <div class="row">
+        <button class="ghost tiny" data-price="${p.id}">Suggérer un prix</button>
+        <button class="ghost tiny" data-desc="${p.id}">Générer une description</button>
+      </div>
+    </div>
+  `).join('');
+
+  box.querySelectorAll('[data-price]').forEach((b) => b.addEventListener('click', () => guard(
+    () => api('/api/recommendations/price/' + b.dataset.price, { method: 'POST' }),
+    'Suggestions de prix générées.',
+  ).then(loadRecommendations)));
+
+  box.querySelectorAll('[data-desc]').forEach((b) => b.addEventListener('click', () => {
+    const channel = prompt('Canal visé (ebay, amazon, tiktok_shop, own_site) :', 'ebay');
+    if (!channel) return;
+    guard(
+      () => api('/api/recommendations/description/' + b.dataset.desc + '/' + encodeURIComponent(channel), { method: 'POST' }),
+      'Description générée.',
+    ).then(loadRecommendations);
+  }));
+}
+
+async function loadRecommendations() {
+  const rows = await api('/api/recommendations?status=pending');
+  const box = $('recommendations');
+  if (!rows.length) { box.innerHTML = '<p class="empty">Aucune recommandation en attente.</p>'; return; }
+  box.innerHTML = rows.slice(0, 30).map((r) => {
+    const payload = r.payload || {};
+    const label = payload.suggestedPrice != null ? money(payload.suggestedPrice) : (payload.category || payload.description ? 'texte' : '—');
+    const why = payload.rationale || payload.draftReply || payload.description || '';
+    return `
+      <div class="item">
+        <div class="top">
+          <span class="name">${esc(r.type)} · ${esc(r.channel || '—')}</span>
+          <span class="pill warn">${esc(label)}</span>
+        </div>
+        <div class="meta">${esc(String(why).slice(0, 220))}</div>
+        <div class="row">
+          <button class="ghost tiny" data-apply="${r.id}">Marquer appliquée</button>
+          <button class="ghost tiny" data-dismiss="${r.id}">Rejeter</button>
+        </div>
+      </div>
+    `;
+  }).join('');
+
+  box.querySelectorAll('[data-apply]').forEach((b) => b.addEventListener('click', () => guard(
+    () => api('/api/recommendations/' + b.dataset.apply + '/apply', { method: 'POST' }),
+    'Recommandation marquée comme appliquée.',
+  ).then(loadRecommendations)));
+
+  box.querySelectorAll('[data-dismiss]').forEach((b) => b.addEventListener('click', () => guard(
+    () => api('/api/recommendations/' + b.dataset.dismiss + '/dismiss', { method: 'POST' }),
+    'Recommandation rejetée.',
+  ).then(loadRecommendations)));
+}
+
+async function loadImports() {
+  const rows = await api('/api/imports');
+  const box = $('imports');
+  if (!rows.length) { box.innerHTML = '<p class="empty">Aucun import.</p>'; return; }
+  box.innerHTML = rows.slice(0, 20).map((i) => `
+    <div class="item">
+      <div class="top">
+        <span class="name">${esc(i.title)}</span>
+        <span class="pill ${i.status === 'pret' ? 'ok' : 'off'}">${esc(i.status)}</span>
+      </div>
+      <div class="meta">#${i.id} · ${esc(i.source_site)} · achat ${money(i.purchase_price)} ${esc(i.currency)}</div>
+      <div class="row">
+        <button class="ghost tiny" data-open="${i.id}">Ouvrir les fiches</button>
+        <button class="ghost tiny" data-regen="${i.id}">Régénérer</button>
+      </div>
+    </div>
+  `).join('');
+
+  box.querySelectorAll('[data-open]').forEach((b) => b.addEventListener('click', () => guard(
+    () => showImport(Number(b.dataset.open)),
+  )));
+
+  box.querySelectorAll('[data-regen]').forEach((b) => b.addEventListener('click', () => guard(async () => {
+    const saved = await api('/api/imports/' + b.dataset.regen + '/generate', { method: 'POST' });
+    await showImport(Number(b.dataset.regen));
+    return saved;
+  }, 'Fiches régénérées.').then(loadImports)));
+}
+
+async function loadActivity() {
+  const rows = await api('/api/activity');
+  const box = $('activity');
+  if (!rows.length) { box.innerHTML = '<p class="empty">Journal vide.</p>'; return; }
+  box.innerHTML = rows.slice(0, 25).map((a) => `
+    <div class="item">
+      <div class="top">
+        <span class="name">${esc(a.kind)}</span>
+        <span class="pill off">${esc(when(a.created_at))}</span>
+      </div>
+      <div class="meta">${esc(a.message)}</div>
+    </div>
+  `).join('');
+}
+
+/* ===================== IMPORT : EXTRACTION ===================== */
+let currentImportId = null;
+
+$('btnExtract').addEventListener('click', () => guard(async () => {
+  const url = $('importUrl').value.trim();
+  if (!url) throw new Error('Colle d\'abord une URL fournisseur.');
+  $('btnGenerate').disabled = true;
+  const data = await api('/api/imports', { method: 'POST', body: JSON.stringify({ url }) });
+  currentImportId = data.id;
+  $('importDetail').style.display = 'block';
+  $('importBody').innerHTML = [
+    ['Titre extrait', esc(data.title)],
+    ['Site détecté', esc(data.sourceSite)],
+    ['Prix d\'achat', money(data.purchasePrice) + ' ' + esc(data.currency)],
+    ['Photos trouvées', (data.imageUrls || []).length],
+    ['Description brute', esc((data.rawDescription || '(aucune)').slice(0, 400))],
+  ].map(([k, v]) => `<div class="kv"><span>${k}</span><span>${v}</span></div>`).join('');
+  $('btnGenerate').disabled = false;
+  await loadImports();
+  return data;
+}, 'Fiche extraite. Tu peux maintenant générer les fiches.') );
+
+$('btnGenerate').addEventListener('click', () => guard(async () => {
+  if (!currentImportId) throw new Error('Extrais d\'abord une fiche.');
+  await api('/api/imports/' + currentImportId + '/generate', { method: 'POST' });
+  await showImport(currentImportId);
+  await loadImports();
+}, 'Fiches générées par l\'IA.'));
+
+/* ===================== IMPORT : FICHES ===================== */
+async function showImport(id) {
+  const data = await api('/api/imports/' + id);
+  currentImportId = id;
+  $('listingsCard').style.display = 'block';
+  const listings = data.listings || [];
+  const box = $('listings');
+
+  if (!listings.length) {
+    box.innerHTML = '<p class="empty">Aucune fiche pour cet import. Lance la génération IA.</p>';
+    return data;
+  }
+
+  box.innerHTML = listings.map((l) => `
+    <div class="item">
+      <div class="top">
+        <span class="name">${esc(l.marketplace)}</span>
+        <span class="pill ${l.status === 'publie' ? 'ok' : l.status === 'echec' ? 'bad' : 'warn'}">${esc(l.status)}</span>
+      </div>
+      <div class="meta">Prix conseillé ${money(l.suggested_price)}${l.published_external_id ? ' · publié sous ' + esc(l.published_external_id) : ''}</div>
+      ${l.publish_error ? `<div class="meta" style="color:var(--bad)">${esc(l.publish_error)}</div>` : ''}
+      <label for="t-${l.id}">Titre</label>
+      <input type="text" id="t-${l.id}" value="${esc(l.title)}">
+      <label for="p-${l.id}">Prix (€)</label>
+      <input type="number" id="p-${l.id}" step="0.01" min="0" value="${esc(l.suggested_price)}">
+      <label for="d-${l.id}">Description</label>
+      <textarea id="d-${l.id}" rows="4">${esc(l.description)}</textarea>
+      ${l.marketplace === 'own_site' ? `
+        <details>
+          <summary>Fiche détaillée du site (catégorie, univers, âge, icône, bilingue)</summary>
+          <div class="meta" style="margin:6px 0">Le site exige ces champs, que les marketplaces ne demandent pas. Corrige le JSON si la génération s'est trompée, puis enregistre avant de publier.</div>
+          <textarea id="s-${l.id}" rows="12">${esc(l.site_payload || '')}</textarea>
+        </details>` : ''}
+      <div class="row">
+        <button class="ghost tiny" data-save="${l.id}" data-mp="${esc(l.marketplace)}">Enregistrer</button>
+        <button class="tiny" data-publish="${l.id}" data-mp="${esc(l.marketplace)}">Publier sur ${esc(l.marketplace)}</button>
+      </div>
+    </div>
+  `).join('');
+
+  box.querySelectorAll('[data-save]').forEach((b) => b.addEventListener('click', () => guard(async () => {
+    const id = b.dataset.save;
+    const patch = {
+      title: $('t-' + id).value.trim(),
+      description: $('d-' + id).value.trim(),
+      suggestedPrice: Number($('p-' + id).value),
+    };
+    const siteField = $('s-' + id);
+    if (siteField && siteField.value.trim()) {
+      try { patch.sitePayload = JSON.parse(siteField.value); }
+      catch { throw new Error('La fiche site n\'est pas un JSON valide.'); }
+    }
+    await api('/api/imports/' + currentImportId + '/listings/' + b.dataset.mp, {
+      method: 'PATCH', body: JSON.stringify(patch),
+    });
+    await showImport(currentImportId);
+  }, 'Fiche enregistrée et marquée validée.')));
+
+  box.querySelectorAll('[data-publish]').forEach((b) => b.addEventListener('click', () => guard(async () => {
+    if (!confirm('Publier réellement sur ' + b.dataset.mp + ' ?')) return null;
+    const result = await api('/api/imports/' + currentImportId + '/listings/' + b.dataset.mp + '/publish', { method: 'POST' });
+    await showImport(currentImportId);
+    await loadActivity();
+    return result;
+  }, 'Publication effectuée.')));
+
+  return data;
+}
+
+/* ===================== PRODUITS ===================== */
+$('btnCreateProduct').addEventListener('click', () => guard(async () => {
+  const sku = $('pSku').value.trim();
+  const name = $('pName').value.trim();
+  const costPrice = Number($('pCost').value || 0);
+  if (!sku || !name) throw new Error('SKU et nom sont obligatoires.');
+  await api('/api/products', { method: 'POST', body: JSON.stringify({ sku, name, costPrice }) });
+  $('pSku').value = ''; $('pName').value = ''; $('pCost').value = '';
+  await loadProducts();
+}, 'Produit créé.'));
+
+/* ===================== SUPPORT ===================== */
+$('btnQualify').addEventListener('click', () => guard(async () => {
+  const customerMessage = $('supportMsg').value.trim();
+  if (!customerMessage) throw new Error('Le message client est vide.');
+  const result = await api('/api/support/qualify', { method: 'POST', body: JSON.stringify({ customerMessage }) });
+  $('supportResult').innerHTML = [
+    ['Catégorie', esc(result.category)],
+    ['Urgence', esc(result.urgency)],
+    ['Réponse proposée', esc(result.draftReply)],
+  ].map(([k, v]) => `<div class="kv"><span>${k}</span><span>${v}</span></div>`).join('');
+  await loadActivity();
+  return result;
+}));
+
+/* ===================== SYNCHRONISATIONS ===================== */
+$('btnSyncStock').addEventListener('click', () => guard(async () => {
+  const result = await api('/api/sync/stock', { method: 'POST' });
+  await loadActivity();
+  const errors = (result.errors || []).map((e) => e.channel + ' : ' + e.message).join(' · ');
+  say('Stock : ' + result.updated + ' ligne(s) mise(s) à jour.' + (errors ? ' Erreurs — ' + errors : ''), errors ? 'err' : 'good');
+  return result;
+}));
+
+$('btnSyncOrders').addEventListener('click', () => guard(async () => {
+  const result = await api('/api/sync/orders', { method: 'POST' });
+  await loadActivity();
+  const errors = (result.errors || []).map((e) => e.channel + ' : ' + e.message).join(' · ');
+  say('Commandes : ' + result.created + ' nouvelle(s).' + (errors ? ' Erreurs — ' + errors : ''), errors ? 'err' : 'good');
+  return result;
+}));
+
+/* ===================== DEMARRAGE ===================== */
+async function loadAll() {
+  // Chaque bloc est indépendant : une section en erreur ne doit pas vider les autres.
+  const blocks = [loadChannels, loadProducts, loadRecommendations, loadImports, loadActivity];
+  await Promise.all(blocks.map((fn) => fn().catch((error) => say(fn.name + ' : ' + error.message, 'err'))));
+}
+
+$('btnRefresh').addEventListener('click', () => guard(loadAll, 'Données rechargées.'));
+document.addEventListener('DOMContentLoaded', loadAll);
+if (document.readyState !== 'loading') loadAll();
+</script>
+</body>
+</html>
