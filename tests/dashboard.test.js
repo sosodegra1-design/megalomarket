@@ -148,3 +148,49 @@ test('une configuration illisible laisse les actions IA bloquées', () => {
   sandbox.applyAiState();
   assert.equal(node('btnGenerate').disabled, true);
 });
+
+/* ===================== MOUVEMENT =====================
+   L'animation ne fait pas partie du contrat fonctionnel, mais deux de ses
+   propriétés en font partie : elle ne doit JAMAIS retarder une action, et elle
+   ne doit JAMAIS porter seule une information. Ces tests verrouillent les deux
+   garde-fous qui rendent ces promesses vérifiables sans navigateur :
+   `prefers-reduced-motion` neutralise tout, et aucune règle d'animation ne
+   touche le défilement ou la mise en page au chargement. */
+
+test('le mouvement réduit neutralise les animations, sans faire disparaître l’état', () => {
+  const reduced = HTML.slice(HTML.indexOf('prefers-reduced-motion'));
+  // La règle globale : durée quasi nulle, une seule itération.
+  assert.match(reduced, /animation-duration:\s*\.001ms\s*!important/);
+  assert.match(reduced, /transition-duration:\s*\.001ms\s*!important/);
+  // Un contenu révélé par une animation part d'une opacité nulle : sans cette
+  // ligne, le mode « mouvement réduit » le laisserait invisible pour toujours.
+  assert.match(reduced, /\.reveal-in\s*\{[^}]*opacity:\s*1\s*!important/);
+  assert.match(reduced, /\.row-in\s*\{[^}]*opacity:\s*1\s*!important/);
+  // Le rond d'occupation perd sa rotation mais reste visible : l'information
+  // « une requête est en vol » ne doit pas disparaître avec l'animation.
+  assert.match(reduced, /\.spinner\s*\{[^}]*animation:\s*none\s*!important/);
+});
+
+test('chaque transition de vue est orientée et laisse l’action immédiate', () => {
+  for (const name of ['viewInFromRight', 'viewInFromLeft']) {
+    assert.match(HTML, new RegExp('@keyframes\\s+' + name), `l’animation ${name} doit exister`);
+  }
+  // Les durées restent courtes : au-delà, le mouvement deviendrait une attente.
+  assert.ok(HTML.includes('viewInFromRight .34s'), 'entrée par la droite bornée');
+  assert.ok(HTML.includes('viewInFromLeft .34s'), 'entrée par la gauche bornée');
+  // La vue sortante ne s'anime pas : animer les deux obligerait à la sortir du
+  // flux, donc à produire un décalage de mise en page à chaque clic. Une seule
+  // animation suffit à donner le sens, et elle ne coûte rien à l'action.
+  assert.ok(!/@keyframes\s+viewOut/.test(HTML), 'aucune animation de sortie de vue');
+  // Aucune transition globale ne doit toucher `all` sur le contenu : c'est le
+  // raccourci qui produit des décalages de mise en page au chargement.
+  assert.ok(!/\.content\s*\{[^}]*transition:\s*all/.test(HTML), 'pas de transition « all » sur le contenu');
+});
+
+test('l’entrée échelonnée ne consomme rien dans une vue cachée', () => {
+  // Les lignes et les cartes sont en pause tant que leur vue n'est pas active :
+  // une table rendue en arrière-plan ne peut donc pas rester transparente.
+  assert.match(HTML, /animation-play-state:\s*paused/);
+  assert.match(HTML, /\.view\.active\s+\.row-in[^{]*\{\s*animation-play-state:\s*running/);
+  assert.match(HTML, /\.view\.active\s+\.reveal-in[^{]*\{\s*animation-play-state:\s*running/);
+});

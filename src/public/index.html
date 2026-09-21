@@ -177,33 +177,71 @@
       overflow-y: auto;
     }
     .brand { display: flex; align-items: center; gap: 10px; padding: 4px 6px 16px; }
+    /* Marque animée : un balancement lent de deux degrés, rien de plus. Elle
+       signale que l'application est vivante sans jamais attirer l'attention sur
+       elle — un back-office qu'on regarde travailler, pas un logo qu'on admire. */
     .brand-mark {
       width: 32px; height: 32px; flex: none; border-radius: 9px; display: grid; place-items: center;
       background: linear-gradient(150deg, var(--accent), var(--brand-2));
       color: #fff; font-weight: 800; font-size: var(--fs-md); letter-spacing: -.03em;
       box-shadow: 0 8px 20px -10px var(--accent);
+      animation: brandSway 6.5s ease-in-out infinite;
+    }
+    @keyframes brandSway {
+      0%, 100% { transform: rotate(0deg) translateY(0); }
+      30% { transform: rotate(-2.2deg) translateY(-1px); }
+      62% { transform: rotate(1.6deg) translateY(0); }
     }
     .brand-text { display: flex; flex-direction: column; line-height: 1.15; }
     .brand-name { font-weight: 700; font-size: var(--fs-md); }
     .brand-sub { color: var(--muted-2); font-size: var(--fs-2xs); text-transform: uppercase; letter-spacing: .11em; }
-    .nav { display: flex; flex-direction: column; gap: 3px; }
+    /* Le curseur de navigation : UN SEUL trait, partagé par tous les éléments,
+       qui glisse de l'ancienne section vers la nouvelle au lieu de disparaître
+       ici et de réapparaître là-bas. C'est ce qui donne au changement d'écran sa
+       direction : l'œil suit le trait, donc il sait d'où il vient. Positionné en
+       absolu dans la barre, il ne participe à aucune mise en page (aucun
+       décalage au chargement) et il est masqué tant qu'aucune vue n'est active. */
+    .nav { position: relative; display: flex; flex-direction: column; gap: 3px; }
+    .nav-rail {
+      position: absolute; left: 1px; top: 0; width: 3px; height: 0; border-radius: 3px;
+      background: linear-gradient(180deg, var(--accent), var(--brand-2));
+      opacity: 0; pointer-events: none;
+      transition: transform .34s var(--ease), height .34s var(--ease), opacity .2s linear;
+    }
+    .nav-rail.on { opacity: 1; }
+    /* La lueur qui parcourt le curseur : la « signature » discrète de la marque.
+       Elle ne transporte aucune information — le trait, lui, dit où l'on est. */
+    .nav-rail::after {
+      content: ''; position: absolute; left: -1px; right: -1px; height: 26px; border-radius: 3px;
+      background: linear-gradient(180deg, transparent, rgba(255, 255, 255, .85), transparent);
+      animation: railGlow 2.8s var(--ease) infinite;
+    }
+    @keyframes railGlow {
+      0% { top: -26px; opacity: 0; }
+      18% { opacity: .9; }
+      82% { opacity: .9; }
+      100% { top: 100%; opacity: 0; }
+    }
     .nav-label { color: var(--muted-2); font-size: var(--fs-2xs); text-transform: uppercase; letter-spacing: .13em; padding: 12px 10px 6px; }
     .nav-item {
       position: relative; display: flex; align-items: center; gap: 11px; padding: 9px 11px; border-radius: var(--radius-sm);
       color: var(--text-2); text-decoration: none; font-size: var(--fs-base); font-weight: 500;
       border: 1px solid transparent; transition: background .16s var(--ease), color .16s, transform .16s var(--ease);
     }
-    .nav-item svg { width: 18px; height: 18px; flex: none; opacity: .85; }
+    .nav-item svg { width: 18px; height: 18px; flex: none; opacity: .85; transition: transform .24s var(--ease), opacity .16s, color .16s; }
     .nav-item:hover { background: var(--panel-2); color: var(--text); }
     .nav-item:active { transform: scale(.985); }
     .nav-item.active { background: var(--accent-soft); color: #fff; border-color: rgba(76, 141, 255, .3); }
-    .nav-item.active svg { opacity: 1; color: var(--accent); }
-    /* Le trait vertical de la vue active : il reste à sa place quand on change
-       d'onglet, ce qui évite au regard de chercher « où je suis » à chaque fois. */
-    .nav-item.active::before {
-      content: ''; position: absolute; left: -9px; top: 8px; bottom: 8px; width: 3px;
-      border-radius: 3px; background: linear-gradient(180deg, var(--accent), var(--brand-2));
+    .nav-item.active svg { opacity: 1; color: var(--accent); transform: scale(1.06); }
+    /* Compteur discret : le nombre de fiches que la section contient, pour
+       qu'une rubrique vide se voie sans l'ouvrir. Masqué tant qu'il vaut zéro. */
+    .nav-count {
+      margin-left: auto; font-size: var(--fs-2xs); font-variant-numeric: tabular-nums;
+      color: var(--muted-2); background: var(--panel-2); border-radius: 5px; padding: 0 6px;
+      min-width: 20px; text-align: center; transition: color .2s, background .2s;
     }
+    .nav-count[hidden] { display: none !important; }
+    .nav-item.active .nav-count { color: var(--accent-ink); background: rgba(76, 141, 255, .16); }
     .nav-item:focus-visible { outline: 2px solid var(--accent); outline-offset: -1px; }
     .sidebar-foot { margin-top: auto; padding: 14px 10px 4px; color: var(--muted-2); font-size: var(--fs-2xs); line-height: 1.6; }
     .nav-scrim {
@@ -472,17 +510,37 @@
     .seg {
       display: inline-flex; align-items: center; gap: 2px; padding: 3px;
       background: #0f131c; border: 1px solid var(--line); border-radius: var(--radius-xs);
+      position: relative;
+    }
+    /* Le curseur du filtre segmenté GLISSE d'un choix à l'autre au lieu de
+       s'allumer sèchement. Il est posé en absolu derrière les boutons (le
+       libellé reste lisible) et se place via `transform`, donc sans reflow.
+       Sa largeur vaut 0 tant que le script ne l'a pas mesuré : sans JavaScript,
+       le style `aria-pressed` d'origine continue de porter le choix. */
+    .seg-slider {
+      position: absolute; top: 3px; left: 0; height: calc(100% - 6px); width: 0;
+      border-radius: 6px; background: var(--panel-3);
+      box-shadow: inset 0 0 0 1px var(--accent-line);
+      pointer-events: none; z-index: 0;
+      transition: transform .28s var(--ease), width .28s var(--ease);
     }
     .seg-btn {
+      position: relative; z-index: 1;
       display: inline-flex; align-items: center; gap: 6px; border: 0; cursor: pointer;
       background: transparent; color: var(--muted); font-size: var(--fs-sm); font-weight: 550;
       padding: 5px 11px; border-radius: 6px; white-space: nowrap;
-      transition: background .16s var(--ease), color .16s var(--ease);
+      transition: background .16s var(--ease), color .16s var(--ease), transform .1s var(--ease);
     }
     .seg-btn:hover { color: var(--text); background: var(--panel-2); }
+    .seg-btn:active { transform: scale(.97); }
     .seg-btn[aria-pressed="true"] {
-      background: var(--panel-3); color: #fff;
-      box-shadow: inset 0 0 0 1px var(--accent-line);
+      background: transparent; color: #fff;
+      box-shadow: none;
+    }
+    /* Sans curseur mesuré (DOM de test, JavaScript coupé), le choix actif garde
+       son fond : l'état ne dépend jamais de l'animation. */
+    .seg.no-slider .seg-btn[aria-pressed="true"] {
+      background: var(--panel-3); box-shadow: inset 0 0 0 1px var(--accent-line);
     }
     .seg-count {
       font-size: var(--fs-2xs); font-variant-numeric: tabular-nums; color: var(--muted-2);
@@ -587,11 +645,26 @@
     #status.err { background: #331d1b; border: 1px solid var(--bad-line); }
     .status-icon { flex: none; font-weight: 700; color: var(--bad); }
 
-    /* ---------- Vues ---------- */
+    /* ---------- Vues ----------
+       Le contenu arrive DU CÔTÉ QUE LA NAVIGATION INDIQUE : une section située
+       plus bas dans la barre latérale entre par la droite, une section située
+       plus haut par la gauche. Le mouvement n'est donc pas décoratif — il
+       reproduit le trajet du curseur de navigation, et l'écran ne « saute » plus
+       d'une rubrique à l'autre sans direction. Rien de tout cela ne retarde
+       l'action : la vue d'arrivée entre en ~340 ms et un clic pendant
+       l'animation fonctionne normalement.
+       La vue sortante, elle, ne s'anime PAS : elle quitte le flux tout de suite
+       et la vue d'arrivée occupe sa place. Animer les deux aurait demandé de
+       sortir la sortante du flux (donc un `position: absolute` et un conteneur
+       qui grandit), c'est-à-dire un décalage de mise en page à chaque clic — un
+       prix bien trop élevé pour un effet que le glissement d'entrée suffit à
+       donner. Une seule animation, donc : zéro décalage. */
     .view { display: none; flex-direction: column; gap: 18px; }
     .view.active { display: flex; }
-    .view.active.view-enter { animation: viewIn .34s var(--ease) both; }
-    @keyframes viewIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+    .view.active.view-fwd { animation: viewInFromRight .34s var(--ease) both; }
+    .view.active.view-back { animation: viewInFromLeft .34s var(--ease) both; }
+    @keyframes viewInFromRight { from { opacity: 0; transform: translateX(26px); } to { opacity: 1; transform: none; } }
+    @keyframes viewInFromLeft { from { opacity: 0; transform: translateX(-26px); } to { opacity: 1; transform: none; } }
 
     /* ---------- KPI ---------- */
     .kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; }
@@ -743,12 +816,65 @@
     .skel-row td { padding: 13px 14px; border-bottom: 1px solid var(--line-soft); }
     @keyframes shimmer { 0% { background-position: 100% 0; } 100% { background-position: -100% 0; } }
 
-    /* ---------- Entrée échelonnée des lignes ----------
-       Décalage volontairement plafonné : au-delà d'une douzaine de lignes,
-       attendre son tour devient une gêne, pas une élégance. Le décalage part du
-       haut de la liste et décroît : l'œil suit l'ordre de lecture. */
-    .row-in { animation: rowIn .32s var(--ease) both; }
+    /* ---------- Entrée échelonnée ----------
+       Deux vitesses, une seule règle : le contenu se pose brièvement à l'entrée,
+       et JAMAIS dans un écran caché. Une vue cachée met l'animation en pause
+       (`animation-play-state: paused`), donc elle ne la consomme pas pendant
+       qu'on regarde ailleurs : elle repart au moment de l'ouvrir, avec son
+       décalage — sans qu'aucune ligne n'ait à être re-rendue.
+
+       Le décalage est volontairement plafonné : au-delà d'une douzaine de
+       lignes, attendre son tour devient une gêne, pas une élégance. Les valeurs
+       sont posées par le script (voir stagger / revealStagger) sous forme de
+       variables, ce qui évite une écriture de style par élément.
+
+       `animation-play-state: paused` n'est pas `animation: none` : en mode
+       mouvement réduit, la règle globale ramène la durée à ~0 et la pause est
+       sans effet — l'état final reste donc parfaitement visible. */
+    .row-in, .reveal-in { animation-delay: var(--stagger, 0ms); animation-play-state: paused; }
+    .view.active .row-in, .view.active .reveal-in { animation-play-state: running; }
+    .row-in { animation-name: rowIn; animation-duration: .32s; animation-timing-function: var(--ease); animation-fill-mode: both; }
+    .reveal-in { animation-name: revealIn; animation-duration: .34s; animation-timing-function: var(--ease); animation-fill-mode: both; }
     @keyframes rowIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+    @keyframes revealIn { from { opacity: 0; transform: translateY(12px) scale(.994); } to { opacity: 1; transform: none; } }
+
+    /* ---------- Micro-retours ----------
+       Chaque animation ci-dessous répond à un changement d'ÉTAT, jamais à un
+       simple passage de souris : une pastille qui change de statut, un chiffre
+       qui vient d'être recalculé, une étape qui avance. Rien ne bouge pour
+       occuper l'œil. */
+    .pop-in { animation: popIn .42s var(--ease) both; }
+    @keyframes popIn {
+      0% { transform: scale(.86); opacity: .4; }
+      55% { transform: scale(1.07); opacity: 1; }
+      100% { transform: scale(1); opacity: 1; }
+    }
+    .kpi-value.counted { animation: countPop .4s var(--ease); }
+    @keyframes countPop {
+      0% { transform: translateY(0); color: var(--text); }
+      35% { transform: translateY(-2px); color: var(--accent-ink); }
+      100% { transform: translateY(0); color: var(--text); }
+    }
+    /* Confirmation d'écriture réussie : la carte concernée donne un très court
+       accord visuel, puis redevient parfaitement immobile. */
+    .confirm-flash { animation: confirmFlash .75s var(--ease); }
+    @keyframes confirmFlash {
+      0% { box-shadow: 0 0 0 0 rgba(62, 207, 122, 0); }
+      28% { box-shadow: 0 0 0 4px rgba(62, 207, 122, .28); }
+      100% { box-shadow: 0 0 0 0 rgba(62, 207, 122, 0); }
+    }
+
+    /* Libellé d'état vide d'un groupe de transporteurs : il nomme la famille
+       même quand elle ne contient aucun transporteur, sinon une famille vide
+       disparaîtrait de l'écran et on croirait qu'elle n'existe pas. */
+    .fam-empty { color: var(--muted-2); font-size: var(--fs-sm); font-style: italic; padding: 10px 14px; }
+    /* Les deux rubriques sœurs (sourcing / logistique) se renvoient l'une à
+       l'autre : c'est ce qui empêche de chercher un transporteur dans la
+       rubrique Fournisseurs, et inversement. */
+    .section-links { display: flex; gap: var(--sp-2); flex-wrap: wrap; align-items: center; margin: 0 0 var(--sp-3); }
+    /* Compteur d'en-tête de section : discret, il complète le titre sans
+       concurrencer le tableau. */
+    .heading-count { color: var(--muted); font-weight: 550; font-variant-numeric: tabular-nums; }
 
     /* ---------- Rotation / indicateur d'occupation ---------- */
     .spinner {
@@ -845,10 +971,10 @@
       .table-tools-text { flex: 1 1 100%; }
       .seg { width: 100%; overflow-x: auto; }
       .seg-btn { flex: 1; justify-content: center; padding: 7px 8px; }
-      /* Le filtre de type ne compte que trois segments courts : il peut rester
-         sur une ligne sans déborder ni être rogné à 375 px. */
-      #suppliersKindSeg { overflow: visible; }
-      #suppliersKindSeg .seg-btn { padding: 7px 6px; font-size: var(--fs-xs); gap: 4px; white-space: nowrap; }
+      /* Les filtres de type ne comptent que trois segments courts : ils peuvent
+         rester sur une ligne sans déborder ni être rognés à 375 px. */
+      #suppliersKindSeg, #carriersKindSeg { overflow: visible; }
+      #suppliersKindSeg .seg-btn, #carriersKindSeg .seg-btn { padding: 7px 6px; font-size: var(--fs-xs); gap: 4px; white-space: nowrap; }
       .table-filter, .table-filter-sm { max-width: none; flex: 1 1 100%; }
       .table-scroll { overflow: visible; }
       .table thead { display: none; }
@@ -900,8 +1026,24 @@
       .spinner { animation: none !important; border-color: rgba(255, 255, 255, .35); border-top-color: #fff; }
       .skel { animation: none !important; background: var(--panel-3); }
       .spark-line { stroke-dashoffset: 0 !important; }
-      .view.active.view-enter { animation: none !important; }
+      .view.active.view-fwd, .view.active.view-back { animation: none !important; }
+      .view.active.view-fwd, .view.active.view-back { animation: none !important; }
       .row-in { animation: none !important; opacity: 1 !important; transform: none !important; }
+      /* Un contenu révélé par une animation doit rester VISIBLE sans elle :
+         `reveal-in` part d'une opacité nulle, donc le mode réduit le neutralise
+         entièrement au lieu de le laisser disparaître. */
+      .reveal-in { animation: none !important; opacity: 1 !important; transform: none !important; }
+      .pop-in { animation: none !important; opacity: 1 !important; transform: none !important; }
+      .kpi-value.counted, .confirm-flash { animation: none !important; }
+      .brand-mark { animation: none !important; transform: none !important; }
+      .nav-rail { transition: none !important; }
+      .nav-rail::after { animation: none !important; opacity: 0 !important; }
+      /* L'état « section active » porté par l'animation du curseur reçoit ici son
+         équivalent fixe : le liseré du bouton et le fond teinté suffisent. */
+      .seg-slider { display: none !important; }
+      .seg .seg-btn[aria-pressed="true"] {
+        background: var(--panel-3) !important; box-shadow: inset 0 0 0 1px var(--accent-line) !important;
+      }
       .pill.warn { animation: none !important; box-shadow: 0 0 0 3px rgba(232, 178, 58, .12); }
       .pill.bad { animation: none !important; box-shadow: 0 0 0 3px rgba(240, 96, 90, .12); }
       .step.active .step-dot { animation: none !important; box-shadow: 0 0 0 4px rgba(76, 141, 255, .22); }
@@ -922,22 +1064,38 @@
       </div>
     </div>
     <nav class="nav" id="sidebarNav" aria-label="Navigation principale">
+      <!-- Le curseur unique qui glisse d'une section à l'autre. -->
+      <span class="nav-rail" id="navRail" aria-hidden="true"></span>
       <span class="nav-label">Pilotage</span>
       <a class="nav-item" href="#/dashboard" data-view="dashboard">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.5 3.5h7v7h-7zM13.5 3.5h7v7h-7zM3.5 13.5h7v7h-7zM13.5 13.5h7v7h-7z"/></svg>
         Tableau de bord
+        <span class="nav-count" id="navCountDashboard" hidden></span>
       </a>
       <a class="nav-item" href="#/imports" data-view="imports">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12m0 0 4.2-4.2M12 15l-4.2-4.2M4 20h16"/></svg>
         Imports
+        <span class="nav-count" id="navCountImports" hidden></span>
       </a>
       <a class="nav-item" href="#/produits" data-view="produits">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 8 12 3 3 8v8l9 5 9-5V8Z"/><path d="m3 8 9 5 9-5M12 13v8"/></svg>
         Produits
+        <span class="nav-count" id="navCountProduits" hidden></span>
       </a>
       <a class="nav-item" href="#/fournisseurs" data-view="fournisseurs">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 20V9.5l5 2.8V9.5l5 2.8V4.5h8V20H3Z"/><path d="M14 10.5h3M14 14.5h3"/></svg>
         Fournisseurs
+        <span class="nav-count" id="navCountFournisseurs" hidden></span>
+      </a>
+      <!-- Les transporteurs ont leur propre rubrique, et non un onglet de plus
+           dans Fournisseurs : acheter de la marchandise et l'acheminer sont deux
+           métiers, deux interlocuteurs et deux vocabulaires. Les mêler dans une
+           seule table noierait les fournisseurs sous 23 transitaires, alors
+           qu'aucun d'eux ne vend de produit. Le camion dit la logistique. -->
+      <a class="nav-item" href="#/transporteurs" data-view="transporteurs">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.5 6.5h10.5v10H2.5z"/><path d="M13 9.5h4.3l3.2 3.4v3.6H13z"/><circle cx="7" cy="18.4" r="1.9"/><circle cx="17.2" cy="18.4" r="1.9"/></svg>
+        Transporteurs
+        <span class="nav-count" id="navCountTransporteurs" hidden></span>
       </a>
       <span class="nav-label">Exploitation</span>
       <a class="nav-item" href="#/canaux" data-view="canaux">
@@ -1022,6 +1180,11 @@
             <span class="kpi-hint" id="kpiPartenairesHint">fournisseurs et distributeurs</span>
           </div>
           <div class="kpi">
+            <span class="kpi-label">Transporteurs</span>
+            <span class="kpi-value" id="kpiTransporteurs"><span class="skel skel-num"></span></span>
+            <span class="kpi-hint" id="kpiTransporteursHint">express, fret et agents d'achat</span>
+          </div>
+          <div class="kpi">
             <span class="kpi-label">Entrées de journal</span>
             <span class="kpi-value" id="kpiJournal"><span class="skel skel-num"></span></span>
             <span class="kpi-hint" id="kpiJournalHint">100 dernières</span>
@@ -1029,7 +1192,7 @@
         </div>
 
         <div class="grid grid-3">
-          <div class="card">
+          <div class="card reveal-in">
             <div class="card-head">
               <div>
                 <h2>Volume d'activité — 7 jours</h2>
@@ -1051,13 +1214,13 @@
             </div>
           </div>
 
-          <div class="card">
+          <div class="card reveal-in">
             <h2>Imports récents</h2>
             <p class="hint hint-tight">Les cinq derniers produits extraits. <a href="#/imports">Voir la file d'imports.</a></p>
             <div class="mini-list" id="dashImports"><div class="skel-card"><span class="skel skel-bar" style="width:60%"></span><span class="skel skel-bar" style="width:35%"></span></div></div>
           </div>
 
-          <div class="card">
+          <div class="card reveal-in">
             <h2>Derniers événements</h2>
             <p class="hint hint-tight">Ce que le hub a fait, dans l'ordre. <a href="#/journal">Ouvrir le journal.</a></p>
             <div class="mini-list" id="dashActivity"><div class="skel-card"><span class="skel skel-bar" style="width:70%"></span><span class="skel skel-bar" style="width:45%"></span></div></div>
@@ -1067,7 +1230,7 @@
 
       <!-- ==================== VUE : IMPORTS ==================== -->
       <section class="view" id="view-imports" data-view="imports" hidden>
-        <div class="card">
+        <div class="card reveal-in">
           <div class="card-head card-head-line">
             <div class="card-head-text">
               <h2>Importer un produit par lien</h2>
@@ -1170,13 +1333,13 @@
         </div>
 
         <!-- Fiches de l'import courant : édition par marketplace puis publication. -->
-        <div class="card" id="listingsCard" style="display:none">
+        <div class="card reveal-in" id="listingsCard" style="display:none">
           <h2>Fiches générées pour l'import</h2>
           <p class="hint">Corrige ce qui doit l'être, puis publie. La publication envoie réellement sur le canal — sur eBay comme sur ton site.</p>
           <div class="list" id="listings"></div>
         </div>
 
-        <div class="card table-card">
+        <div class="card table-card reveal-in">
           <div class="table-tools">
             <h2>Imports récents</h2>
             <input class="input table-filter" type="search" id="importsFilter" placeholder="Filtrer par titre, site, statut…" autocomplete="off" aria-label="Filtrer les imports">
@@ -1208,7 +1371,7 @@
       <!-- ==================== VUE : PRODUITS ==================== -->
       <section class="view" id="view-produits" data-view="produits" hidden>
         <div class="grid grid-2">
-          <div class="card">
+          <div class="card reveal-in">
             <h2>Créer un produit</h2>
             <p class="hint">Le catalogue de référence du hub. Les prix suggérés par l'IA partent de son prix de revient.</p>
             <label for="pSku">SKU</label>
@@ -1221,14 +1384,14 @@
             <p class="ai-note" data-ai-note hidden>« Suggérer un prix » et « Générer une description » sont désactivés tant qu'aucun fournisseur IA n'est configuré. La création de produit et l'envoi d'un prix restent disponibles.</p>
           </div>
 
-          <div class="card">
+          <div class="card reveal-in">
             <h2>Recommandations en attente</h2>
             <p class="hint">Toute suggestion sous le prix de revient est rejetée avant d'arriver ici. « Appliquer » un prix l'envoie réellement au canal.</p>
             <div class="list" id="recommendations"><div class="skel-card"><span class="skel skel-bar" style="width:58%"></span><span class="skel skel-bar" style="width:80%"></span></div></div>
           </div>
         </div>
 
-        <div class="card table-card">
+        <div class="card table-card reveal-in">
           <div class="table-tools">
             <h2>Catalogue interne</h2>
             <input class="input table-filter" type="search" id="productsFilter" placeholder="Filtrer par nom ou SKU…" autocomplete="off" aria-label="Filtrer les produits">
@@ -1255,22 +1418,28 @@
       </section>
 
       <!-- ==================== VUE : FOURNISSEURS ====================
-           Le registre des partenaires. C'est la vue la plus récente et la plus
-           dense : elle mérite un vrai panneau de saisie, pas une rangée de
-           champs bruts. Trois principes tenus ici :
+           Le registre des partenaires de SOURCING. Les transporteurs, qui ne
+           vendent pas de marchandise, vivent dans leur propre rubrique
+           (#/transporteurs) : cette vue ne montre donc que fournisseurs et
+           distributeurs, et le filtre segmenté garde exactement ces deux choix.
+           Trois principes tenus ici :
              · une section par intention (identité / marge / suivi) ;
              · l'aide sous le champ qu'elle concerne, jamais dans un paragraphe
                en bas de carte qu'on ne lit pas ;
              · la validation parle avant l'envoi (marge < 1, marge non numérique,
                URL non http), pas après un aller-retour serveur. -->
       <section class="view" id="view-fournisseurs" data-view="fournisseurs" hidden>
-        <div class="card">
+        <div class="card reveal-in">
           <div class="card-head card-head-line">
             <div class="card-head-text">
-              <h2>Enregistrer un partenaire</h2>
+              <h2>Enregistrer un partenaire <span class="heading-count" id="fournisseursHeadingCount"></span></h2>
               <p>Un fournisseur ou un distributeur s'enregistre une fois. À l'import, tu le choisis dans une liste au lieu de retaper son nom — et sa marge s'applique au prix conseillé. C'est ce qui distingue la plateforme de gros du distributeur local, qui ne vendent pas au même prix.</p>
             </div>
           </div>
+          <p class="section-links">
+            <span class="pill accent">Sourcing</span>
+            <span class="hint">Ces fiches servent à choisir le partenaire d'un import et à porter sa marge. La logistique (express, fret, agents d'achat) a sa propre rubrique : <a href="#/transporteurs">ouvrir Transporteurs</a>.</span>
+          </p>
 
           <div class="panel">
             <section class="panel-section">
@@ -1351,23 +1520,24 @@
         <!-- État vide qui enseigne : tant qu'aucun partenaire n'existe, la table
              n'apprendrait rien. On explique à quoi sert un enregistrement et
              quelle est la première étape, puis on propose de la faire. -->
-        <div class="card" id="suppliersEmptyCard">
+        <div class="card reveal-in" id="suppliersEmptyCard">
           <div class="teach">
             <span class="teach-icon" aria-hidden="true">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 20V9.5l5 2.8V9.5l5 2.8V4.5h8V20H3Z"/><path d="M14 10.5h3M14 14.5h3"/></svg>
             </span>
-            <h3>Aucun partenaire enregistré</h3>
-            <p>Un partenaire est la fiche d'un fournisseur ou d'un distributeur avec lequel tu travailles. L'enregistrer une fois évite de retaper son nom à chaque import — et surtout de rechercher la marge négociée.</p>
+            <h3>Aucun partenaire de sourcing enregistré</h3>
+            <p>Un partenaire de sourcing est la fiche d'un fournisseur (qui vend en gros, à la source) ou d'un distributeur (qui revend localement). L'enregistrer une fois évite de retaper son nom à chaque import — et surtout de rechercher la marge négociée.</p>
             <ol class="teach-steps">
               <li><span class="teach-num" aria-hidden="true">1</span><span>Remplis le nom ci-dessus. Le type sert à distinguer le grossiste du revendeur local.</span></li>
               <li><span class="teach-num" aria-hidden="true">2</span><span>Indique son coefficient de marge si tu en as négocié un. Laisse vide pour utiliser le coefficient global du hub.</span></li>
               <li><span class="teach-num" aria-hidden="true">3</span><span>Choisis-le ensuite dans le formulaire d'import : sa marge s'appliquera au prix conseillé, et ses imports seront comptés ici.</span></li>
             </ol>
+            <p class="hint">Besoin d'acheminer la marchandise ? Ce sont les <a href="#/transporteurs">transporteurs</a>, une rubrique à part.</p>
             <button class="btn btn-soft btn-sm" id="btnStartSupplier" type="button">Remplir le formulaire</button>
           </div>
         </div>
 
-        <div class="card table-card" id="suppliersTableCard" hidden>
+        <div class="card table-card reveal-in" id="suppliersTableCard" hidden>
           <div class="table-tools">
             <div class="table-tools-text">
               <h2>Partenaires enregistrés</h2>
@@ -1406,6 +1576,7 @@
               <option value="distributeur">Distributeurs</option>
             </select>
             <div class="seg" id="suppliersKindSeg" role="group" aria-label="Filtrer les partenaires par type">
+              <span class="seg-slider" id="suppliersKindSlider" aria-hidden="true"></span>
               <button class="seg-btn" type="button" data-kind="" aria-pressed="true">Tous <span class="seg-count" id="supKindCountAll">0</span></button>
               <button class="seg-btn" type="button" data-kind="fournisseur" aria-pressed="false">Fournisseurs <span class="seg-count" id="supKindCountFournisseur">0</span></button>
               <button class="seg-btn" type="button" data-kind="distributeur" aria-pressed="false">Distributeurs <span class="seg-count" id="supKindCountDistributeur">0</span></button>
@@ -1414,9 +1585,154 @@
         </div>
       </section>
 
+      <!-- ==================== VUE : TRANSPORTEURS ====================
+           Une rubrique à part, parce que l'acheminement est un autre métier que
+           l'achat : ici on ne négocie pas un prix de marchandise, on choisit qui
+           la transporte. Deux conséquences tenues dans toute la vue :
+             · le coefficient de marge n'a AUCUN sens pour un transporteur (un
+               service ne se revend pas avec une marge). La colonne « Marge »
+               n'existe donc pas ici, le formulaire ne la propose pas, et aucune
+               valeur technique n'est jamais présentée comme un prix ;
+             · la liste est groupée par FAMILLE et non à plat : un agent d'achat
+               chinois et un armateur ne rendent pas le même service, et 23
+               lignes indifférenciées ne se lisent pas. -->
+      <section class="view" id="view-transporteurs" data-view="transporteurs" hidden>
+        <div class="card reveal-in">
+          <div class="card-head card-head-line">
+            <div class="card-head-text">
+              <h2>Enregistrer un transporteur <span class="heading-count" id="carriersHeadingCount"></span></h2>
+              <p>Un transporteur, un transitaire, un agent d'achat ou une plateforme d'expédition s'enregistre une fois : tu gardes son site et ce qu'il sait faire sous la main, au lieu de rechercher le contact à chaque expédition. Sa famille (express, fret, agent d'achat, plateforme) se déduit de ses notes.</p>
+            </div>
+          </div>
+          <p class="section-links">
+            <span class="pill accent">Logistique</span>
+            <span class="hint">Ces fiches décrivent un service d'acheminement, pas un vendeur de marchandise : aucune marge ne s'y applique. Le sourcing se règle dans <a href="#/fournisseurs">Fournisseurs</a>.</span>
+          </p>
+
+          <div class="panel">
+            <section class="panel-section">
+              <h3 class="panel-section-title">Identité</h3>
+              <div class="field-grid">
+                <div class="field field-required" id="carNameField">
+                  <label for="carName">Nom</label>
+                  <input type="text" id="carName" placeholder="DHL Express" autocomplete="off" aria-describedby="carNameHint">
+                  <p class="field-hint" id="carNameHint" role="status"></p>
+                </div>
+                <div class="field" id="carSiteField">
+                  <label for="carSite">Site (optionnel)</label>
+                  <input type="text" id="carSite" placeholder="https://exemple.com" autocomplete="off" aria-describedby="carSiteHint">
+                  <p class="field-hint" id="carSiteHint" role="status"></p>
+                </div>
+              </div>
+            </section>
+
+            <section class="panel-section">
+              <h3 class="panel-section-title">Famille et suivi</h3>
+              <!-- La famille n'est PAS un champ : elle est déduite des notes par
+                   le script (voir CARRIER_FAMILIES). On l'annonce ici pour que
+                   l'utilisateur comprenne comment regrouper ses propres fiches,
+                   sans ajouter une colonne que l'API ne connaît pas. -->
+              <p class="field-help" id="carFamilyHelp">
+                La famille se déduit du début des notes : « Express… » pour le porte-à-porte,
+                « Transitaire… » ou « Armateur… » pour le fret Asie → Europe,
+                « Agent d'achat… » pour les intermédiaires 1688 / Taobao,
+                « Plateforme… » pour les comparateurs multi-transporteurs. Un transporteur
+                qui ne ressemble à aucune de ces familles est listé à part, jamais rangé de force.
+              </p>
+              <div class="field-grid">
+                <div class="field">
+                  <label for="carStatus">Statut</label>
+                  <select id="carStatus" aria-describedby="carStatusHelp">
+                    <option value="actif">Actif</option>
+                    <option value="inactif">Inactif</option>
+                  </select>
+                  <p class="field-help" id="carStatusHelp">Un transporteur <b>inactif</b> reste dans l'historique mais sort des choix courants.</p>
+                </div>
+                <div class="field field-wide">
+                  <label for="carNotes">Notes (optionnel)</label>
+                  <input type="text" id="carNotes" placeholder="express porte-à-porte, délais, incoterm, contact…" autocomplete="off">
+                  <p class="field-help">Le début des notes place la fiche dans sa famille. La suite dit ce que tu ne veux pas rechercher dans un e-mail.</p>
+                </div>
+              </div>
+            </section>
+
+            <div class="panel-foot">
+              <button class="btn" id="btnCreateCarrier" type="button">Enregistrer le transporteur</button>
+              <button class="btn btn-ghost" id="btnResetCarrier" type="button">Vider le formulaire</button>
+              <p class="hint hint-tight">Aucune marge n'est demandée : un transporteur vend un service, pas de la marchandise.</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- État vide qui enseigne : la question réelle n'est pas « comment
+             remplir un formulaire » mais « pourquoi 1688 ne m'envoie rien ». On y
+             répond dans l'ordre : agent d'achat, puis transitaire. -->
+        <div class="card reveal-in" id="carriersEmptyCard">
+          <div class="teach">
+            <span class="teach-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 6.5h10.5v10H2.5z"/><path d="M13 9.5h4.3l3.2 3.4v3.6H13z"/><circle cx="7" cy="18.4" r="1.9"/><circle cx="17.2" cy="18.4" r="1.9"/></svg>
+            </span>
+            <h3>Aucun transporteur enregistré</h3>
+            <p>Une fiche transporteur décrit qui achemine ta marchandise : express porte-à-porte, fret maritime ou aérien, agent d'achat en Chine, ou plateforme qui compare plusieurs transporteurs. Elle ne porte pas de marge : un transporteur vend un service, pas un produit.</p>
+            <ol class="teach-steps">
+              <li><span class="teach-num" aria-hidden="true">1</span><span><b>1688 et Taobao ne livrent pas en Europe.</b> Ces plateformes vendent au marché intérieur chinois : il n'existe aucun envoi direct vers la France.</span></li>
+              <li><span class="teach-num" aria-hidden="true">2</span><span>Il faut d'abord un <b>agent d'achat</b> (Superbuy, Sugargoo, CNFans, Yoybuy, Basetao) : il achète pour toi sur 1688 ou Taobao, réceptionne en Chine, contrôle et consolide les colis.</span></li>
+              <li><span class="teach-num" aria-hidden="true">3</span><span>Puis un <b>transitaire</b> ou un express pour le trajet réel (DHL, FedEx, Flexport, Maersk…) : c'est lui qui dédouane et livre en Europe.</span></li>
+              <li><span class="teach-num" aria-hidden="true">4</span><span>Enregistre-les ici : le catalogue de départ en contient déjà 23. Tu pourras ensuite comparer leurs notes au moment de choisir.</span></li>
+            </ol>
+            <button class="btn btn-soft btn-sm" id="btnStartCarrier" type="button">Remplir le formulaire</button>
+          </div>
+        </div>
+
+        <div class="card table-card reveal-in" id="carriersTableCard" hidden>
+          <div class="table-tools">
+            <div class="table-tools-text">
+              <h2>Transporteurs enregistrés</h2>
+              <p id="carriersCount">…</p>
+            </div>
+            <input class="input table-filter table-filter-sm" type="search" id="carriersFilter" placeholder="Filtrer par nom, site, notes, famille…" autocomplete="off" aria-label="Filtrer les transporteurs">
+          </div>
+          <div class="table-scroll">
+            <table class="table">
+              <thead id="carriersHead">
+                <tr>
+                  <th data-sort="name" tabindex="0">Nom</th>
+                  <th data-sort="family" tabindex="0">Famille</th>
+                  <th data-sort="site_url" tabindex="0">Site</th>
+                  <th data-sort="notes" tabindex="0">Notes</th>
+                  <th data-sort="status" tabindex="0">Statut</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="carriers">
+                <tr class="skel-row"><td colspan="6"><span class="skel skel-bar" style="width:52%"></span></td></tr>
+                <tr class="skel-row"><td colspan="6"><span class="skel skel-bar" style="width:38%"></span></td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="table-foot" id="carriersPager"></div>
+          <!-- Même principe que le filtre des partenaires : un <select> caché
+               porte l'état (donc la valeur testable et le repli sans script) et
+               des boutons segmentés le montrent. -->
+          <div class="table-foot table-foot-tools">
+            <select id="carriersKindFilter" class="picker-native" tabindex="-1" aria-hidden="true">
+              <option value="">Tous</option>
+              <option value="actif">Actifs</option>
+              <option value="inactif">Inactifs</option>
+            </select>
+            <div class="seg" id="carriersKindSeg" role="group" aria-label="Filtrer les transporteurs par statut">
+              <span class="seg-slider" id="carriersKindSlider" aria-hidden="true"></span>
+              <button class="seg-btn" type="button" data-kind="" aria-pressed="true">Tous <span class="seg-count" id="carKindCountAll">0</span></button>
+              <button class="seg-btn" type="button" data-kind="actif" aria-pressed="false">Actifs <span class="seg-count" id="carKindCountActif">0</span></button>
+              <button class="seg-btn" type="button" data-kind="inactif" aria-pressed="false">Inactifs <span class="seg-count" id="carKindCountInactif">0</span></button>
+            </div>
+          </div>
+        </div>
+      </section>
+
       <!-- ==================== VUE : CANAUX ==================== -->
       <section class="view" id="view-canaux" data-view="canaux" hidden>
-        <div class="card">
+        <div class="card reveal-in">
           <h2>Canaux</h2>
           <p class="hint">Un canal non configuré est ignoré par les synchronisations — il ne fait jamais échouer les autres.</p>
           <div class="list" id="channels"><div class="skel-card"><span class="skel skel-bar" style="width:50%"></span><span class="skel skel-bar" style="width:30%"></span></div></div>
@@ -1430,7 +1746,7 @@
 
       <!-- ==================== VUE : JOURNAL ==================== -->
       <section class="view" id="view-journal" data-view="journal" hidden>
-        <div class="card table-card">
+        <div class="card table-card reveal-in">
           <div class="table-tools">
             <h2>Journal d'activité</h2>
             <input class="input table-filter" type="search" id="activityFilter" placeholder="Filtrer par type ou message…" autocomplete="off" aria-label="Filtrer le journal">
@@ -1457,7 +1773,7 @@
 
       <!-- ==================== VUE : SUPPORT ==================== -->
       <section class="view" id="view-support" data-view="support" hidden>
-        <div class="card">
+        <div class="card reveal-in">
           <h2>Qualifier un message client</h2>
           <p class="hint">L'IA propose une catégorie, une urgence et une réponse. Elle ne décide jamais d'un remboursement.</p>
           <label for="supportMsg">Message du client</label>
@@ -1503,7 +1819,9 @@ const state = {
   channels: [],
   recommendations: [],
   suppliers: [],
+  carriers: [],
   editingSupplierId: null,
+  editingCarrierId: null,
   importDetails: new Map(),
   detailsTruncated: false,
   inflight: 0,
@@ -1534,15 +1852,28 @@ function formatInt(value) {
 
 /* Compteur animé : la première peinture part de 0, puis chaque changement de
    valeur s'anime depuis la valeur affichée. Le jeton empêche deux animations
-   concurrentes de se marcher dessus sur le même nœud. */
+   concurrentes de se marcher dessus sur le même nœud.
+   Le KPI « donne un coup » à l'arrivée de la nouvelle valeur (classe `counted`) :
+   sans cela, un compteur qui passe de 12 à 13 passerait inaperçu. Le coup n'est
+   joué qu'APRÈS la première peinture — animer le remplissage initial de sept
+   compteurs à la fois ferait clignoter tout le tableau de bord. */
 function animateCount(el, value) {
   if (!el) return;
   const target = Number(value) || 0;
   const from = Number(el.dataset.count || 0);
+  const alreadyPainted = el.dataset.count !== undefined;
   el.dataset.count = String(target);
   if (!motionOK() || from === target) {
     el.textContent = formatInt(target);
     return;
+  }
+  if (alreadyPainted && el.classList && typeof el.classList.add === 'function') {
+    el.classList.remove('counted');
+    // Reflow : sans lui, retirer puis remettre la classe dans la même frame ne
+    // rejoue pas l'animation — le second changement de valeur serait muet.
+    if (typeof el.offsetWidth !== 'undefined') void el.offsetWidth;
+    el.classList.add('counted');
+    setTimeout(() => { if (el.classList) el.classList.remove('counted'); }, 460);
   }
   const token = (el.__countToken || 0) + 1;
   el.__countToken = token;
@@ -1559,29 +1890,119 @@ function animateCount(el, value) {
 }
 
 /* Entrée échelonnée : quelques millisecondes entre les lignes, plafonnées pour
-   qu'une longue liste ne se transforme pas en chenille. */
+   qu'une longue liste ne se transforme pas en chenille. Le décalage est écrit
+   dans une VARIABLE CSS, pas dans `animation-delay` : la feuille de style garde
+   la main sur l'animation elle-même (durée, courbe, mise en pause dans une vue
+   cachée), et une seule valeur suffit à retarder l'élément. */
+const STAGGER_STEP = 22;
 function stagger(container, selector = '.row-in') {
-  if (!container || typeof container.querySelectorAll !== 'function') return;
-  const rows = container.querySelectorAll(selector);
+  if (!motionOK() || !container || typeof container.querySelectorAll !== 'function') return;
+  let rows;
+  try { rows = container.querySelectorAll(selector); } catch { return; }
   if (!rows || !rows.length) return;
   rows.forEach((el, i) => {
-    if (el.style) el.style.animationDelay = Math.min(i * 22, 260) + 'ms';
+    if (el.style && typeof el.style.setProperty === 'function') {
+      el.style.setProperty('--stagger', Math.min(i * STAGGER_STEP, 260) + 'ms');
+    } else if (el.style) {
+      // DOM de test : `style` est un objet nu, sans setProperty.
+      el.style.animationDelay = Math.min(i * STAGGER_STEP, 260) + 'ms';
+    }
   });
 }
 
+/* ---------- Mouvement utilitaire ----------
+   `popIn` : un badge qui vient de changer d'état « éclot » une fois. La classe
+   est retirée à la fin pour pouvoir être rejouée : sans cela, le deuxième
+   changement de statut ne bougerait plus. Rien n'est masqué : sans animation, le
+   badge est simplement déjà à sa place. */
+function popIn(el) {
+  if (!el || !motionOK() || !el.classList || typeof el.classList.add !== 'function') return;
+  el.classList.remove('pop-in');
+  if (typeof el.offsetWidth !== 'undefined') void el.offsetWidth;
+  el.classList.add('pop-in');
+  setTimeout(() => { if (el.classList) el.classList.remove('pop-in'); }, 520);
+}
+
+/* Confirmation d'écriture : la carte concernée donne un court accord vert, puis
+   redevient immobile. Elle ne remplace pas le toast — elle désigne LA carte que
+   le toast commente, ce qu'un toast seul ne fait pas. */
+function confirmFlash(el) {
+  if (!el || !motionOK() || !el.classList || typeof el.classList.add !== 'function') return;
+  el.classList.remove('confirm-flash');
+  if (typeof el.offsetWidth !== 'undefined') void el.offsetWidth;
+  el.classList.add('confirm-flash');
+  setTimeout(() => { if (el.classList) el.classList.remove('confirm-flash'); }, 820);
+}
+
+/* Entrée échelonnée des cartes d'une vue. Le sélecteur est explicite
+   (`.reveal-in`) plutôt qu'implicite (`.card`) : seules les cartes de premier
+   niveau portent la classe, pas les blocs internes. Le pas est plus large que
+   celui des lignes (55 ms contre 22) parce qu'une carte est un bloc, pas un
+   item de liste : un rythme trop serré donnerait un scintillement. */
+const CARD_STAGGER_STEP = 55;
+function revealStagger(container) {
+  if (!motionOK() || !container || typeof container.querySelectorAll !== 'function') return;
+  let cards;
+  try { cards = container.querySelectorAll('.reveal-in'); } catch { return; }
+  if (!cards || !cards.length) return;
+  cards.forEach((el, i) => {
+    if (el.style && typeof el.style.setProperty === 'function') {
+      el.style.setProperty('--stagger', Math.min(i * CARD_STAGGER_STEP, 260) + 'ms');
+    } else if (el.style) {
+      el.style.animationDelay = Math.min(i * CARD_STAGGER_STEP, 260) + 'ms';
+    }
+  });
+}
+
+/* Une table construite au chargement (avant que sa vue soit visible) ne doit pas
+   brûler son animation dans un écran caché : elle la rejouera à l'ouverture. */
+function viewIsActive(name) {
+  const view = VIEWS[name];
+  const el = view ? $(view.el) : null;
+  if (!el) return false;
+  if (el.hidden === false) return true;
+  return String(el.className || '').includes('active');
+}
+
+/* Active ou retire la classe d'entrée sur un groupe de lignes. Deux cas la
+   justifient : la vue vient d'être rendue et on sait si elle est visible, ou on
+   change de vue et il faut débarrasser les écrans cachés de leurs lignes
+   transparentes. Sans le retrait, une table rendue en arrière-plan resterait à
+   `opacity: 0` avec `animation-fill-mode: both` — invisible jusqu'à ce que son
+   décalage s'écoule, c'est-à-dire pour toujours puisque la vue est en pause. */
+function applyRowIn(container, viewName) {
+  if (!container || typeof container.querySelectorAll !== 'function' || !motionOK()) return;
+  let rows;
+  try { rows = container.querySelectorAll('.row-in'); } catch { return; }
+  if (!rows || !rows.forEach) return;
+  const show = !viewName || viewIsActive(viewName);
+  rows.forEach((el) => {
+    if (!el.classList) return;
+    if (show) el.classList.add('row-in');
+    else el.classList.remove('row-in');
+  });
+}
+
+/* Retire la classe d'entrée de toutes les vues CACHÉES, et la remet dans la vue
+   qui arrive : leurs lignes étaient en pause, elles repartent au bon moment. */
+function refreshRowIn(activeView) {
+  for (const [key, def] of Object.entries(VIEWS)) {
+    if (key === activeView) continue;
+    const el = $(def.el);
+    if (el) applyRowIn(el, key);
+  }
+  const active = VIEWS[activeView] ? $(VIEWS[activeView].el) : null;
+  if (active) applyRowIn(active, activeView);
+}
+
 /* Rejoue l'entrée échelonnée à chaque changement de vue : le contenu « arrive »
-   de nouveau, ce qui rend le changement d'écran lisible. */
+   de nouveau, ce qui rend le changement d'écran lisible. Les décalages sont
+   recalculés, ce qui suffit — l'animation, elle, repart d'elle-même parce que la
+   vue était en pause (`animation-play-state`). */
 function replayStagger(container) {
   if (!motionOK() || !container || typeof container.querySelectorAll !== 'function') return;
-  const rows = container.querySelectorAll('.row-in');
-  if (!rows || !rows.length) return;
-  rows.forEach((el) => { if (el.style) el.style.animation = 'none'; });
-  if (typeof container.offsetWidth !== 'undefined') void container.offsetWidth;
-  rows.forEach((el, i) => {
-    if (!el.style) return;
-    el.style.animation = '';
-    el.style.animationDelay = Math.min(i * 22, 260) + 'ms';
-  });
+  stagger(container, '.row-in');
+  revealStagger(container);
 }
 
 /* ===================== NOTIFICATIONS =====================
@@ -1862,7 +2283,12 @@ function createTable(spec) {
     } else if (!slice.length) {
       body.innerHTML = '<tr class="table-empty"><td colspan="' + columns.length + '">Aucun résultat pour « ' + esc(table.query) + ' ».</td></tr>';
     } else {
+      // Les lignes sont rendues avec leur classe d'animation, puis on retire
+      // cette classe si la vue est cachée : `rowIn` part d'une opacité nulle, et
+      // une table re-rendue à chaque frappe de filtre ne doit pas laisser une
+      // ligne transparente en réserve. `applyRowIn` fait exactement ce tri.
       body.innerHTML = slice.map((row, i) => spec.row(row, start + i)).join('');
+      applyRowIn(body, spec.view);
       stagger(body);
     }
     renderHead();
@@ -2201,7 +2627,13 @@ function renderDashboard() {
   animateCount($('kpiFiches'), fiches);
   animateCount($('kpiPubliees'), publiees);
   animateCount($('kpiCanaux'), configured);
-  animateCount($('kpiPartenaires'), state.suppliers.length);
+  // Le compteur Partenaires ne compte QUE le sourcing : les transporteurs ont le
+  // leur, juste à côté. Les additionner ferait passer 23 transitaires pour des
+  // fournisseurs de marchandise.
+  const sourcingRows = state.suppliers.filter((s) => SOURCING_KINDS.includes(s.kind));
+  const carrierRows = state.suppliers.filter((s) => s.kind === CARRIER_KIND);
+  animateCount($('kpiPartenaires'), sourcingRows.length);
+  animateCount($('kpiTransporteurs'), carrierRows.length);
   animateCount($('kpiJournal'), state.activity.length);
 
   const hint = (id, text) => { const el = $(id); if (el) el.textContent = text; };
@@ -2210,14 +2642,38 @@ function renderDashboard() {
   hint('kpiFichesHint', state.detailsTruncated ? 'sur les imports les plus récents' : 'toutes marketplaces');
   hint('kpiPublieesHint', publiees ? 'envoyées pour de bon' : 'aucune publication');
   hint('kpiCanauxHint', state.channels.length ? 'sur ' + state.channels.length + ' canaux connus' : 'canaux inconnus');
-  const fournisseurs = state.suppliers.filter((s) => s.kind === 'fournisseur').length;
-  hint('kpiPartenairesHint', state.suppliers.length
-    ? fournisseurs + ' fournisseur' + (fournisseurs > 1 ? 's' : '') + ' · ' + (state.suppliers.length - fournisseurs) + ' distributeur' + (state.suppliers.length - fournisseurs > 1 ? 's' : '')
-    : 'aucun partenaire enregistré');
+  const fournisseurs = sourcingRows.filter((s) => s.kind === 'fournisseur').length;
+  const distributeurs = sourcingRows.length - fournisseurs;
+  hint('kpiPartenairesHint', sourcingRows.length
+    ? fournisseurs + ' fournisseur' + (fournisseurs > 1 ? 's' : '') + ' · ' + distributeurs + ' distributeur' + (distributeurs > 1 ? 's' : '')
+    : 'aucun partenaire de sourcing');
+  // La phrase nomme les familles réellement peuplées plutôt qu'un total : un
+  // total ne dit pas si le hub couvre l'express, le fret ou les agents d'achat.
+  const familiesUsed = CARRIER_FAMILIES.filter((f) => carrierRows.some((c) => carrierFamily(c) === f.key)).length;
+  hint('kpiTransporteursHint', carrierRows.length
+    ? familiesUsed + ' famille' + (familiesUsed > 1 ? 's' : '') + ' · express, fret, agents d\'achat'
+    : "express, fret et agents d'achat");
   hint('kpiJournalHint', state.activity.length ? '100 dernières' : 'journal vide');
 
+  renderNavCounts();
   renderSparkline();
   renderDashboardLists();
+}
+
+/* Compteurs de la barre latérale : le nombre de fiches par section, pour qu'une
+   rubrique vide se voie avant de l'ouvrir. Zéro masque le compteur (un « 0 »
+   gris à côté de six entrées ne dit rien de plus que leur absence). */
+function renderNavCounts() {
+  const put = (id, value) => {
+    const el = $(id);
+    if (!el) return;
+    el.textContent = value ? formatInt(value) : '';
+    el.hidden = !value;
+  };
+  put('navCountProduits', state.products.length);
+  put('navCountImports', state.imports.length);
+  put('navCountFournisseurs', state.suppliers.filter((s) => SOURCING_KINDS.includes(s.kind)).length);
+  put('navCountTransporteurs', state.suppliers.filter((s) => s.kind === CARRIER_KIND).length);
 }
 
 function renderDashboardLists() {
@@ -2297,6 +2753,7 @@ function listingSummary(p) {
 /* ===================== PRODUITS ===================== */
 const productsTable = createTable({
   body: 'products',
+  view: 'produits',
   head: 'productsHead',
   filter: 'productsFilter',
   pager: 'productsPager',
@@ -2342,16 +2799,26 @@ async function loadProducts() {
 }
 
 /* ===================== PARTENAIRES =====================
-   Le registre des fournisseurs et distributeurs. Il alimente trois endroits :
-   cette table (créer, modifier, supprimer), la liste de l'import — où le
-   partenaire se choisit avant de coller l'URL, car c'est lui qui porte la marge
-   — et le compteur du tableau de bord. */
-const SUPPLIER_KIND_LABELS = { fournisseur: 'Fournisseur', distributeur: 'Distributeur' };
+   Deux registres, une seule table côté serveur :
+     · le SOURCING (fournisseurs et distributeurs), qui alimente la table
+       ci-dessous, la liste de l'import — où le partenaire se choisit avant de
+       coller l'URL, car c'est lui qui porte la marge — et le compteur du
+       tableau de bord ;
+     · la LOGISTIQUE (transporteurs), qui a sa propre vue (#/transporteurs)
+       parce qu'un transporteur ne vend pas de marchandise : ni marge, ni
+       sélection à l'import. Voir la section TRANSPORTEURS plus bas. */
+const SUPPLIER_KIND_LABELS = { fournisseur: 'Fournisseur', distributeur: 'Distributeur', transporteur: 'Transporteur' };
 const SUPPLIER_STATUS_LABELS = { actif: 'Actif', inactif: 'Inactif' };
 const SUPPLIER_KIND_HELP = {
   fournisseur: 'vend en gros, à la source',
   distributeur: 'revend localement, marge plus courte',
+  transporteur: 'achemine la marchandise — ni marge, ni import',
 };
+/* Les types qui portent une marge, donc les seuls que la vue Fournisseurs
+   manipule et que la liste d'import propose. Sert de source unique : ajouter un
+   type de service demain ne le fera pas apparaître par accident dans l'import. */
+const SOURCING_KINDS = ['fournisseur', 'distributeur'];
+const CARRIER_KIND = 'transporteur';
 
 /* Le coefficient de marge global du hub, ou null s'il n'est pas encore connu
    (la configuration arrive en premier, mais rien ne doit casser si elle a
@@ -2391,11 +2858,11 @@ function supplierMarginMarker(supplier) {
 }
 
 /* Badge de type : deux formes distinctes (pleine pour le fournisseur, en
-   contour pour le distributeur) — la couleur seule serait illisible pour qui
-   ne la distingue pas. */
+   contour pour les autres) — la couleur seule serait illisible pour qui ne la
+   distingue pas. */
 function supplierKindBadge(kind) {
   const label = SUPPLIER_KIND_LABELS[kind] || kind || '—';
-  const cls = kind === 'distributeur' ? 'badge-kind-distributor' : 'badge-kind-supplier';
+  const cls = kind === 'fournisseur' ? 'badge-kind-supplier' : 'badge-kind-distributor';
   const help = SUPPLIER_KIND_HELP[kind] ? ' title="' + esc(SUPPLIER_KIND_HELP[kind]) + '"' : '';
   return '<span class="badge ' + cls + '"' + help + '><span class="badge-dot" aria-hidden="true"></span>' + esc(label) + '</span>';
 }
@@ -2417,26 +2884,35 @@ function selectOptions(labels, current) {
 
 /* Ligne en cours d'édition : mêmes champs que le formulaire de création, pour
    qu'on n'apprenne pas deux vocabulaires. Rendue par la table elle-même, donc
-   un tri ou un filtre referme l'édition sans laisser de champs orphelins. */
-function supplierEditRow(supplier) {
+   un tri ou un filtre referme l'édition sans laisser de champs orphelins.
+   `withMargin` est faux pour un transporteur : lui proposer un coefficient de
+   marge serait proposer une valeur qui ne veut rien dire. La ligne d'édition
+   d'un transporteur ne porte donc ni champ de marge, ni sélecteur de type. */
+function supplierEditRow(supplier, withMargin = true) {
   const id = esc(supplier.id);
   const global = globalMarginCoefficient();
   return '<tr class="row-in edit-row"><td colspan="7" data-label="Modifier">'
     + '<div class="edit-row-heading">'
     + '<div><strong>Modifier ' + esc(supplier.name) + '</strong>'
-    + '<p class="hint">Même vocabulaire que le formulaire de création. Vider la marge revient explicitement au coefficient global'
-    + (global == null ? '' : ' (' + formatCoefficient(global) + ')') + '.</p></div>'
+    + '<p class="hint">' + (withMargin
+      ? 'Même vocabulaire que le formulaire de création. Vider la marge revient explicitement au coefficient global'
+        + (global == null ? '' : ' (' + formatCoefficient(global) + ')') + '.'
+      : "Ce transporteur vend un service : aucune marge ne s'y applique. Famille et marge sont donc absentes de cette ligne.") + '</p></div>'
     + '</div>'
     + '<div class="field-grid">'
     + '<div class="field"><label for="sup-edit-name-' + id + '">Nom</label>'
     + '<input class="input" type="text" id="sup-edit-name-' + id + '" value="' + esc(supplier.name) + '"></div>'
-    + '<div class="field"><label for="sup-edit-kind-' + id + '">Type</label>'
-    + '<select class="input" id="sup-edit-kind-' + id + '">' + selectOptions(SUPPLIER_KIND_LABELS, supplier.kind) + '</select></div>'
+    + (withMargin
+      ? '<div class="field"><label for="sup-edit-kind-' + id + '">Type</label>'
+        + '<select class="input" id="sup-edit-kind-' + id + '">' + selectOptions(SUPPLIER_KIND_LABELS, supplier.kind) + '</select></div>'
+      : '')
     + '<div class="field"><label for="sup-edit-site-' + id + '">Site</label>'
     + '<input class="input" type="text" id="sup-edit-site-' + id + '" value="' + esc(supplier.site_url || '') + '"></div>'
-    + '<div class="field"><label for="sup-edit-margin-' + id + '">Coefficient de marge (vide = défaut global)</label>'
-    + '<input class="input" type="number" step="0.01" min="1.01" id="sup-edit-margin-' + id + '" value="'
-    + (supplier.margin_coefficient == null ? '' : esc(supplier.margin_coefficient)) + '"></div>'
+    + (withMargin
+      ? '<div class="field"><label for="sup-edit-margin-' + id + '">Coefficient de marge (vide = défaut global)</label>'
+        + '<input class="input" type="number" step="0.01" min="1.01" id="sup-edit-margin-' + id + '" value="'
+        + (supplier.margin_coefficient == null ? '' : esc(supplier.margin_coefficient)) + '"></div>'
+      : '')
     + '<div class="field"><label for="sup-edit-status-' + id + '">Statut</label>'
     + '<select class="input" id="sup-edit-status-' + id + '">' + selectOptions(SUPPLIER_STATUS_LABELS, supplier.status) + '</select></div>'
     + '<div class="field field-wide"><label for="sup-edit-notes-' + id + '">Notes</label>'
@@ -2450,6 +2926,7 @@ function supplierEditRow(supplier) {
 
 const suppliersTable = createTable({
   body: 'suppliers',
+  view: 'fournisseurs',
   head: 'suppliersHead',
   filter: 'suppliersFilter',
   pager: 'suppliersPager',
@@ -2495,33 +2972,56 @@ const suppliersTable = createTable({
 });
 
 /* Le filtre de type ne s'applique qu'à l'affichage : `state.suppliers` garde la
-   liste complète, car elle alimente aussi le sélecteur d'import et le compteur
-   du tableau de bord, qui ne doivent pas se réduire au filtre. */
+   liste complète — transporteurs compris — car elle alimente plusieurs vues et
+   le compteur du tableau de bord. La table des Fournisseurs, elle, ne montre que
+   le sourcing : un transporteur n'a rien à y faire (pas de marge, pas de
+   sélection à l'import). */
+function sourcingSuppliers() {
+  return state.suppliers.filter((s) => SOURCING_KINDS.includes(s.kind));
+}
+
+function carriers() {
+  return state.suppliers.filter((s) => s.kind === CARRIER_KIND);
+}
+
 function applySupplierFilter() {
   const filter = $('suppliersKindFilter');
   const kind = filter && filter.value ? filter.value : '';
-  suppliersTable.setRows(kind ? state.suppliers.filter((s) => s.kind === kind) : state.suppliers);
+  const rows = sourcingSuppliers();
+  suppliersTable.setRows(kind ? rows.filter((s) => s.kind === kind) : rows);
 }
 
 /* Compteurs du filtre segmenté et de l'en-tête de table. Ils disent ce qu'on
-   filtre AVANT qu'on clique, et combien de lignes on regarde. */
+   filtre AVANT qu'on clique, et combien de lignes on regarde. Les transporteurs
+   sont volontairement hors de ces comptes : ils ont leurs propres compteurs
+   dans leur rubrique, et les additionner ici ferait croire à des partenaires de
+   sourcing en plus. */
 function updateSupplierCounts() {
-  const all = state.suppliers.length;
-  const fournisseurs = state.suppliers.filter((s) => s.kind === 'fournisseur').length;
-  const distributeurs = state.suppliers.filter((s) => s.kind === 'distributeur').length;
-  const inactifs = state.suppliers.filter((s) => s.status === 'inactif').length;
+  const rows = sourcingSuppliers();
+  const all = rows.length;
+  const fournisseurs = rows.filter((s) => s.kind === 'fournisseur').length;
+  const distributeurs = rows.filter((s) => s.kind === 'distributeur').length;
+  const inactifs = rows.filter((s) => s.status === 'inactif').length;
   const put = (id, value) => { const el = $(id); if (el) el.textContent = String(value); };
   put('supKindCountAll', all);
   put('supKindCountFournisseur', fournisseurs);
   put('supKindCountDistributeur', distributeurs);
+  // Le curseur est replacé ici, et pas seulement au clic : ses compteurs viennent
+  // de changer de largeur, donc sa mesure aussi. Sans cela, le choix actif
+  // resterait sans curseur tant qu'on n'a pas cliqué une première fois.
+  placeSegmentSlider('suppliersKindSeg', 'suppliersKindSlider');
   const count = $('suppliersCount');
   if (count) {
     count.textContent = all
-      ? all + ' partenaire' + (all > 1 ? 's' : '') + ' · ' + fournisseurs + ' fournisseur' + (fournisseurs > 1 ? 's' : '')
+      ? all + ' partenaire' + (all > 1 ? 's' : '') + ' de sourcing · ' + fournisseurs + ' fournisseur' + (fournisseurs > 1 ? 's' : '')
         + ' · ' + distributeurs + ' distributeur' + (distributeurs > 1 ? 's' : '')
         + (inactifs ? ' · ' + inactifs + ' inactif' + (inactifs > 1 ? 's' : '') : '')
-      : 'Aucun partenaire enregistré pour le moment.';
+      : 'Aucun partenaire de sourcing enregistré pour le moment.';
   }
+  // Le titre de la section porte le compte : on sait ce qu'elle contient sans
+  // dérouler ni compter les lignes.
+  const heading = $('fournisseursHeadingCount');
+  if (heading) heading.textContent = all ? '(' + all + ')' : '';
 }
 
 /* Bascule entre l'état vide qui enseigne et la table. Un seul des deux est
@@ -2530,9 +3030,43 @@ function updateSupplierCounts() {
 function updateSupplierEmptyState() {
   const empty = $('suppliersEmptyCard');
   const table = $('suppliersTableCard');
-  const has = state.suppliers.length > 0;
+  const has = sourcingSuppliers().length > 0;
   if (empty) empty.hidden = has;
   if (table) table.hidden = !has;
+}
+
+/* ---------- Curseur des filtres segmentés ----------
+   Un seul curseur par groupe, qui glisse d'un choix à l'autre. Il est posé en
+   absolu derrière les boutons et déplacé par `transform`, donc sans reflow.
+   Sans géométrie mesurable (DOM de test, moteur sans mise en page), on ajoute
+   `no-slider` : le style `aria-pressed` d'origine reprend le relais et l'état du
+   filtre reste parfaitement lisible. */
+function placeSegmentSlider(segId, sliderId) {
+  const seg = $(segId);
+  const slider = $(sliderId);
+  if (!seg || !slider || !seg.classList) return;
+  let active = null;
+  const buttons = typeof seg.querySelectorAll === 'function' ? seg.querySelectorAll('[data-kind]') : null;
+  if (buttons && buttons.forEach) {
+    buttons.forEach((button) => {
+      const pressed = button.getAttribute ? button.getAttribute('aria-pressed') : null;
+      if (String(pressed) === 'true') active = button;
+    });
+  }
+  // Sans géométrie mesurable (DOM sans mise en page), le curseur n'a rien à
+  // mesurer : on le neutralise et le style `aria-pressed` reprend le relais.
+  if (!active || typeof active.offsetLeft !== 'number' || typeof active.offsetWidth !== 'number') {
+    seg.classList.add('no-slider');
+    return;
+  }
+  seg.classList.remove('no-slider');
+  if (slider.style && typeof slider.style.setProperty === 'function') {
+    slider.style.setProperty('width', active.offsetWidth + 'px');
+    slider.style.setProperty('transform', 'translateX(' + active.offsetLeft + 'px)');
+  } else if (slider.style) {
+    slider.style.width = active.offsetWidth + 'px';
+    slider.style.transform = 'translateX(' + active.offsetLeft + 'px)';
+  }
 }
 
 /* Reflète le filtre segmenté dans le <select> caché (qui reste la source de
@@ -2547,6 +3081,7 @@ function setSupplierKindFilter(kind) {
       button.setAttribute('aria-pressed', String((button.dataset.kind || '') === value));
     });
   }
+  placeSegmentSlider('suppliersKindSeg', 'suppliersKindSlider');
   applySupplierFilter();
 }
 
@@ -2612,24 +3147,32 @@ function setFieldState(fieldId, hintId, message, state_) {
   if (state_) field.classList.add(state_);
 }
 
-function validateSupplierForm() {
-  const name = $('supName');
-  const site = $('supSite');
-  const margin = $('supMargin');
+/* Nom + URL : les deux règles partagées par le formulaire de partenaire et
+   celui de transporteur. Factorisées pour qu'une correction de message ne
+   s'applique pas à une seule des deux rubriques. */
+function validatePartnerIdentity(nameId, nameFieldId, nameHintId, siteId, siteFieldId, siteHintId) {
   let ok = true;
+  const name = $(nameId);
+  const site = $(siteId);
 
   const nameValue = name ? name.value.trim() : '';
-  if (!nameValue) { setFieldState('supNameField', 'supNameHint', '', ''); }
-  else { setFieldState('supNameField', 'supNameHint', 'Nom retenu : ' + nameValue, 'valid'); }
+  if (!nameValue) { setFieldState(nameFieldId, nameHintId, '', ''); }
+  else { setFieldState(nameFieldId, nameHintId, 'Nom retenu : ' + nameValue, 'valid'); }
 
   const siteValue = site ? site.value.trim() : '';
-  if (!siteValue) { setFieldState('supSiteField', 'supSiteHint', '', ''); }
+  if (!siteValue) { setFieldState(siteFieldId, siteHintId, '', ''); }
   else if (!/^https?:\/\/\S+$/i.test(siteValue)) {
-    setFieldState('supSiteField', 'supSiteHint', "Une adresse complète est attendue (ex. https://exemple.com).", 'invalid');
+    setFieldState(siteFieldId, siteHintId, "Une adresse complète est attendue (ex. https://exemple.com).", 'invalid');
     ok = false;
   } else {
-    setFieldState('supSiteField', 'supSiteHint', 'Adresse acceptée.', 'valid');
+    setFieldState(siteFieldId, siteHintId, 'Adresse acceptée.', 'valid');
   }
+  return ok;
+}
+
+function validateSupplierForm() {
+  const margin = $('supMargin');
+  let ok = validatePartnerIdentity('supName', 'supNameField', 'supNameHint', 'supSite', 'supSiteField', 'supSiteHint');
 
   const marginValue = margin ? margin.value.trim() : '';
   if (!marginValue) {
@@ -2649,6 +3192,13 @@ function validateSupplierForm() {
   return ok;
 }
 
+/* Le formulaire transporteur n'a qu'une règle : un nom. Le site reste
+   facultatif, et surtout il n'y a AUCUNE validation de marge — proposer de
+   corriger un coefficient qui n'existe pas serait incompréhensible. */
+function validateCarrierForm() {
+  return validatePartnerIdentity('carName', 'carNameField', 'carNameHint', 'carSite', 'carSiteField', 'carSiteHint');
+}
+
 /* Recentre l'attention sur le formulaire de création (état vide). Sans cela, le
    bouton « Remplir le formulaire » ne ferait rien de visible. */
 function focusSupplierForm() {
@@ -2658,12 +3208,27 @@ function focusSupplierForm() {
   if (target && typeof target.focus === 'function') target.focus();
 }
 
+function focusCarrierForm() {
+  const card = $('view-transporteurs');
+  const target = $('carName');
+  if (card && typeof card.scrollIntoView === 'function') card.scrollIntoView({ behavior: motionOK() ? 'smooth' : 'auto', block: 'start' });
+  if (target && typeof target.focus === 'function') target.focus();
+}
+
 /* ---------- Sélecteur de partenaire de l'import ----------
    Au-delà d'une poignée de partenaires, une liste déroulante native devient
    pénible : il faut la dérouler et balayer du regard. On garde donc un champ de
    recherche et une liste filtrée. Le <select> d'origine n'est PAS retiré : il
    reste dans le DOM, porte la valeur choisie (c'est lui que lisent l'extraction
-   et les tests) et sert de repli si cette liste ne s'ouvre pas. */
+   et les tests) et sert de repli si cette liste ne s'ouvre pas.
+
+   Ce sélecteur désigne ce qu'on ACHÈTE. Il est donc alimenté par
+   `sourcingSuppliers()` et jamais par la liste complète : un transporteur y
+   ferait croire qu'on achète sa marchandise, et sa « marge » (un simple
+   remplissage technique) deviendrait un prix. Les quatre points d'entrée de ce
+   sélecteur — liste native, combobox, résumé et phrase de marge — sont tous
+   passés à `sourcingSuppliers()` pour qu'aucun ne réintroduise un transporteur
+   par une autre porte. */
 let importSupplierFilter = '';
 let importSupplierActive = -1;
 let importPickerWired = false;
@@ -2699,10 +3264,14 @@ function renderImportPickerList() {
   if (!list) return;
   const select = $('importSupplier');
   const current = select ? String(select.value || '') : '';
-  const matches = state.suppliers.filter((s) => matchesQuery(s, importSupplierFilter));
+  // La liste est celle des partenaires de SOURCING : c'est une sélection de
+  // marchandise, et un transporteur n'en vend pas. Il n'apparaît donc jamais
+  // ici, même si sa fiche vit dans la même table côté serveur.
+  const pool = sourcingSuppliers();
+  const matches = pool.filter((s) => matchesQuery(s, importSupplierFilter));
   let html = '';
-  if (!state.suppliers.length) {
-    html = '<li class="pick-empty">Aucun partenaire enregistré. Crée-le dans <a href="#/fournisseurs">Fournisseurs</a>.</li>';
+  if (!pool.length) {
+    html = '<li class="pick-empty">Aucun partenaire de sourcing enregistré. Crée-le dans <a href="#/fournisseurs">Fournisseurs</a>.</li>';
   } else if (!matches.length) {
     html = '<li class="pick-empty">Aucun partenaire ne correspond à « ' + esc(importSupplierFilter) + ' ».</li>';
   } else {
@@ -2762,7 +3331,7 @@ function chooseImportSupplier(id) {
   const select = $('importSupplier');
   const value = id == null ? '' : String(id);
   if (select) {
-    const known = value === '' || state.suppliers.some((s) => String(s.id) === value);
+    const known = value === '' || sourcingSuppliers().some((s) => String(s.id) === value);
     select.value = known ? value : '';
     if (typeof select.dispatchEvent === 'function' && typeof Event === 'function') {
       select.dispatchEvent(new Event('change'));
@@ -2774,7 +3343,7 @@ function chooseImportSupplier(id) {
   }
   const input = importPickerInput();
   if (input && !input.__pickerTyping) {
-    const supplier = state.suppliers.find((s) => String(s.id) === String(select ? select.value : ''));
+    const supplier = sourcingSuppliers().find((s) => String(s.id) === String(select ? select.value : ''));
     input.value = supplier ? supplier.name : '';
   }
   closeImportPicker();
@@ -2866,14 +3435,17 @@ function wireImportPicker() {
 
 /* Remplit la liste déroulante d'origine, groupée par type, en conservant la
    sélection courante : un rechargement ne doit pas changer en silence le
-   partenaire déjà choisi. */
+   partenaire déjà choisi. Seuls les partenaires de sourcing y figurent — un
+   transporteur ne livre pas de marchandise, il n'a rien à faire dans le choix
+   d'un import. Les deux groupes existants sont conservés tels quels. */
 function populateImportSuppliers() {
   const select = $('importSupplier');
   if (!select) return;
   const current = select.value || '';
+  const pool = sourcingSuppliers();
   let html = '<option value="">— Aucun —</option>';
   for (const [kind, label] of [['fournisseur', 'Fournisseurs'], ['distributeur', 'Distributeurs']]) {
-    const rows = state.suppliers.filter((s) => s.kind === kind);
+    const rows = pool.filter((s) => s.kind === kind);
     if (!rows.length) continue;
     html += '<optgroup label="' + esc(label) + '">';
     html += rows.map((s) => '<option value="' + esc(s.id) + '">' + esc(s.name)
@@ -2882,7 +3454,7 @@ function populateImportSuppliers() {
     html += '</optgroup>';
   }
   select.innerHTML = html;
-  select.value = state.suppliers.some((s) => String(s.id) === String(current)) ? current : '';
+  select.value = pool.some((s) => String(s.id) === String(current)) ? current : '';
   syncImportSupplierField();
   updateImportSupplierMargin();
   renderImportPickerList();
@@ -2894,7 +3466,7 @@ function syncImportSupplierField() {
   const select = $('importSupplier');
   const input = importPickerInput();
   if (!select || !input) return;
-  const supplier = state.suppliers.find((s) => String(s.id) === String(select.value || ''));
+  const supplier = sourcingSuppliers().find((s) => String(s.id) === String(select.value || ''));
   input.value = supplier ? supplier.name : '';
   importSupplierFilter = input.value;
 }
@@ -2906,7 +3478,7 @@ function updateImportSupplierSummary() {
   const box = $('importSupplierSummary');
   const select = $('importSupplier');
   if (!box || !select) return;
-  const supplier = state.suppliers.find((s) => String(s.id) === String(select.value || ''));
+  const supplier = sourcingSuppliers().find((s) => String(s.id) === String(select.value || ''));
   const global = globalMarginCoefficient();
   // Deux formulations distinctes selon la place dans la phrase, pour éviter le
   // « partira du le coefficient » que produirait un seul gabarit.
@@ -2952,7 +3524,7 @@ function updateImportSupplierMargin() {
   if (!select || !hint) return;
   const global = globalMarginCoefficient();
   const globalText = global == null ? '' : ' (' + formatCoefficient(global) + ')';
-  const supplier = state.suppliers.find((s) => String(s.id) === String(select.value || ''));
+  const supplier = sourcingSuppliers().find((s) => String(s.id) === String(select.value || ''));
   // `textContent` : le nom du partenaire vient de l'API. Il n'est pas interprété
   // comme du HTML ici — mais on n'écrit jamais dans innerHTML sans `esc()`.
   if (!supplier) {
@@ -2968,54 +3540,301 @@ function updateImportSupplierMargin() {
 
 async function loadSuppliers() {
   suppliersTable.setLoading();
-  // Liste complète, sans filtre : voir applySupplierFilter().
+  if (carriersTable) carriersTable.setLoading();
+  // Liste complète, sans filtre : chaque vue en dérive ce qui la concerne
+  // (sourcingSuppliers() / carriers()). Aucune requête supplémentaire.
   const rows = await api('/api/suppliers');
   state.suppliers = rows;
   applySupplierFilter();
+  applyCarrierFilter();
   populateImportSuppliers();
   updateSupplierCounts();
+  updateCarrierCounts();
   updateSupplierEmptyState();
+  updateCarrierEmptyState();
   renderGlobalMargin();
   scheduleDashboard();
   return rows;
 }
 
+/* ===================== TRANSPORTEURS =====================
+   Le pendant logistique du registre. Trois différences tenues ici, et nulle
+   part ailleurs :
+     · aucune marge : la colonne n'existe pas, le formulaire ne la demande pas,
+       et la ligne d'édition ne la propose pas ;
+     · un regroupement par FAMILLE, parce que 23 lignes à plat ne se lisent pas ;
+     · aucune présence dans le choix d'import, qui est une sélection de
+       marchandise.
+   Ces fiches vivent dans la même table `suppliers` côté serveur : il n'existe
+   pas de champ « famille » dans l'API, donc la famille se DÉDUIT (voir
+   carrierFamily) — jamais devinée au hasard, et jamais rangée de force. */
+
+const CARRIER_FAMILIES = [
+  { key: 'express', label: 'Express porte-à-porte', short: 'express', help: 'Enlèvement et livraison rapides, suivi et dédouanement inclus.' },
+  { key: 'fret', label: 'Fret et transit Asie → Europe', short: 'fret et transit', help: 'Maritime ou aérien, souvent du groupage : le bon choix quand le volume monte.' },
+  { key: 'agent', label: "Agents d'achat en Chine", short: "agents d'achat", help: 'Indispensables pour 1688 et Taobao : achètent, réceptionnent, contrôlent et réexpédient.' },
+  { key: 'plateforme', label: 'Plateformes multi-transporteurs', short: 'plateformes', help: 'Comparent plusieurs transporteurs et éditent les étiquettes.' },
+  { key: 'autre', label: 'Autres transporteurs', short: 'autres', help: 'Fiches qui ne ressemblent à aucune famille connue : rangées ici plutôt que de force ailleurs.' },
+];
+
+/* Table de correspondance nom → famille, construite à partir du catalogue de
+   démarrage (src/db/carrier-catalogue.js). POURQUOI une table par nom plutôt
+   qu'une déduction depuis les notes : les notes sont du texte libre, rédigé par
+   l'utilisateur, et « Rapide et cher, suivi fiable » ne dit pas « express ».
+   Deviner sur ce genre de phrase rangerait des fiches au hasard — pire que de
+   les laisser à part. On déduit donc d'abord par mot-clé PRÉFIXE (robuste pour
+   les fiches que l'utilisateur ajoutera en suivant l'aide du formulaire), puis
+   par ce tableau pour le catalogue connu, puis « autre ». */
+const CARRIER_FAMILY_BY_NAME = {
+  'DHL Express': 'express', 'FedEx': 'express', 'UPS': 'express', 'Chronopost': 'express',
+  'DPD': 'express', 'GLS': 'express', 'Colissimo': 'express',
+  'Freightos': 'fret', 'Flexport': 'fret', 'Kuehne+Nagel': 'fret', 'DSV': 'fret',
+  'Maersk': 'fret', 'CMA CGM': 'fret', 'Bolloré Logistics': 'fret',
+  'Superbuy': 'agent', 'Sugargoo': 'agent', 'CNFans': 'agent', 'Yoybuy': 'agent', 'Basetao': 'agent',
+  'Sendcloud': 'plateforme', 'Shippo': 'plateforme', 'Easyship': 'plateforme', 'Boxtal': 'plateforme',
+};
+
+/* Déduit la famille d'un transporteur, dans cet ordre :
+   1. le préfixe des notes (le plus explicite : c'est ce que l'aide du formulaire
+      recommande d'écrire) ;
+   2. le nom, pour le catalogue de démarrage ;
+   3. « autre », famille d'accueil assumée. */
+function carrierFamily(carrier) {
+  const notes = String((carrier && carrier.notes) || '').trim().toLowerCase();
+  if (notes.startsWith('express')) return 'express';
+  if (notes.startsWith("agent d'achat") || notes.startsWith('agent ')) return 'agent';
+  if (notes.startsWith('plateforme') || notes.startsWith('expédition')) return 'plateforme';
+  if (notes.startsWith('transitaire') || notes.startsWith('gros transitaire') || notes.startsWith('armateur')
+    || notes.startsWith('comparateur') || notes.startsWith('fret')) return 'fret';
+  const byName = CARRIER_FAMILY_BY_NAME[String((carrier && carrier.name) || '').trim()];
+  return byName || 'autre';
+}
+
+function carrierFamilyDef(key) {
+  return CARRIER_FAMILIES.find((f) => f.key === key) || CARRIER_FAMILIES[CARRIER_FAMILIES.length - 1];
+}
+
+/* Badge de famille : le libellé du groupe, en pastille discrète. Il est porté
+   par la ligne elle-même (et non seulement par l'en-tête de groupe) pour que la
+   famille reste lisible quand la table est filtrée ou triée. */
+function carrierFamilyBadge(key) {
+  const def = carrierFamilyDef(key);
+  return '<span class="badge badge-kind-distributor" title="' + esc(def.help) + '">'
+    + '<span class="badge-dot" aria-hidden="true"></span>' + esc(def.label) + '</span>';
+}
+
+/* La ligne d'édition d'un transporteur : mêmes champs que le formulaire de
+   création, sans marge ni type. `withMargin = false` porte cette décision. */
+function carrierEditRow(carrier) {
+  return supplierEditRow(carrier, false);
+}
+
+const carriersTable = createTable({
+  body: 'carriers',
+  view: 'transporteurs',
+  head: 'carriersHead',
+  filter: 'carriersFilter',
+  pager: 'carriersPager',
+  pageSize: 12,
+  skeleton: 4,
+  empty: 'Aucun transporteur enregistré. Ajoute le premier ci-dessus.',
+  defaultSort: 'name',
+  columns: [
+    { key: 'name', value: (c) => c.name },
+    { key: 'family', value: (c) => carrierFamilyDef(carrierFamily(c)).label },
+    { key: 'site_url', value: (c) => c.site_url },
+    { key: 'notes', value: (c) => c.notes },
+    { key: 'status', value: (c) => c.status },
+  ],
+  search: (c) => [c.name, c.notes, c.site_url, carrierFamilyDef(carrierFamily(c)).label].join(' '),
+  row: (c) => {
+    const id = esc(c.id);
+    if (String(state.editingCarrierId) === String(c.id)) return carrierEditRow(c);
+    return '<tr class="row-in">'
+      + '<td data-label="Nom"><span class="cell-strong">' + esc(c.name) + '</span>'
+      // L'import ne s'affiche que s'il existe : pour un transporteur il vaudra
+      // toujours 0, et une colonne de zéros n'apprend rien. Sa famille, elle,
+      // reste visible sur la ligne même après un filtre.
+      + (Number(c.import_count) ? '<div class="cell-sub">' + formatInt(c.import_count) + ' import(s) liés</div>' : '')
+      + '</td>'
+      + '<td data-label="Famille">' + carrierFamilyBadge(carrierFamily(c)) + '</td>'
+      + '<td data-label="Site" class="cell-muted">'
+      + (c.site_url
+        ? '<a class="link-quiet" href="' + esc(c.site_url) + '" target="_blank" rel="noopener noreferrer">' + esc(c.site_url) + '</a>'
+        : '—') + '</td>'
+      + '<td data-label="Notes" class="cell-muted">' + (c.notes ? esc(c.notes) : '—')
+      // Aucune pastille « service » n'est écrite ici : l'absence de la colonne
+      // Marge dit déjà, sans ambiguïté, qu'aucune marge ne s'applique.
+      + '</td>'
+      + '<td data-label="Statut">' + supplierStatusBadge(c.status) + '</td>'
+      + '<td data-label="Actions" class="cell-actions"><div class="actions">'
+      + '<button class="btn btn-ghost btn-xs" type="button" data-action="edit" data-id="' + id + '" aria-label="Modifier ' + esc(c.name) + '">Modifier</button>'
+      + '<button class="btn btn-danger-ghost btn-xs" type="button" data-action="delete" data-id="' + id + '" data-name="' + esc(c.name) + '" aria-label="Supprimer ' + esc(c.name) + '">Supprimer</button>'
+      + '</div></td>'
+      + '</tr>';
+  },
+});
+
+function applyCarrierFilter() {
+  const filter = $('carriersKindFilter');
+  const status = filter && filter.value ? filter.value : '';
+  const rows = carriers();
+  carriersTable.setRows(status ? rows.filter((c) => c.status === status) : rows);
+}
+
+function updateCarrierCounts() {
+  const rows = carriers();
+  const actifs = rows.filter((c) => c.status === 'actif').length;
+  const inactifs = rows.filter((c) => c.status === 'inactif').length;
+  const put = (id, value) => { const el = $(id); if (el) el.textContent = String(value); };
+  put('carKindCountAll', rows.length);
+  put('carKindCountActif', actifs);
+  put('carKindCountInactif', inactifs);
+  // Le curseur est replacé ici, et pas seulement au clic : ses compteurs viennent
+  // de changer de largeur, donc sa mesure aussi. Sans cela, le choix actif
+  // resterait sans curseur tant qu'on n'a pas cliqué une première fois.
+  placeSegmentSlider('carriersKindSeg', 'carriersKindSlider');
+  const count = $('carriersCount');
+  if (count) {
+    // Ce qu'on annonce d'abord, c'est la RÉPARTITION par famille : c'est elle
+    // qui rend la liste utilisable, pas le total.
+    const parts = CARRIER_FAMILIES
+      .map((f) => ({ label: f.short, n: rows.filter((c) => carrierFamily(c) === f.key).length }))
+      .filter((entry) => entry.n > 0)
+      .map((entry) => entry.n + ' ' + entry.label);
+    count.textContent = rows.length
+      ? rows.length + ' transporteur' + (rows.length > 1 ? 's' : '') + ' · ' + parts.join(' · ')
+        + (inactifs ? ' · ' + inactifs + ' inactif' + (inactifs > 1 ? 's' : '') : '')
+      : 'Aucun transporteur enregistré pour le moment.';
+  }
+  const heading = $('carriersHeadingCount');
+  if (heading) heading.textContent = rows.length ? '(' + rows.length + ')' : '';
+}
+
+function updateCarrierEmptyState() {
+  const empty = $('carriersEmptyCard');
+  const table = $('carriersTableCard');
+  const has = carriers().length > 0;
+  if (empty) empty.hidden = has;
+  if (table) table.hidden = !has;
+}
+
+function setCarrierKindFilter(status) {
+  const select = $('carriersKindFilter');
+  const value = status || '';
+  if (select) select.value = value;
+  const seg = $('carriersKindSeg');
+  if (seg && typeof seg.querySelectorAll === 'function') {
+    seg.querySelectorAll('[data-kind]').forEach((button) => {
+      button.setAttribute('aria-pressed', String((button.dataset.kind || '') === value));
+    });
+  }
+  placeSegmentSlider('carriersKindSeg', 'carriersKindSlider');
+  applyCarrierFilter();
+}
+
+/* Vide le formulaire transporteur ET ses messages de validation : laisser
+   « Adresse acceptée. » après un enregistrement réussi ferait douter de ce qui
+   vient de se passer. */
+function resetCarrierForm() {
+  for (const id of ['carName', 'carSite', 'carNotes']) {
+    const el = $(id);
+    if (el) el.value = '';
+  }
+  setFieldState('carNameField', 'carNameHint', '', '');
+  setFieldState('carSiteField', 'carSiteHint', '', '');
+}
+
+/* ---------- Écritures communes aux deux registres ----------
+   Fournisseurs et transporteurs partagent la même route (mêmes champs, même
+   validation serveur) : une seule construction de corps évite que les deux
+   formulaires divergent à la première correction. La seule différence est la
+   marge, qui n'existe que pour le sourcing. */
+function partnerPatchBody(id, { withMargin }) {
+  const siteUrl = $('sup-edit-site-' + id).value.trim();
+  const notes = $('sup-edit-notes-' + id).value.trim();
+  const body = {
+    name: $('sup-edit-name-' + id).value.trim(),
+    status: $('sup-edit-status-' + id).value,
+    siteUrl: siteUrl || null,
+    notes: notes || null,
+  };
+  if (withMargin) {
+    const marginRaw = $('sup-edit-margin-' + id).value.trim();
+    body.kind = $('sup-edit-kind-' + id).value;
+    // Champ vidé = retour explicite au coefficient global (null), jamais 0.
+    body.marginCoefficient = marginRaw === '' ? null : Number(marginRaw);
+  }
+  return body;
+}
+
+/* La suppression détache les imports au lieu de les détruire : on le dit dans
+   la confirmation, car c'est exactement ce que l'utilisateur veut savoir. */
+async function deletePartner(button, label) {
+  const name = button.dataset.name || label;
+  if (!window.confirm('Supprimer « ' + name + ' » ?\n\nSes imports ne sont PAS supprimés : ils sont seulement détachés, pour que l\'historique reste intact.')) return null;
+  return api('/api/suppliers/' + encodeURIComponent(button.dataset.id), { method: 'DELETE' });
+}
+
 onAction($('suppliers'), {
-  edit: (button) => { state.editingSupplierId = Number(button.dataset.id); suppliersTable.render(); },
+  edit: (button) => {
+    state.editingCarrierId = null;
+    state.editingSupplierId = Number(button.dataset.id);
+    suppliersTable.render();
+  },
   cancel: () => { state.editingSupplierId = null; suppliersTable.render(); },
 
   save: (button) => action(button, async () => {
     const id = button.dataset.id;
-    const marginRaw = $('sup-edit-margin-' + id).value.trim();
-    const siteUrl = $('sup-edit-site-' + id).value.trim();
-    const notes = $('sup-edit-notes-' + id).value.trim();
     await api('/api/suppliers/' + encodeURIComponent(id), {
       method: 'PATCH',
-      body: JSON.stringify({
-        name: $('sup-edit-name-' + id).value.trim(),
-        kind: $('sup-edit-kind-' + id).value,
-        status: $('sup-edit-status-' + id).value,
-        siteUrl: siteUrl || null,
-        notes: notes || null,
-        // Champ vidé = retour explicite au coefficient global (null), jamais 0.
-        marginCoefficient: marginRaw === '' ? null : Number(marginRaw),
-      }),
+      body: JSON.stringify(partnerPatchBody(id, { withMargin: true })),
     });
     state.editingSupplierId = null;
     await loadSuppliers();
+    confirmFlash($('suppliersTableCard'));
   }, 'Partenaire modifié.'),
 
-  /* La suppression détache les imports au lieu de les détruire : on le dit dans
-     la confirmation, car c'est exactement ce que l'utilisateur veut savoir. */
   delete: (button) => action(button, async () => {
-    const name = button.dataset.name || 'ce partenaire';
-    if (!window.confirm('Supprimer « ' + name + ' » ?\n\nSes imports ne sont PAS supprimés : ils sont seulement détachés, pour que l\'historique reste intact.')) return null;
-    const result = await api('/api/suppliers/' + encodeURIComponent(button.dataset.id), { method: 'DELETE' });
+    const result = await deletePartner(button, 'ce partenaire');
+    if (result === null) return null;
     if (String(state.editingSupplierId) === String(button.dataset.id)) state.editingSupplierId = null;
     await Promise.all([loadSuppliers(), loadImports()]);
     renderDashboard();
     return result;
   }, 'Partenaire supprimé, imports détachés.'),
+});
+
+/* ---------- Transporteurs : mêmes gestes, sans marge ---------- */
+onAction($('carriers'), {
+  edit: (button) => {
+    state.editingSupplierId = null;
+    state.editingCarrierId = Number(button.dataset.id);
+    carriersTable.render();
+  },
+  cancel: () => { state.editingCarrierId = null; carriersTable.render(); },
+
+  save: (button) => action(button, async () => {
+    const id = button.dataset.id;
+    await api('/api/suppliers/' + encodeURIComponent(id), {
+      method: 'PATCH',
+      // `withMargin: false` : on n'envoie AUCUN coefficient, donc on n'écrase pas
+      // le remplissage technique du serveur avec une valeur inventée par l'écran.
+      body: JSON.stringify(partnerPatchBody(id, { withMargin: false })),
+    });
+    state.editingCarrierId = null;
+    await loadSuppliers();
+    confirmFlash($('carriersTableCard'));
+  }, 'Transporteur modifié.'),
+
+  delete: (button) => action(button, async () => {
+    const result = await deletePartner(button, 'ce transporteur');
+    if (result === null) return null;
+    if (String(state.editingCarrierId) === String(button.dataset.id)) state.editingCarrierId = null;
+    await Promise.all([loadSuppliers(), loadImports()]);
+    renderDashboard();
+    return result;
+  }, 'Transporteur supprimé.'),
 });
 
 $('btnCreateSupplier').addEventListener('click', (event) => action(event.currentTarget, async () => {
@@ -3035,7 +3854,31 @@ $('btnCreateSupplier').addEventListener('click', (event) => action(event.current
   await api('/api/suppliers', { method: 'POST', body: JSON.stringify(body) });
   resetSupplierForm();
   await loadSuppliers();
+  // Confirmation visuelle sur LA carte qui vient de changer : un toast seul
+  // laisse chercher quelle ligne a bougé.
+  confirmFlash($('suppliersTableCard'));
 }, 'Partenaire enregistré.'));
+
+/* Création d'un transporteur : le type est FIXE, jamais choisi à l'écran. Ce
+   formulaire ne crée que des transporteurs ; laisser un sélecteur de type ici
+   permettrait de créer un fournisseur dans la rubrique logistique, et de
+   rouvrir exactement la confusion que la séparation corrige. Aucune marge n'est
+   envoyée : le serveur applique son remplissage technique. */
+$('btnCreateCarrier').addEventListener('click', (event) => action(event.currentTarget, async () => {
+  if (!validateCarrierForm()) throw new Error('Corrige les champs signalés avant d\'enregistrer.');
+  const name = $('carName').value.trim();
+  if (!name) throw new Error('Le nom du transporteur est obligatoire.');
+  const siteUrl = $('carSite').value.trim();
+  const notes = $('carNotes').value.trim();
+  const body = { kind: CARRIER_KIND, name, status: $('carStatus').value };
+  if (siteUrl) body.siteUrl = siteUrl;
+  if (notes) body.notes = notes;
+
+  await api('/api/suppliers', { method: 'POST', body: JSON.stringify(body) });
+  resetCarrierForm();
+  await loadSuppliers();
+  confirmFlash($('carriersTableCard'));
+}, 'Transporteur enregistré.'));
 
 /* Vide le formulaire ET ses messages de validation : laisser « Refusé : un
    coefficient… » après un enregistrement réussi ferait douter de ce qui vient
@@ -3068,6 +3911,17 @@ $('supName').addEventListener('input', validateSupplierForm);
 
 $('btnStartSupplier').addEventListener('click', focusSupplierForm);
 
+/* ---------- Transporteurs : mêmes gestes, aucun champ de marge ---------- */
+$('carName').addEventListener('input', validateCarrierForm);
+$('carSite').addEventListener('input', validateCarrierForm);
+$('btnStartCarrier').addEventListener('click', focusCarrierForm);
+$('btnResetCarrier').addEventListener('click', (event) => {
+  event.preventDefault();
+  resetCarrierForm();
+  const name = $('carName');
+  if (name && typeof name.focus === 'function') name.focus();
+});
+
 // Le filtre segmenté pilote le <select> caché, qui reste la source de vérité.
 if ($('suppliersKindSeg') && typeof $('suppliersKindSeg').addEventListener === 'function') {
   $('suppliersKindSeg').addEventListener('click', (event) => {
@@ -3078,6 +3932,25 @@ if ($('suppliersKindSeg') && typeof $('suppliersKindSeg').addEventListener === '
 }
 // Le <select> reste écouté : si un jour il redevient visible, il fonctionne.
 $('suppliersKindFilter').addEventListener('change', () => setSupplierKindFilter($('suppliersKindFilter').value));
+
+if ($('carriersKindSeg') && typeof $('carriersKindSeg').addEventListener === 'function') {
+  $('carriersKindSeg').addEventListener('click', (event) => {
+    const button = event.target && event.target.closest ? event.target.closest('[data-kind]') : null;
+    if (!button) return;
+    setCarrierKindFilter(button.dataset.kind || '');
+  });
+}
+$('carriersKindFilter').addEventListener('change', () => setCarrierKindFilter($('carriersKindFilter').value));
+
+/* Le curseur d'un filtre segmenté se replace quand la fenêtre change de largeur :
+   les boutons changent de taille, donc sa mesure devient fausse. `resize` est
+   écouté une seule fois pour les deux groupes. */
+if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
+  window.addEventListener('resize', () => {
+    placeSegmentSlider('suppliersKindSeg', 'suppliersKindSlider');
+    placeSegmentSlider('carriersKindSeg', 'carriersKindSlider');
+  });
+}
 
 /* Le <select> d'import reste la source de vérité de la valeur ; le combobox ne
    fait que le piloter. On écoute donc son `change`, exactement comme avant. */
@@ -3129,6 +4002,7 @@ function importListingCount(imp) {
 
 const importsTable = createTable({
   body: 'imports',
+  view: 'imports',
   head: 'importsHead',
   filter: 'importsFilter',
   pager: 'importsPager',
@@ -3212,6 +4086,7 @@ async function hydrateImportDetails() {
 /* ===================== JOURNAL ===================== */
 const activityTable = createTable({
   body: 'activity',
+  view: 'journal',
   head: 'activityHead',
   filter: 'activityFilter',
   pager: 'activityPager',
@@ -3584,21 +4459,28 @@ $('btnSyncOrders').addEventListener('click', (event) => action(event.currentTarg
 /* ===================== ROUTAGE PAR ANCRE =====================
    Chaque vue a une ancre (#/imports, #/produits…) : elle est partageable et
    survit à un rafraîchissement, sans dépendre d'un serveur qui ne connaît que
-   des fichiers statiques. */
+   des fichiers statiques.
+   L'ORDRE de cet objet est celui de la barre latérale, et il porte la direction
+   des transitions : une vue vers le bas de la liste entre par la droite, une vue
+   vers le haut par la gauche. C'est ce qui fait que le contenu « vient » du côté
+   où l'on a cliqué, au lieu d'apparaître sans direction. */
 const VIEWS = {
   dashboard: { el: 'view-dashboard', title: 'Tableau de bord' },
   imports: { el: 'view-imports', title: 'Imports' },
   produits: { el: 'view-produits', title: 'Produits' },
   fournisseurs: { el: 'view-fournisseurs', title: 'Fournisseurs' },
+  transporteurs: { el: 'view-transporteurs', title: 'Transporteurs' },
   canaux: { el: 'view-canaux', title: 'Canaux' },
   journal: { el: 'view-journal', title: 'Journal' },
   support: { el: 'view-support', title: 'Support' },
 };
+const VIEW_ORDER = Object.keys(VIEWS);
 const ROUTES = {
   '#/dashboard': 'dashboard',
   '#/imports': 'imports',
   '#/produits': 'produits',
   '#/fournisseurs': 'fournisseurs',
+  '#/transporteurs': 'transporteurs',
   '#/canaux': 'canaux',
   '#/journal': 'journal',
   '#/support': 'support',
@@ -3609,20 +4491,40 @@ function routeFromHash() {
   return ROUTES[String(location.hash || '')] || 'dashboard';
 }
 
+/* Position d'une vue dans la barre latérale. Sert uniquement à choisir le sens
+   du glissement ; une vue inconnue est traitée comme le début de la liste. */
+function viewRank(name) {
+  const index = VIEW_ORDER.indexOf(name);
+  return index < 0 ? 0 : index;
+}
+
+let currentView = null;
+
 function showView(name, options = {}) {
   const view = VIEWS[name] ? name : 'dashboard';
+  const animate = options.animate !== false && motionOK();
+  const previous = currentView && VIEWS[currentView] ? currentView : null;
+  // Le sens : forward = on descend dans la navigation, back = on remonte.
+  const forward = previous ? viewRank(view) >= viewRank(previous) : true;
+  const enterClass = forward ? 'view-fwd' : 'view-back';
+
   for (const [key, def] of Object.entries(VIEWS)) {
     const el = $(def.el);
     if (!el) continue;
     const active = key === view;
+    // La vue sortante quitte le flux immédiatement : masquer une vue qui vient
+    // de disparaître ne produit aucun mouvement, donc aucune animation à jouer.
+    el.classList.remove('view-fwd', 'view-back');
     el.hidden = !active;
     el.classList.toggle('active', active);
     if (active) {
-      el.classList.remove('view-enter');
-      if (options.animate !== false && motionOK() && typeof el.offsetWidth !== 'undefined') void el.offsetWidth;
-      if (options.animate !== false) el.classList.add('view-enter');
+      // Reflow avant la classe d'entrée : sans lui, une vue déjà animée ne
+      // rejouerait pas son animation au second passage.
+      if (animate && typeof el.offsetWidth !== 'undefined') void el.offsetWidth;
+      if (animate) el.classList.add(enterClass);
     }
   }
+  currentView = view;
   const title = $('viewTitle');
   if (title) title.textContent = VIEWS[view].title;
 
@@ -3633,10 +4535,44 @@ function showView(name, options = {}) {
       link.classList.toggle('active', active);
       if (active) link.setAttribute('aria-current', 'page');
       else link.removeAttribute('aria-current');
+      if (active && animate) popIn(link);
     });
   }
+  moveNavRail();
   toggleNav(false);
-  if (options.animate !== false) replayStagger($(VIEWS[view].el));
+  // Les cartes de la vue reçoivent leur décalage d'entrée (elles sont en pause
+  // tant qu'elles sont cachées), les lignes déjà rendues le leur, et les vues
+  // cachées sont débarrassées de leurs lignes transparentes : sans cela, une
+  // table rendue en arrière-plan attendrait un décalage qui ne s'écoule jamais.
+  refreshRowIn(view);
+  revealStagger($(VIEWS[view].el));
+  replayStagger($(VIEWS[view].el));
+}
+
+/* Place le curseur de navigation sur l'élément actif. Le trait GLISSE de
+   l'ancienne position à la nouvelle : c'est le mouvement qui dit « je viens de
+   là ». Quand la géométrie n'est pas mesurable (DOM de test, moteur sans mise en
+   page), le curseur est simplement masqué — l'état actif reste porté par le fond
+   teinté de l'élément, donc rien ne disparaît. */
+function moveNavRail() {
+  const nav = $('sidebarNav');
+  const rail = $('navRail');
+  if (!nav || !rail) return;
+  let active = null;
+  if (typeof nav.querySelectorAll === 'function') {
+    const links = nav.querySelectorAll('[data-view]');
+    if (links && links.forEach) links.forEach((link) => { if (link.classList && link.classList.contains && link.classList.contains('active')) active = link; });
+  }
+  const measurable = active && typeof active.offsetTop === 'number' && typeof active.offsetHeight === 'number';
+  if (!measurable || !rail.style) { rail.classList.remove('on'); return; }
+  if (typeof rail.style.setProperty === 'function') {
+    rail.style.setProperty('height', active.offsetHeight + 'px');
+    rail.style.setProperty('transform', 'translateY(' + active.offsetTop + 'px)');
+  } else {
+    rail.style.height = active.offsetHeight + 'px';
+    rail.style.transform = 'translateY(' + active.offsetTop + 'px)';
+  }
+  rail.classList.add('on');
 }
 
 function toggleNav(force) {

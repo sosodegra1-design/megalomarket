@@ -107,3 +107,26 @@ test('un nom de partenaire ne peut jamais devenir du HTML', () => {
   assert.match(row, /data-action="save"/);
   assert.match(row, /data-action="cancel"/);
 });
+
+/* Depuis que les transporteurs existent, la vue Fournisseurs ne montre QUE le
+   sourcing. Le filtre segmenté garde exactement les deux mêmes choix, et la
+   rubrique logistique est atteignable depuis les deux écrans : c'est ce qui
+   évite de chercher un transitaire dans la liste des fournisseurs. */
+test('la vue Fournisseurs ne montre que le sourcing et renvoie vers les transporteurs', () => {
+  assert.ok(HTML.includes('id="suppliersKindSeg"'), 'le filtre segmenté reste en place');
+  // Les trois libellés d'origine du filtre sont intacts : Tous, Fournisseurs,
+  // Distributeurs. Un quatrième segment « Transporteurs » les aurait dilués.
+  const segStart = HTML.indexOf('id="suppliersKindSeg"');
+  const seg = HTML.slice(segStart, HTML.indexOf('</div>', segStart));
+  assert.match(seg, />Tous </);
+  assert.match(seg, />Fournisseurs </);
+  assert.match(seg, />Distributeurs </);
+  assert.ok(!/data-kind="transporteur"/.test(seg), 'le filtre des partenaires ne propose pas les transporteurs');
+  // Le <select> caché qui porte l'état du filtre reste, avec ses deux valeurs.
+  const select = HTML.slice(HTML.indexOf('id="suppliersKindFilter"'), segStart);
+  assert.match(select, /<option value="">Tous les types<\/option>/);
+  assert.match(select, /<option value="fournisseur">/);
+  assert.match(select, /<option value="distributeur">/);
+  // Les deux rubriques se citent l'une l'autre.
+  assert.match(HTML, /href="#\/transporteurs"/);
+});
