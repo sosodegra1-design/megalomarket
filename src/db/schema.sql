@@ -65,10 +65,14 @@ CREATE TABLE IF NOT EXISTS imports (
 CREATE TABLE IF NOT EXISTS import_listings (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   import_id INTEGER NOT NULL REFERENCES imports(id) ON DELETE CASCADE,
-  marketplace TEXT NOT NULL CHECK (marketplace IN ('amazon', 'tiktok_shop', 'allegro', 'ebay')),
+  marketplace TEXT NOT NULL CHECK (marketplace IN ('amazon', 'tiktok_shop', 'allegro', 'ebay', 'own_site')),
   title TEXT NOT NULL,
   description TEXT NOT NULL,
   suggested_price REAL NOT NULL,
+  -- Fiche complète destinée au site propre, en JSON : celui-ci exige catégorie,
+  -- univers, âge, clé d'icône et libellés bilingues, que les marketplaces ne
+  -- demandent pas. NULL tant qu'aucune fiche détaillée n'a été préparée.
+  site_payload TEXT,
   status TEXT NOT NULL DEFAULT 'a_valider' CHECK (status IN ('a_valider', 'valide', 'publie', 'echec')),
   published_external_id TEXT,
   publish_error TEXT,

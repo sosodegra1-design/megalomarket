@@ -1,8 +1,9 @@
 import { Router } from 'express';
 import { dbAll, dbGet, dbRun, logActivity } from '../db/database.js';
 import { scrapeProductFromUrl } from '../importer/scraper.js';
-import { generateListingsForImport } from '../importer/listingGenerator.js';
+import { generateListingsForImport, validateSitePayload } from '../importer/listingGenerator.js';
 import { publishListing } from '../importer/publisher.js';
+import { connectors } from '../connectors/index.js';
 
 export const importsRouter = Router();
 
@@ -73,7 +74,11 @@ importsRouter.post(
 importsRouter.patch(
   '/:id/listings/:marketplace',
   asyncRoute(async (req, res) => {
-    const { title, description, suggestedPrice } = req.body || {};
+    const { title, description, suggestedPrice, sitePayload } = req.body || {};
+
+    const imp = await dbGet('SELECT purchase_price FROM imports WHERE id = ?', [req.params.id]);
+    if (!imp) throw new Error('Import introuvable.');
+
     const fields = [];
     const values = [];
     if (title) {
@@ -86,8 +91,42 @@ importsRouter.patch(
     }
     if (suggestedPrice !== undefined) {
       if (!Number.isFinite(suggestedPrice) || suggestedPrice <= 0) throw new Error('Prix invalide.');
+      // Le verrou anti-vente à perte doit valoir aussi sur le chemin de
+      // validation humaine : sans cette comparaison, l'option A permettait
+      // d'enregistrer un prix sous le prix d'achat, que la publication envoyait
+      // ensuite tel quel au canal.
+      if (suggestedPrice < imp.purchase_price) {
+        throw new Error(
+          `Prix refusé : ${suggestedPrice} € est inférieur au prix d'achat (${imp.purchase_price} €). Vente à perte.`,
+        );
+      }
       fields.push('suggested_price = ?');
       values.push(suggestedPrice);
+    }
+    if (sitePayload !== undefined) {
+      if (sitePayload === null) {
+        fields.push('site_payload = ?');
+        values.push(null);
+      } else {
+        if (typeof sitePayload !== 'object' || Array.isArray(sitePayload)) {
+          throw new Error('sitePayload doit être un objet JSON.');
+        }
+        // Validée contre la taxonomie réelle du site quand elle est joignable :
+        // une catégorie ou une icône inventée ne doit jamais l'atteindre, car
+        // elle sortirait des filtres de la boutique.
+        let taxonomy = null;
+        const connector = connectors.own_site;
+        if (connector?.isConfigured?.() && connector.getTaxonomy) {
+          try {
+            taxonomy = await connector.getTaxonomy();
+          } catch {
+            taxonomy = null; // site injoignable : on enregistre sans validation croisée
+          }
+        }
+        const payload = taxonomy ? validateSitePayload(sitePayload, taxonomy) : sitePayload;
+        fields.push('site_payload = ?');
+        values.push(JSON.stringify(payload));
+      }
     }
     if (!fields.length) throw new Error('Aucune modification fournie.');
     fields.push('status = ?', 'updated_at = ?');

@@ -6,6 +6,12 @@ export async function syncOrdersFromAllChannels() {
   const results = { created: 0, errors: [] };
 
   for (const channel of activeChannels()) {
+    // Un canal n'a pas forcément de commandes à lire : le site propre, par
+    // exemple, n'expose aucune route de commandes. Sans ce garde-fou, chaque
+    // cycle enregistrait un échec « listOrders is not a function » qui masquait
+    // les vraies erreurs dans le journal.
+    if (typeof connectors[channel].listOrders !== 'function') continue;
+
     try {
       const orders = await connectors[channel].listOrders();
       for (const order of orders) {

@@ -1,16 +1,24 @@
 import { config } from '../config/env.js';
 
 /**
- * Connecteur générique pour le site propre Megalomarket.
+ * Connecteur du site propre (BBVOLTEX).
  *
- * Hypothèse de contrat API (à adapter au vrai backend du site une fois connu) :
- *   GET  {OWN_SITE_API_URL}/products                — liste des produits {sku, name, price, stock}
- *   POST {OWN_SITE_API_URL}/products/:sku/price      — body {price} met à jour le prix
- *   POST {OWN_SITE_API_URL}/products/:sku/stock      — body {stock} met à jour le stock
- * Authentification : en-tête "Authorization: Bearer OWN_SITE_API_KEY".
+ * Le contrat ci-dessous a été vérifié contre l'API réellement en ligne, et il
+ * diffère de l'hypothèse d'origine sur trois points qui empêchaient tout
+ * fonctionnement : les produits vivent sous `/api/products` (et non
+ * `/products`), ils sont identifiés par `id` (« p1 », « bj1 »…) et non par un
+ * `sku`, et le site n'a **aucune notion de stock** — aucun de ses produits ne
+ * porte de champ `stock`.
  *
- * Si le site n'expose pas encore ces routes, il faudra soit les ajouter côté site,
- * soit adapter les chemins ci-dessous à ce qui existe réellement.
+ *   GET    /api/products              public  — catalogue complet
+ *   GET    /api/admin/taxonomy        clé     — catégories / univers / icônes autorisés
+ *   GET    /api/admin/products/:id    clé     — un produit
+ *   POST   /api/admin/products        clé     — publier un produit
+ *   PATCH  /api/admin/products/:id    clé     — modifier prix et champs
+ *   DELETE /api/admin/products/:id    clé     — retirer un produit
+ *
+ * Authentification des routes d'administration : en-tête `X-Admin-Key`,
+ * alimenté par OWN_SITE_API_KEY (doit correspondre à ADMIN_API_KEY côté site).
  */
 
 function requireConfigured() {
@@ -21,47 +29,112 @@ function requireConfigured() {
   }
 }
 
-async function ownSiteFetch(path, options = {}) {
+/** Les routes d'écriture exigent la clé ; la lecture du catalogue est publique. */
+function requireWritable() {
   requireConfigured();
-  const response = await fetch(`${config.ownSite.apiUrl}${path}`, {
-    ...options,
-    headers: {
-      Authorization: `Bearer ${config.ownSite.apiKey}`,
-      'Content-Type': 'application/json',
-      ...options.headers,
-    },
+  if (!config.ownSite.apiKey) {
+    throw new Error(
+      "Publication sur le site propre impossible — OWN_SITE_API_KEY manquante. " +
+      "Elle doit correspondre à ADMIN_API_KEY configurée côté site.",
+    );
+  }
+}
+
+function baseUrl() {
+  return String(config.ownSite.apiUrl).replace(/\/+$/, '');
+}
+
+async function ownSiteFetch(path, { method = 'GET', body, auth = true } = {}) {
+  requireConfigured();
+
+  const headers = { 'Content-Type': 'application/json' };
+  if (auth) {
+    requireWritable();
+    headers['X-Admin-Key'] = config.ownSite.apiKey;
+  }
+
+  const response = await fetch(`${baseUrl()}${path}`, {
+    method,
+    headers,
+    body: body === undefined ? undefined : JSON.stringify(body),
+    signal: AbortSignal.timeout(20000),
   });
+
   if (!response.ok) {
-    const body = await response.text();
-    throw new Error(`Erreur API site propre ${options.method || 'GET'} ${path} (${response.status}) : ${body}`);
+    const detail = await response.text();
+    throw new Error(`Erreur API site propre ${method} ${path} (${response.status}) : ${detail.slice(0, 300)}`);
   }
   return response.status === 204 ? null : response.json();
 }
 
+/** Catalogue du site (route publique : aucune clé requise). */
 export async function listProducts() {
-  return ownSiteFetch('/products');
+  const products = await ownSiteFetch('/api/products', { auth: false });
+  return Array.isArray(products) ? products : [];
 }
 
-/** Alias au format commun aux autres connecteurs, pour la synchronisation de stock. */
+/**
+ * Le site BBVOLTEX ne gère pas de stock : aucun de ses produits ne porte ce
+ * champ et son API n'expose aucune route pour le modifier. Renvoyer la liste
+ * vide est donc exact — la synchronisation de stock ignore ce canal au lieu
+ * d'inventer des quantités à zéro.
+ */
 export async function listInventoryItems() {
-  const products = await listProducts();
-  return (products || []).map((p) => ({ sku: p.sku, quantity: p.stock, title: p.name }));
+  return [];
 }
 
-export async function updatePrice(sku, price) {
+/** Listes fermées du site, indispensables pour générer une fiche publiable. */
+export async function getTaxonomy() {
+  return ownSiteFetch('/api/admin/taxonomy');
+}
+
+export async function getProduct(id) {
+  if (!id) throw new Error('Identifiant de produit manquant.');
+  return ownSiteFetch(`/api/admin/products/${encodeURIComponent(id)}`);
+}
+
+/** Modifie un produit existant (prix, promotion, textes…). */
+export async function updateProduct(id, fields) {
+  if (!id) throw new Error('Identifiant de produit manquant.');
+  if (!fields || typeof fields !== 'object' || Object.keys(fields).length === 0) {
+    throw new Error('Aucun champ à modifier.');
+  }
+  return ownSiteFetch(`/api/admin/products/${encodeURIComponent(id)}`, { method: 'PATCH', body: fields });
+}
+
+export async function updatePrice(id, price) {
   if (!Number.isFinite(price) || price <= 0) throw new Error('Prix invalide.');
-  return ownSiteFetch(`/products/${encodeURIComponent(sku)}/price`, {
-    method: 'POST',
-    body: JSON.stringify({ price }),
-  });
+  return updateProduct(id, { price });
 }
 
-export async function updateStock(sku, stock) {
-  if (!Number.isInteger(stock) || stock < 0) throw new Error('Stock invalide.');
-  return ownSiteFetch(`/products/${encodeURIComponent(sku)}/stock`, {
-    method: 'POST',
-    body: JSON.stringify({ stock }),
-  });
+/**
+ * Alias au nom commun aux autres connecteurs, pour qu'un appelant générique
+ * puisse mettre à jour un prix sans connaître le canal.
+ */
+export const updateOfferPrice = updatePrice;
+
+/**
+ * Publie un produit sur le site.
+ *
+ * Le payload attendu est celui de l'API d'administration du site — bien plus
+ * riche que celui des marketplaces : catégorie, univers, âge, libellés
+ * bilingues, clé d'icône. Le champ `id` est retiré pour laisser le site
+ * attribuer le sien (son préfixe suit une convention par catégorie).
+ */
+export async function createListing(payload) {
+  requireWritable();
+  if (!payload || typeof payload !== 'object') {
+    throw new Error('Fiche produit manquante pour la publication sur le site.');
+  }
+  const { id, ...fields } = payload;
+  const created = await ownSiteFetch('/api/admin/products', { method: 'POST', body: fields });
+  return { offerId: created?.id, listingId: created?.id, product: created };
+}
+
+/** Retire un produit du site. */
+export async function deleteListing(id) {
+  if (!id) throw new Error('Identifiant de produit manquant.');
+  return ownSiteFetch(`/api/admin/products/${encodeURIComponent(id)}`, { method: 'DELETE' });
 }
 
 export function isConfigured() {

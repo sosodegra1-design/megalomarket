@@ -4,11 +4,15 @@ import { connectors, activeChannels } from '../connectors/index.js';
 /**
  * Récupère le stock actuel depuis chaque canal configuré et met à jour channel_listings.
  * Un canal non configuré (clés manquantes) est simplement ignoré, sans faire échouer les autres.
+ * Un canal qui n'expose pas l'inventaire est ignoré de la même façon : tous les
+ * canaux ne se ressemblent pas (le site propre n'a pas de notion de stock).
  */
 export async function syncStockFromAllChannels() {
   const results = { updated: 0, errors: [] };
 
   for (const channel of activeChannels()) {
+    if (typeof connectors[channel].listInventoryItems !== 'function') continue;
+
     try {
       const items = await connectors[channel].listInventoryItems();
       for (const item of items) {
