@@ -435,3 +435,515 @@ test('the timeout budget covers the whole redirect chain', async () => {
     global.fetch = originalFetch;
   }
 });
+
+/* ------------------------------------------------------------------ *
+ * Chemins rapides plateformes (Shopify / WooCommerce) et extraction
+ * élargie. `fetch` est piloté par URL : les chemins rapides ajoutent des
+ * appels réseau, il ne suffit donc plus de compter les appels.
+ * ------------------------------------------------------------------ */
+
+/** Réponse 200 générique : corps texte, type de contenu optionnel. */
+function textResponse(body, { contentType = 'text/html; charset=utf-8' } = {}) {
+  return {
+    ok: true,
+    status: 200,
+    headers: { get: (name) => (String(name).toLowerCase() === 'content-type' ? contentType : null) },
+    text: async () => body,
+  };
+}
+
+/**
+ * Installe un `fetch` qui sert une réponse selon l'URL demandée.
+ * `routes` est une liste `{ match, response }` : le premier motif qui matche
+ * gagne. Toute URL non prévue rejette le test — plus de « fetch inattendu »
+ * silencieux, et les URLs réellement appelées restent inspectables.
+ */
+function mockFetchRoutes(routes) {
+  const originalFetch = global.fetch;
+  const state = { urls: [] };
+  global.fetch = async (url) => {
+    const requested = String(url);
+    state.urls.push(requested);
+    for (const route of routes) {
+      if (requested.includes(route.match)) return route.response;
+    }
+    throw new Error(`fetch inattendu : ${requested}`);
+  };
+  return { state, restore: () => { global.fetch = originalFetch; } };
+}
+
+test('Shopify: use la fiche JSON publique et détecte la plateforme', async () => {
+  const productJson = JSON.stringify({
+    product: {
+      handle: 'peluche-renard',
+      title: 'Peluche renard 30cm',
+      body_html: '<p>Une douce <strong>peluche</strong> &amp; son coussin.</p>',
+      images: [
+        { src: 'https://cdn.shopify.com/img1.jpg' },
+        { src: 'https://cdn.shopify.com/img2.jpg' },
+      ],
+      variants: [{ price: '4.90', compare_at_price: '7.00' }],
+    },
+  });
+  const routes = mockFetchRoutes([
+    { match: '/products/peluche-renard.json', response: textResponse(productJson, { contentType: 'application/json' }) },
+  ]);
+  try {
+    const result = await scrapeProductFromUrl('https://fournisseur.myshopify.com/products/peluche-renard', {
+      lookupHost: publicLookup,
+    });
+    assert.equal(result.sourceSite, 'shopify');
+    assert.equal(result.title, 'Peluche renard 30cm');
+    assert.equal(result.purchasePrice, 4.9);
+    // La description Shopify est du HTML : elle doit ressortir en texte, entités décodées.
+    assert.equal(result.rawDescription, 'Une douce peluche & son coussin.');
+    assert.deepEqual(result.imageUrls, ['https://cdn.shopify.com/img1.jpg', 'https://cdn.shopify.com/img2.jpg']);
+    assert.equal(routes.state.urls.length, 1, 'la fiche JSON évite tout téléchargement de page');
+  } finally {
+    routes.restore();
+  }
+});
+
+test('Shopify: JSON désactivé (page de mot de passe) → repli HTML générique', async () => {
+  const passwordPage = `
+    <html><head>
+      <meta property="og:title" content="Boutique protégée">
+      <meta property="og:description" content="Saisissez le mot de passe">
+      <meta property="og:image" content="/logo.jpg">
+    </head><body></body></html>
+  `;
+  const routes = mockFetchRoutes([
+    // `products.json` renvoie du HTML : le chemin rapide doit abandonner sans bruit.
+    { match: '/products/peluche-renard.json', response: textResponse(passwordPage) },
+    { match: '/products/peluche-renard', response: textResponse(passwordPage) },
+    { match: '/products.json?limit=250', response: textResponse(passwordPage) },
+    { match: '/wp-json/', response: textResponse(passwordPage) },
+  ]);
+  try {
+    const result = await scrapeProductFromUrl('https://boutique.example.com/products/peluche-renard', {
+      lookupHost: publicLookup,
+    });
+    assert.equal(result.title, 'Boutique protégée');
+    assert.equal(result.sourceSite, 'autre', "un hôte inconnu n'est pas étiqueté Shopify sans preuve");
+    // Les deux chemins rapides sont tentés, puis la page est lue en HTML : c'est
+    // le repli qui sauve l'import quand toutes les API sont désactivées.
+    assert.deepEqual(routes.state.urls, [
+      'https://boutique.example.com/products/peluche-renard.json',
+      'https://boutique.example.com/products.json?limit=250',
+      'https://boutique.example.com/wp-json/wc/store/v1/products?slug=peluche-renard',
+      'https://boutique.example.com/wp-json/wc/store/v1/products?search=peluche-renard',
+      'https://boutique.example.com/products/peluche-renard',
+    ]);
+  } finally {
+    routes.restore();
+  }
+});
+
+test('Shopify: les variantes absentes retombent sur compare_at_price, jamais NaN', async () => {
+  const productJson = JSON.stringify({
+    product: { title: 'Sans variante', body_html: '', images: [], variants: [{ compare_at_price: '9.99' }] },
+  });
+  const routes = mockFetchRoutes([
+    { match: '.json', response: textResponse(productJson, { contentType: 'application/json' }) },
+  ]);
+  try {
+    const result = await scrapeProductFromUrl('https://boutique.example.com/products/sans-variante', {
+      lookupHost: publicLookup,
+    });
+    assert.equal(result.purchasePrice, 9.99);
+    assert.ok(Number.isFinite(result.purchasePrice));
+  } finally {
+    routes.restore();
+  }
+});
+
+test('Shopify: la fiche unitaire illisible retombe sur le catalogue products.json', async () => {
+  // Cas visé : `/products/x.json` est désactivé ou renvoie du HTML, alors que le
+  // catalogue public reste interrogeable. On retrouve la fiche par sa poignée.
+  const catalog = JSON.stringify({
+    products: [
+      { handle: 'autre-produit', title: 'Autre', body_html: '', images: [], variants: [{ price: '1.00' }] },
+      {
+        handle: 'peluche-renard',
+        title: 'Peluche renard',
+        body_html: '<p>Douce</p>',
+        images: [{ src: 'https://cdn.shopify.com/renard.jpg' }],
+        variants: [{ price: '14.50' }],
+      },
+    ],
+  });
+  const routes = mockFetchRoutes([
+    { match: '/products/peluche-renard.json', response: textResponse('<html><body>Non disponible</body></html>') },
+    {
+      match: '/products.json?limit=250',
+      response: textResponse(catalog, { contentType: 'application/json' }),
+    },
+  ]);
+  try {
+    const result = await scrapeProductFromUrl('https://boutique.example.com/collections/peluches/products/peluche-renard', {
+      lookupHost: publicLookup,
+    });
+    assert.equal(result.sourceSite, 'shopify');
+    assert.equal(result.title, 'Peluche renard');
+    assert.equal(result.purchasePrice, 14.5);
+    assert.deepEqual(result.imageUrls, ['https://cdn.shopify.com/renard.jpg']);
+  } finally {
+    routes.restore();
+  }
+});
+
+test('WooCommerce: currency_minor_unit est respecté (prix non multiplié par 100)', async () => {
+  // "1250" en unités mineures avec minor_unit 2 vaut 12,50 — et non 1250 ni 0,125.
+  const storeJson = JSON.stringify([
+    {
+      id: 42,
+      name: 'Mug céramique',
+      description: '<p>Mug <em>artisanal</em> 350 ml</p>',
+      short_description: 'Mug artisanal',
+      images: [{ src: 'https://boutique.example.com/wp-content/uploads/mug.jpg' }],
+      prices: { price: '1250', regular_price: '1500', currency_code: 'EUR', currency_minor_unit: 2 },
+    },
+  ]);
+  const routes = mockFetchRoutes([
+    { match: '/wp-json/wc/store/v1/products', response: textResponse(storeJson, { contentType: 'application/json' }) },
+  ]);
+  try {
+    const result = await scrapeProductFromUrl('https://boutique.example.com/wp-json/wc/store/v1/products?slug=mug', {
+      lookupHost: publicLookup,
+    });
+    assert.equal(result.sourceSite, 'woocommerce');
+    assert.equal(result.title, 'Mug céramique');
+    assert.equal(result.purchasePrice, 12.5, 'le prix est en unités mineures : 1250 / 10^2');
+    assert.equal(result.currency, 'EUR');
+    assert.equal(result.rawDescription, 'Mug artisanal 350 ml');
+  } finally {
+    routes.restore();
+  }
+});
+
+test('WooCommerce: minor_unit 0 (devise sans décimale) ne divise pas le prix', async () => {
+  const storeJson = JSON.stringify([
+    { id: 7, name: 'Peluche', prices: { price: '1250', currency_code: 'JPY', currency_minor_unit: 0 } },
+  ]);
+  const routes = mockFetchRoutes([
+    { match: '/wp-json/wc/store/v1/products?slug=', response: textResponse(storeJson, { contentType: 'application/json' }) },
+  ]);
+  try {
+    const result = await scrapeProductFromUrl('https://boutique-woo.example.com/produits/peluche', {
+      lookupHost: publicLookup,
+    });
+    assert.equal(result.purchasePrice, 1250);
+    assert.equal(result.currency, 'JPY');
+  } finally {
+    routes.restore();
+  }
+});
+
+test('extrait le prix d\'une AggregateOffer JSON-LD (lowPrice)', async () => {
+  const html = `
+    <html><head>
+      <script type="application/ld+json">
+        {
+          "@type": "Product",
+          "name": "Lot de 10 peluches",
+          "offers": {
+            "@type": "AggregateOffer",
+            "lowPrice": "42.00",
+            "highPrice": "58.00",
+            "priceCurrency": "EUR"
+          }
+        }
+      </script>
+    </head><body></body></html>
+  `;
+  const restore = mockFetchOnce(html);
+  try {
+    const result = await scrapeProductFromUrl('https://fournisseur.example.com/article/10', { lookupHost: publicLookup });
+    assert.equal(result.purchasePrice, 42);
+    assert.equal(result.currency, 'EUR');
+    assert.equal(result.title, 'Lot de 10 peluches');
+  } finally {
+    restore();
+  }
+});
+
+test('extrait prix et titre depuis la microdata schema.org', async () => {
+  const html = `
+    <html><head><title>Ignoré</title></head><body>
+      <div itemscope itemtype="https://schema.org/Product">
+        <span itemprop="name">Doudou lapin</span>
+        <meta itemprop="priceCurrency" content="EUR">
+        <span itemprop="price" content="19,99">19,99 €</span>
+        <img itemprop="image" src="/doudou.jpg">
+      </div>
+    </body></html>
+  `;
+  const restore = mockFetchOnce(html);
+  try {
+    const result = await scrapeProductFromUrl('https://fournisseur.example.com/article/lapin', { lookupHost: publicLookup });
+    assert.equal(result.title, 'Doudou lapin');
+    assert.equal(result.purchasePrice, 19.99);
+    assert.equal(result.currency, 'EUR');
+    assert.deepEqual(result.imageUrls, ['https://fournisseur.example.com/doudou.jpg']);
+  } finally {
+    restore();
+  }
+});
+
+test('parse un prix à l\'européenne « 12,50 € » et en déduit EUR', async () => {
+  const html = `
+    <html><head><title>Mug</title>
+      <meta property="product:price:amount" content="12,50 €">
+    </head><body></body></html>
+  `;
+  const restore = mockFetchOnce(html);
+  try {
+    const result = await scrapeProductFromUrl('https://fournisseur.example.com/article/mug', { lookupHost: publicLookup });
+    assert.equal(result.purchasePrice, 12.5);
+    assert.equal(result.currency, 'EUR');
+  } finally {
+    restore();
+  }
+});
+
+test('parse « 1 234,56 € » avec espace insécable et séparateur de milliers', async () => {
+  const html = `
+    <html><head><title>Commode</title>
+      <meta property="og:price:amount" content="1\u00a0234,56\u00a0€">
+    </head><body></body></html>
+  `;
+  const restore = mockFetchOnce(html);
+  try {
+    const result = await scrapeProductFromUrl('https://fournisseur.example.com/article/commode', { lookupHost: publicLookup });
+    assert.equal(result.purchasePrice, 1234.56);
+    assert.equal(result.currency, 'EUR');
+  } finally {
+    restore();
+  }
+});
+
+test('parse un prix en złoty et en déduit PLN', async () => {
+  const html = `
+    <html><head><title>Peluche</title>
+      <meta property="product:price:amount" content="1 234,56 zł">
+    </head><body></body></html>
+  `;
+  const restore = mockFetchOnce(html);
+  try {
+    const result = await scrapeProductFromUrl('https://fournisseur.example.com/article/peluche-pl', { lookupHost: publicLookup });
+    assert.equal(result.purchasePrice, 1234.56);
+    assert.equal(result.currency, 'PLN');
+  } finally {
+    restore();
+  }
+});
+
+test('parse « $19.99 » et en déduit USD', async () => {
+  const html = `
+    <html><head><title>Casque</title>
+      <meta property="og:price:amount" content="$19.99">
+    </head><body></body></html>
+  `;
+  const restore = mockFetchOnce(html);
+  try {
+    const result = await scrapeProductFromUrl('https://fournisseur.example.com/article/casque', { lookupHost: publicLookup });
+    assert.equal(result.purchasePrice, 19.99);
+    assert.equal(result.currency, 'USD');
+  } finally {
+    restore();
+  }
+});
+
+test('un prix illisible vaut 0 (jamais NaN) pour laisser l\'avertissement se déclencher', async () => {
+  const html = `
+    <html><head><title>Article</title>
+      <meta property="product:price:amount" content="Prix sur demande">
+    </head><body></body></html>
+  `;
+  const restore = mockFetchOnce(html);
+  try {
+    const result = await scrapeProductFromUrl('https://fournisseur.example.com/article/x', { lookupHost: publicLookup });
+    assert.equal(result.purchasePrice, 0);
+    assert.ok(Number.isFinite(result.purchasePrice), 'jamais NaN');
+  } finally {
+    restore();
+  }
+});
+
+test('un hôte inconnu sans permalien produit ne tente aucun chemin rapide', async () => {
+  const html = `
+    <html><head>
+      <meta property="og:title" content="Produit générique">
+    </head><body></body></html>
+  `;
+  const restore = mockFetchOnce(html);
+  const innerFetch = global.fetch;
+  const urls = [];
+  global.fetch = async (url, options) => {
+    const requested = String(url);
+    urls.push(requested);
+    assert.ok(!requested.includes('/wp-json/'), `aucune API ne doit être sondée sur un hôte inconnu : ${requested}`);
+    assert.ok(!requested.includes('products.json'), `aucune API ne doit être sondée sur un hôte inconnu : ${requested}`);
+    return innerFetch(url, options);
+  };
+  try {
+    const result = await scrapeProductFromUrl('https://boutique-inconnue.example.com/p/12345', { lookupHost: publicLookup });
+    assert.equal(result.sourceSite, 'autre');
+    assert.equal(result.title, 'Produit générique');
+    assert.equal(urls.length, 1, "la page est lue une seule fois, sans sonde d'API");
+  } finally {
+    restore();
+  }
+});
+
+test('une adresse privée est refusée AVANT même le chemin rapide Shopify', async () => {
+  const forbidden = forbidFetch();
+  try {
+    await assert.rejects(
+      () =>
+        scrapeProductFromUrl('http://127.0.0.1:8080/products/mon-produit.json', {
+          lookupHost: publicLookup,
+        }),
+      /refusée/,
+    );
+    assert.equal(forbidden.state.calls, 0, 'le JSON Shopify ne doit jamais être demandé à la boucle locale');
+  } finally {
+    forbidden.restore();
+  }
+});
+
+test('un hôte public qui résout vers du privé est refusé, chemin rapide compris', async () => {
+  const forbidden = forbidFetch();
+  try {
+    await assert.rejects(
+      () =>
+        scrapeProductFromUrl('https://fournisseur.myshopify.com/products/mon-produit', {
+          lookupHost: async () => ['169.254.169.254'],
+        }),
+      /interne/,
+    );
+    assert.equal(forbidden.state.calls, 0);
+  } finally {
+    forbidden.restore();
+  }
+});
+
+test('une redirection du chemin rapide vers une adresse interne est refusée', async () => {
+  // La redirection piégée vise toutes les tentatives (deux API × deux URL, puis le
+  // repli HTML) : la barrière SSRF étant commune à tous les appels, aucun ne doit
+  // la suivre et l'adresse interne ne doit jamais être requêtée.
+  const trap = () => redirectResponse('http://169.254.169.254/latest/meta-data/');
+  const seq = mockFetchSequence([trap(), trap(), trap(), trap(), trap()]);
+  try {
+    await assert.rejects(
+      () => scrapeProductFromUrl('https://boutique.example.com/products/mon-produit', { lookupHost: publicLookup }),
+      /interne/,
+    );
+    assert.equal(seq.state.calls, 5, 'la redirection interne ne doit jamais être suivie');
+    assert.ok(seq.state.urls[0].endsWith('/products/mon-produit.json'), 'sonde Shopify');
+    assert.ok(seq.state.urls[2].includes('/wp-json/wc/store/v1/products?slug=mon-produit'), 'sonde WooCommerce');
+    assert.equal(seq.state.urls[4], 'https://boutique.example.com/products/mon-produit', 'puis le repli HTML');
+  } finally {
+    seq.restore();
+  }
+});
+
+test('la table de reconnaissance couvre les grandes familles d\'hôtes', async () => {
+  const restore = mockFetchOnce('<html><head><title>Produit</title></head></html>');
+  const expected = [
+    ['https://fr.aliexpress.com/item/1.html', 'aliexpress'],
+    ['https://www.alibaba.com/product/1.html', 'alibaba'],
+    ['https://www.1688.com/offer/1.html', '1688'],
+    ['https://www.made-in-china.com/product/1.html', 'made-in-china'],
+    ['https://www.globalsources.com/product/1.html', 'globalsources'],
+    ['https://www.dhgate.com/product/1.html', 'dhgate'],
+    ['https://www.banggood.com/product/1.html', 'banggood'],
+    ['https://www.temu.com/goods/1.html', 'temu'],
+    ['https://fr.shein.com/product/1.html', 'shein'],
+    ['https://item.taobao.com/item/1.html', 'taobao'],
+    ['https://www.wish.com/product/1', 'wish'],
+    ['https://www.joom.com/fr/products/1', 'joom'],
+    ['https://www.bigbuy.eu/fr/produit.html', 'bigbuy'],
+    ['https://app.spocket.co/products/1', 'spocket'],
+    ['https://www.syncee.com/product/1', 'syncee'],
+    ['https://www.modalyst.com/product/1', 'modalyst'],
+    ['https://www.faire.com/product/1', 'faire'],
+    ['https://www.ankorstore.com/product/1', 'ankorstore'],
+    ['https://www.orderchamp.com/product/1', 'orderchamp'],
+    ['https://www.printful.com/product/1', 'printful'],
+    ['https://www.printify.com/product/1', 'printify'],
+    ['https://www.gelato.com/product/1', 'gelato'],
+    ['https://www.amazon.fr/dp/1', 'amazon'],
+    ['https://www.ebay.com/itm/1', 'ebay'],
+    ['https://www.walmart.com/ip/1', 'walmart'],
+    ['https://www.etsy.com/listing/1', 'etsy'],
+    ['https://www.cdiscount.com/produit/1.html', 'cdiscount'],
+    ['https://www.fnac.com/produit/1', 'fnac'],
+    ['https://fr.shopping.rakuten.com/1', 'rakuten'],
+    ['https://www.bol.com/nl/p/1', 'bol'],
+    ['https://www.zalando.fr/1', 'zalando'],
+    ['https://www.otto.de/p/1', 'otto'],
+    ['https://www.kaufland.de/product/1', 'kaufland'],
+    ['https://allegro.pl/oferta/1', 'allegro'],
+    ['https://www.emag.ro/produs/1', 'emag'],
+    ['https://boutique.myshopify.com/products/1', 'shopify'],
+    ['https://www.prestashop.com/fr/1', 'prestashop'],
+    ['https://www.bigcommerce.com/product/1', 'bigcommerce'],
+    ['https://magento.com/product/1', 'magento'],
+    ['https://www.wix.com/shop/1', 'wix'],
+    ['https://www.squarespace.com/shop/1', 'squarespace'],
+    ['https://www.shopware.com/product/1', 'shopware'],
+    ['https://www.ecwid.com/product/1', 'ecwid'],
+    ['https://www.lightspeedhq.com/product/1', 'lightspeed'],
+    // Un hôte inconnu reste « autre » : c'est la promesse de non-exhaustivité.
+    ['https://boutique-inconnue.example.com/produit/1', 'autre'],
+  ];
+  try {
+    for (const [url, site] of expected) {
+      const result = await scrapeProductFromUrl(url, { lookupHost: publicLookup });
+      assert.equal(result.sourceSite, site, url);
+    }
+  } finally {
+    restore();
+  }
+});
+
+test('la table de reconnaissance est illustrative : un hôte inconnu est scrapé quand même', async () => {
+  const html = `
+    <html><head>
+      <meta property="og:title" content="Produit d\'un distributeur inconnu">
+      <meta property="og:price:amount" content="7,90 €">
+    </head><body></body></html>
+  `;
+  const restore = mockFetchOnce(html);
+  try {
+    const result = await scrapeProductFromUrl('https://un-fournisseur-quelconque.example.net/p/9', { lookupHost: publicLookup });
+    assert.equal(result.sourceSite, 'autre');
+    assert.equal(result.title, "Produit d'un distributeur inconnu");
+    assert.equal(result.purchasePrice, 7.9);
+    assert.equal(result.currency, 'EUR');
+  } finally {
+    restore();
+  }
+});
+
+test('la description issue de body_html est débarrassée de ses balises et entités', async () => {
+  const productJson = JSON.stringify({
+    product: {
+      title: 'Thé vert',
+      body_html: '<div><h2>Th&eacute; vert</h2><script>alert(1)</script><p>100&#37; bio &amp; frais</p></div>',
+      variants: [{ price: '8.00' }],
+      images: [],
+    },
+  });
+  const routes = mockFetchRoutes([
+    { match: '.json', response: textResponse(productJson, { contentType: 'application/json' }) },
+  ]);
+  try {
+    const result = await scrapeProductFromUrl('https://boutique.example.com/products/the-vert', { lookupHost: publicLookup });
+    assert.equal(result.rawDescription, 'Thé vert 100% bio & frais');
+    assert.ok(!result.rawDescription.includes('<'), 'aucune balise ne doit survivre');
+  } finally {
+    routes.restore();
+  }
+});

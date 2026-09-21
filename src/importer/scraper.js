@@ -2,25 +2,102 @@ import * as cheerio from 'cheerio';
 import { lookup } from 'node:dns/promises';
 import { isIP } from 'node:net';
 
+/**
+ * Table de reconnaissance des hébergeurs, volontairement ILLUSTRATIVE et non
+ * exhaustive : l'import doit fonctionner sur n'importe quelle boutique — un
+ * distributeur inconnu est scrapé génériquement, c'est tout l'intérêt. Cette
+ * liste ne sert qu'à rendre `sourceSite` lisible (statistiques, débogage) ;
+ * elle ne conditionne jamais le fait de pouvoir importer une page.
+ *
+ * L'ordre compte : `detectSourceSite` retient la première correspondance, les
+ * familles les plus spécifiques doivent donc passer avant les plus générales.
+ */
 const SOURCE_SITE_PATTERNS = [
+  // Places de marché / B2B
+  { key: 'aliexpress', match: /aliexpress\./i },
   { key: 'alibaba', match: /alibaba\.com/i },
-  { key: 'aliexpress', match: /aliexpress\.com/i },
+  { key: '1688', match: /1688\.com/i },
+  { key: 'made-in-china', match: /made-in-china\.com/i },
+  { key: 'globalsources', match: /globalsources\.com/i },
+  { key: 'dhgate', match: /dhgate\.com/i },
+  { key: 'banggood', match: /banggood\./i },
+  { key: 'temu', match: /temu\.com/i },
+  { key: 'shein', match: /shein\./i },
+  { key: 'taobao', match: /taobao\.com/i },
+  { key: 'wish', match: /wish\.com/i },
+  { key: 'joom', match: /joom\.com/i },
+
+  // Plateformes de dropshipping / grossistes
+  { key: 'bigbuy', match: /bigbuy\./i },
+  { key: 'spocket', match: /spocket\.co/i },
+  { key: 'syncee', match: /syncee\.com/i },
+  { key: 'modalyst', match: /modalyst\.com/i },
+  { key: 'faire', match: /faire\.com/i },
+  { key: 'ankorstore', match: /ankorstore\.com/i },
+  { key: 'orderchamp', match: /orderchamp\.com/i },
+  { key: 'printful', match: /printful\.com/i },
+  { key: 'printify', match: /printify\.com/i },
+  { key: 'gelato', match: /gelato\.com/i },
+
+  // Grande distribution / places de marché où l'on s'approvisionne
+  { key: 'amazon', match: /amazon\./i },
+  { key: 'ebay', match: /ebay\./i },
+  { key: 'walmart', match: /walmart\./i },
+  { key: 'etsy', match: /etsy\.com/i },
+  { key: 'cdiscount', match: /cdiscount\.com/i },
+  { key: 'fnac', match: /fnac\.com/i },
+  { key: 'rakuten', match: /rakuten\./i },
+  { key: 'bol', match: /bol\.com/i },
+  { key: 'zalando', match: /zalando\./i },
+  { key: 'otto', match: /otto\.de/i },
+  { key: 'kaufland', match: /kaufland\./i },
+  { key: 'allegro', match: /allegro\./i },
+  { key: 'emag', match: /emag\./i },
+
+  // Plateformes auto-hébergées (boutiques tenues par le marchand lui-même)
+  { key: 'shopify', match: /myshopify\.com/i },
+  { key: 'woocommerce', match: /wp-json/i },
+  { key: 'prestashop', match: /prestashop\.com/i },
+  { key: 'bigcommerce', match: /bigcommerce\.com/i },
+  { key: 'magento', match: /magento\.com/i },
+  { key: 'wix', match: /wix\.com/i },
+  { key: 'squarespace', match: /squarespace\.com/i },
+  { key: 'shopware', match: /shopware\./i },
+  { key: 'ecwid', match: /ecwid\.com/i },
+  { key: 'lightspeed', match: /lightspeedhq\./i },
 ];
 
 /**
  * Délai maximal accordé à la page fournisseur. Sans lui, une page qui ne répond
  * jamais laissait la requête Express suspendue jusqu'à ce que la plateforme la
- * tue — un socket ouvert par import, indéfiniment.
+ * tue — un socket ouvert par import, indéfiniment. Le budget court sur
+ * l'ensemble des appels réseau d'un même import (essais d'API puis HTML).
  */
 const FETCH_TIMEOUT_MS = 10_000;
 
 /**
- * Taille maximale du corps accepté. Une fiche produit tient largement dans
- * quelques centaines de Ko ; au-delà, c'est probablement une archive ou une
- * réponse vidéo, et `await response.text()` chargerait tout en mémoire au
- * risque de faire tomber le process.
+ * Taille maximale du corps accepté, là aussi cumulée sur tous les appels de
+ * l'import. Une fiche produit tient largement dans quelques centaines de Ko ;
+ * au-delà, c'est probablement une archive ou une réponse vidéo, et
+ * `await response.text()` chargerait tout en mémoire au risque de faire tomber
+ * le process.
  */
 const MAX_RESPONSE_BYTES = 5 * 1024 * 1024;
+
+/**
+ * Plafond propre aux réponses d'API plateforme. Un JSON produit Shopify ou
+ * WooCommerce fait quelques dizaines de Ko ; ce plafond garantit qu'un
+ * `products.json` de catalogue entier (ou une page HTML servie à la place) ne
+ * consomme pas tout le budget d'octets avant que le repli HTML ne s'exécute.
+ */
+const MAX_API_RESPONSE_BYTES = 2 * 1024 * 1024;
+
+/**
+ * Part du délai global réservée au repli HTML générique. Sans cette réserve,
+ * une API plateforme qui répond lentement pouvait épuiser le budget et faire
+ * échouer l'import alors que la page HTML était, elle, parfaitement lisible.
+ */
+const MIN_HTML_BUDGET_MS = 3_000;
 
 /**
  * Nombre maximal de redirections suivies. Une page fournisseur peut légitimement
@@ -43,6 +120,22 @@ const BROWSER_HEADERS = {
 
 /** Hôtes manifestement internes, refusés avant même toute résolution DNS. */
 const INTERNAL_HOST_SUFFIXES = ['.internal', '.local', '.localhost', '.home.arpa'];
+
+/** Balises dont le contenu est du code, jamais du texte affiché : on les retire avant de « textifier ». */
+const NON_TEXT_TAGS = ['script', 'style', 'noscript', 'template'];
+
+/**
+ * Balises de bloc et sauts de ligne, remplacés par une espace avant extraction
+ * du texte. Sans cela, retirer `<h2>Titre</h2><p>Suite</p>` collerait les mots
+ * (« TitreSuite ») : `.text()` de cheerio concatène les noeuds sans séparateur.
+ */
+const BLOCK_LEVEL_TAGS = /<\/?(?:p|div|br|li|ul|ol|tr|td|th|table|h[1-6]|section|article|header|footer|blockquote|figure|figcaption|hr|dd|dt|dl|pre)\b[^>]*>/gi;
+
+/** Fragments d'URL qui trahissent une vignette décorative plutôt qu'une photo produit. */
+const ICON_URL_PATTERN = /(sprite|logo|icon|favicon|placeholder|pixel|spacer|badge|flag)/i;
+
+/** Formats qu'on ne veut jamais dans les photos produit (vectoriel ou animé). */
+const NON_PHOTO_EXTENSION = /\.(svg|gif)(\?|#|$)/i;
 
 /**
  * Résolution DNS par défaut. Elle est isolée derrière l'option `lookupHost`
@@ -266,7 +359,18 @@ function timeoutError(timeoutMs) {
 }
 
 /**
- * Récupère la page en suivant les redirections à la main, en re-validant chaque
+ * Budget partagé par TOUS les appels réseau d'un même import : essais d'API
+ * plateforme compris. Les redirections étaient déjà décomptées globalement ;
+ * avec l'arrivée des chemins rapides, il fallait que le délai et les octets le
+ * soient aussi, sinon un import pouvait multiplier le temps et le volume par le
+ * nombre d'API essayées.
+ */
+function createBudget(timeoutMs, maxBytes) {
+  return { deadline: Date.now() + timeoutMs, maxBytes, bytesRead: 0, timeoutMs };
+}
+
+/**
+ * Récupère une URL en suivant les redirections à la main, en re-validant chaque
  * cible.
  *
  * Pourquoi `redirect: 'manual'` plutôt qu'un `dispatcher` undici personnalisé :
@@ -278,15 +382,16 @@ function timeoutError(timeoutMs) {
  * (`assertHostIsPublic`), ce qui ferme le trou laissé par le suivi automatique de
  * `fetch` : un 302 vers 169.254.169.254 ou vers un hôte privé est refusé.
  *
- * Le délai et le plafond d'octets courent sur toute la chaîne, pas seulement sur
- * la première requête : chaque saut ne dispose que du temps restant, et son corps
- * est décompté du budget global. Une suite de redirections ne peut donc pas
- * transformer l'import en téléchargement illimité.
+ * Renvoie le corps, l'URL FINALE (après redirections) et le type de contenu :
+ * les chemins rapides en ont besoin pour résoudre les images relatives et pour
+ * décider si la réponse est bien du JSON, sans second appel réseau.
+ *
+ * `maxBytes` n'est qu'un plafond local (API) ; le budget global, lui, est
+ * décrémenté ici pour chaque saut, y compris les corps de redirection — sans
+ * quoi une chaîne de renvois ferait transiter plusieurs fois le plafond.
  */
-async function fetchFollowingRedirects(startUrl, { lookupHost, timeoutMs, maxBytes }) {
-  const deadline = Date.now() + timeoutMs;
+async function fetchFollowingRedirects(startUrl, { lookupHost, budget, maxBytes = budget.maxBytes }) {
   let currentUrl = startUrl;
-  let bytesRead = 0;
 
   for (let hop = 0; ; hop += 1) {
     if (hop > MAX_REDIRECTS) {
@@ -295,8 +400,10 @@ async function fetchFollowingRedirects(startUrl, { lookupHost, timeoutMs, maxByt
       );
     }
 
-    const remainingMs = deadline - Date.now();
-    if (remainingMs <= 0) throw timeoutError(timeoutMs);
+    const remainingMs = budget.deadline - Date.now();
+    if (remainingMs <= 0) throw timeoutError(budget.timeoutMs);
+    const remainingBytes = Math.min(budget.maxBytes - budget.bytesRead, maxBytes);
+    if (remainingBytes <= 0) throw new Error('Budget de téléchargement épuisé pour cet import.');
 
     let response;
     try {
@@ -309,7 +416,7 @@ async function fetchFollowingRedirects(startUrl, { lookupHost, timeoutMs, maxByt
         signal: AbortSignal.timeout(Math.max(1, remainingMs)),
       });
     } catch (error) {
-      if (error?.name === 'TimeoutError' || error?.name === 'AbortError') throw timeoutError(timeoutMs);
+      if (error?.name === 'TimeoutError' || error?.name === 'AbortError') throw timeoutError(budget.timeoutMs);
       throw new Error(`Impossible de récupérer la page : ${error?.message ?? error}`);
     }
 
@@ -319,15 +426,21 @@ async function fetchFollowingRedirects(startUrl, { lookupHost, timeoutMs, maxByt
           `Impossible de récupérer la page (HTTP ${response.status}). Le site bloque peut-être les requêtes automatisées.`,
         );
       }
-      return await readBodyWithLimit(response, maxBytes - bytesRead, maxBytes);
+      const text = await readBodyWithLimit(response, remainingBytes, maxBytes);
+      budget.bytesRead += Buffer.byteLength(text, 'utf8');
+      return {
+        text,
+        finalUrl: currentUrl,
+        contentType: String(response.headers?.get?.('content-type') ?? ''),
+      };
     }
 
     // Le corps d'une redirection ne nous intéresse pas, mais il est lu pour
     // libérer la connexion et surtout pour être décompté du budget global : sans
     // cela, une chaîne de 5 redirections pourrait faire transiter 5 fois le
     // plafond avant la réponse finale.
-    const drained = await readBodyWithLimit(response, maxBytes - bytesRead, maxBytes);
-    bytesRead += Buffer.byteLength(drained, 'utf8');
+    const drained = await readBodyWithLimit(response, remainingBytes, maxBytes);
+    budget.bytesRead += Buffer.byteLength(drained, 'utf8');
 
     const location = response.headers?.get?.('location');
     if (!location) {
@@ -359,11 +472,158 @@ function detectSourceSite(url) {
 }
 
 function resolveUrl(src, baseUrl) {
+  if (!src || typeof src !== 'string') return null;
   try {
     return new URL(src, baseUrl).toString();
   } catch {
     return null;
   }
+}
+
+/**
+ * Transforme un fragment HTML (description Shopify `body_html`, contenu
+ * microdata…) en texte propre : les balises ne doivent jamais finir stockées
+ * dans `rawDescription`, et les entités (`&eacute;`, `&amp;`, `&#8364;`…)
+ * doivent être décodées une fois pour toutes — c'est ce texte qui alimentera la
+ * fiche produit et les annonces.
+ */
+function htmlToText(html) {
+  if (!html) return '';
+  const fragment = cheerio.load(`<div id="__dsh_root">${String(html)}</div>`, null, false);
+  fragment('#__dsh_root ' + NON_TEXT_TAGS.join(', #__dsh_root ')).remove();
+  // Un espace à la place des balises de bloc, PUIS `.text()` : laisser cheerio
+  // extraire le texte garantit que les entités sont décodées correctement (un
+  // `<` encodé dans le contenu ne doit pas être pris pour une balise).
+  fragment('#__dsh_root').html(fragment('#__dsh_root').html().replace(BLOCK_LEVEL_TAGS, ' '));
+  return fragment('#__dsh_root').text().replace(/\s+/g, ' ').trim();
+}
+
+/** Normalise un texte déjà propre (attribut `content`, description JSON-LD…). */
+function cleanText(value) {
+  if (value === null || value === undefined) return '';
+  return String(value).replace(/\s+/g, ' ').trim();
+}
+
+/**
+ * Codes et symboles monétaires reconnus. Volontairement limité aux devises que
+ * l'import croise réellement : deviner une devise exotique serait pire que de
+ * retomber sur USD, la valeur par défaut historique.
+ *
+ * Les codes sont encadrés par des frontières explicites (début/fin de chaîne ou
+ * caractère non alphabétique) et non par `\b` : sans cela « 12USD » (sans espace)
+ * ne serait pas reconnu, et le symbole « € » présent ailleurs donnerait EUR à
+ * tort.
+ */
+const CURRENCY_SYMBOLS = [
+  { pattern: /zł|zloty|(?<![a-z])pln(?![a-z])/i, code: 'PLN' },
+  { pattern: /€|(?<![a-z])eur(?![a-z])/i, code: 'EUR' },
+  { pattern: /£|(?<![a-z])gbp(?![a-z])/i, code: 'GBP' },
+  { pattern: /¥|(?<![a-z])jpy(?![a-z])/i, code: 'JPY' },
+  { pattern: /\$|(?<![a-z])usd(?![a-z])/i, code: 'USD' },
+];
+
+const CURRENCY_CODE_PATTERN = /(?<![a-z])(EUR|USD|GBP|PLN|CNY|RMB|JPY|CHF|CAD|AUD|SEK|NOK|DKK|CZK|HUF|RON|BGN|TRY|INR|BRL|MXN|HKD|SGD|NZD|ZAR)(?![a-z])/i;
+
+/**
+ * Devine la devise d'un prix textuel. Le symbole prime sur l'absence de code :
+ * « 12,50 € » n'a aucune raison d'être étiqueté USD. Un code explicite (ISO)
+ * reste prioritaire sur le symbole, car « 1 234,56 € EUR » ou « CA$12.50 CAD »
+ * sont sans ambiguïté. Faute d'indice, on garde USD : c'est la valeur par
+ * défaut historique du scraper et la seule qui ne casse pas les tests existants.
+ */
+function detectCurrencyFromText(text, fallback = 'USD') {
+  if (!text) return fallback;
+  const code = String(text).match(CURRENCY_CODE_PATTERN);
+  if (code) {
+    const normalized = code[1].toUpperCase();
+    return normalized === 'RMB' ? 'CNY' : normalized;
+  }
+  for (const { pattern, code } of CURRENCY_SYMBOLS) {
+    if (pattern.test(String(text))) return code;
+  }
+  return fallback;
+}
+
+/**
+ * Analyse un prix écrit « à la européenne » (`12,50 €`, `1 234,56 €`) comme « à
+ * l'américaine » (`$12.50`, `12.50 USD`), espaces insécables compris.
+ *
+ * La règle de départage est explicite plutôt que devinée :
+ * - quand la devise est connue et que le texte contient une virgule décimale
+ *   plausible (`12,50`, `1 234,56`), la virgule est le séparateur décimal ;
+ * - sinon on applique les conventions usuelles : virgule suivie d'un ou deux
+ *   chiffres = décimale, virgule suivie de trois chiffres = séparateur de
+ *   milliers (`1,234` vaut alors 1234).
+ *
+ * Renvoie `null` — jamais `NaN` — quand rien d'exploitable n'est trouvé ; c'est
+ * ce `null` qui laisse le prix à 0 et déclenche l'avertissement « prix d'achat
+ * manquant » côté route d'import.
+ */
+function parsePriceValue(rawText, { currencyHint = null } = {}) {
+  if (rawText === null || rawText === undefined) return null;
+  // Espaces fines insécables, insécables et tabulations : fréquents comme
+  // séparateurs de milliers dans les pages françaises et polonaises.
+  const text = String(rawText).replace(/[\u00a0\u202f\u2009\u2007\t\u200e\u200f]/g, ' ').trim();
+  const match = text.match(/\d[\d\s.,']*\d|\d/);
+  if (!match) return null;
+
+  let numeric = match[0].replace(/[\s']/g, '');
+  const dotCount = (numeric.match(/\./g) || []).length;
+  const commaCount = (numeric.match(/,/g) || []).length;
+
+  if (dotCount && commaCount) {
+    // Les deux séparateurs sont présents : le DERNIER est le décimal, l'autre
+    // est un séparateur de milliers. `1.234,56` → 1234.56 ; `1,234.56` → 1234.56.
+    numeric =
+      numeric.lastIndexOf(',') > numeric.lastIndexOf('.')
+        ? numeric.replace(/\./g, '').replace(',', '.')
+        : numeric.replace(/,/g, '');
+  } else if (commaCount) {
+    const fraction = numeric.slice(numeric.lastIndexOf(',') + 1);
+    // « 1,234 » est ambigu : 1234 (milliers) ou 1.234 (décimale). On tranche selon
+    // la devise devinée — le PLN et l'EUR sont des devises à deux décimales, donc
+    // trois chiffres après la virgule sont presque toujours un groupe de milliers.
+    const thousandsGrouping = fraction.length === 3 && (currencyHint === 'PLN' || currencyHint === 'EUR');
+    // Dans tous les autres cas (1-2 décimales, ou un seul chiffre), la virgule est
+    // le séparateur décimal : c'est la convention de toutes les pages européennes.
+    numeric = thousandsGrouping ? numeric.replace(/,/g, '') : numeric.replace(/,/g, '.');
+  } else if (dotCount > 1) {
+    // Plusieurs points sans virgule : ce sont des séparateurs de milliers
+    // (`1.234.567`). Avec un seul point, point décimal et séparateur de milliers
+    // sont indiscernables sans le contexte : on garde la lecture décimale, qui
+    // est celle des plateformes anglophones majoritaires.
+    numeric = numeric.replace(/\./g, '');
+  }
+
+  const value = Number.parseFloat(numeric);
+  return Number.isFinite(value) ? value : null;
+}
+
+/** Prix + devise depuis un texte où les deux peuvent apparaître. */
+function priceFromText(rawText, { fallbackCurrency = 'USD' } = {}) {
+  const text = rawText === null || rawText === undefined ? '' : String(rawText);
+  const currency = detectCurrencyFromText(text, fallbackCurrency);
+  const price = parsePriceValue(text, { currencyHint: currency });
+  if (price === null) return null;
+  return { price, currency };
+}
+
+/** Cherche récursivement la première clé portant une valeur non vide (offres imbriquées). */
+function findNestedValue(node, keys, depth = 0) {
+  if (!node || typeof node !== 'object' || depth > 4) return undefined;
+  for (const key of keys) {
+    if (node[key] !== undefined && node[key] !== null && node[key] !== '') return node[key];
+  }
+  // `priceSpecification` est un objet `PriceSpecification` : le visiter évite de
+  // renvoyer l'objet entier au lieu de son montant.
+  const containers = ['offers', 'priceSpecification', 'itemOffered', 'mainEntity', 'hasVariant', 'isVariantOf'];
+  for (const key of containers) {
+    if (node[key]) {
+      const found = findNestedValue(node[key], keys, depth + 1);
+      if (found !== undefined) return found;
+    }
+  }
+  return undefined;
 }
 
 /** Cherche un noeud JSON-LD de type Product dans la page (schema.org), présent sur la plupart des fiches e-commerce. */
@@ -389,35 +649,99 @@ function parseJsonLdProduct($) {
   return product;
 }
 
+/**
+ * Prix d'achat, essayé dans l'ordre de fiabilité décroissante : JSON-LD
+ * (`offers`, `AggregateOffer`, `@graph`), puis méta Open Graph, puis microdata,
+ * puis l'attribut `data-price` en dernier recours. Aucune source ne renvoie
+ * `NaN` : un prix illisible vaut 0, ce qui laisse l'avertissement « prix
+ * d'achat manquant » se déclencher comme avant.
+ */
 function extractPrice(jsonLdProduct, $) {
-  const offer = Array.isArray(jsonLdProduct?.offers) ? jsonLdProduct.offers[0] : jsonLdProduct?.offers;
-  if (offer?.price) return { price: Number(offer.price), currency: offer.priceCurrency || 'USD' };
-  if (offer?.lowPrice) return { price: Number(offer.lowPrice), currency: offer.priceCurrency || 'USD' };
+  // Le prix vient d'abord des offres (offre simple, tableau, ou `AggregateOffer`
+  // avec lowPrice/highPrice), puis d'un éventuel `priceSpecification` imbriqué.
+  const raw = findNestedValue(jsonLdProduct, ['price', 'lowPrice', 'highPrice']);
+  if (raw !== undefined) {
+    const declared = findNestedValue(jsonLdProduct, ['priceCurrency']);
+    const parsed = priceFromText(raw, { fallbackCurrency: declared ? String(declared).toUpperCase() : 'USD' });
+    if (parsed) return parsed;
+  }
 
-  const metaPrice = $('meta[property="product:price:amount"]').attr('content');
-  const metaCurrency = $('meta[property="product:price:currency"]').attr('content');
-  if (metaPrice) return { price: Number(metaPrice), currency: metaCurrency || 'USD' };
+  for (const property of ['product:price:amount', 'og:price:amount']) {
+    const content = $(`meta[property="${property}"]`).attr('content');
+    if (content) {
+      const declared = $('meta[property="product:price:currency"]').attr('content') ||
+        $('meta[property="og:price:currency"]').attr('content');
+      const parsed = priceFromText(content, { fallbackCurrency: declared ? String(declared).toUpperCase() : 'USD' });
+      if (parsed) return parsed;
+    }
+  }
+
+  const microdata = $('[itemprop="price"]').first();
+  if (microdata.length) {
+    const raw = microdata.attr('content') || microdata.text();
+    // `itemprop="priceCurrency"` peut être porté par le même noeud ou par un
+    // voisin dans le même itemscope : on prend le premier trouvé dans la page.
+    const declared = $('[itemprop="priceCurrency"]').first().attr('content') || $('[itemprop="priceCurrency"]').first().text();
+    const parsed = priceFromText(raw, { fallbackCurrency: declared ? String(declared).trim().toUpperCase() : 'USD' });
+    if (parsed) return parsed;
+  }
+
+  const dataPrice = $('[data-price]').first().attr('data-price');
+  if (dataPrice) {
+    const parsed = priceFromText(dataPrice);
+    if (parsed) return parsed;
+  }
 
   return { price: 0, currency: 'USD' };
 }
 
+/**
+ * Photos produit : JSON-LD (chaîne, tableau ou objet `ImageObject`), Open Graph,
+ * microdata, puis les `<img>` de la page — y compris le chargement différé
+ * (`data-src`, `data-original`, `data-lazy-src`, `srcset`). Les URL relatives
+ * sont résolues contre l'URL FINALE (après redirections), sinon une boutique qui
+ * renvoie vers un sous-domaine d'images produirait des liens cassés.
+ */
 function extractImages($, baseUrl, jsonLdProduct) {
   const urls = new Set();
 
   const jsonLdImages = Array.isArray(jsonLdProduct?.image) ? jsonLdProduct.image : [jsonLdProduct?.image].filter(Boolean);
-  for (const img of jsonLdImages) {
-    const resolved = resolveUrl(img, baseUrl);
+  for (const image of jsonLdImages) {
+    const candidate = typeof image === 'string' ? image : image?.url || image?.contentUrl;
+    const resolved = resolveUrl(candidate, baseUrl);
     if (resolved) urls.add(resolved);
   }
 
-  $('meta[property="og:image"]').each((_, el) => {
-    const resolved = resolveUrl($(el).attr('content'), baseUrl);
+  for (const property of ['og:image', 'og:image:secure_url']) {
+    $(`meta[property="${property}"]`).each((_, el) => {
+      const resolved = resolveUrl($(el).attr('content'), baseUrl);
+      if (resolved) urls.add(resolved);
+    });
+  }
+
+  $('[itemprop="image"]').each((_, el) => {
+    const candidate = $(el).attr('content') || $(el).attr('src') || $(el).attr('href');
+    const resolved = resolveUrl(candidate, baseUrl);
     if (resolved) urls.add(resolved);
   });
 
   $('img').each((_, el) => {
-    const src = $(el).attr('src') || $(el).attr('data-src');
-    if (!src || /\.(svg|gif)(\?|$)/i.test(src)) return;
+    const attributes = ['src', 'data-src', 'data-original', 'data-lazy-src', 'data-old-hires'];
+    let src = null;
+    for (const attribute of attributes) {
+      if ($(el).attr(attribute)) {
+        src = $(el).attr(attribute);
+        break;
+      }
+    }
+    if (!src) {
+      // `srcset="a.jpg 1x, b.jpg 2x"` : la première URL est la plus petite, mais
+      // c'est la seule dont on soit sûr qu'elle appartienne à la fiche.
+      const srcset = $(el).attr('srcset') || $(el).attr('data-srcset');
+      if (srcset) src = String(srcset).split(',')[0].trim().split(/\s+/)[0];
+    }
+    if (!src || src.startsWith('data:')) return;
+    if (NON_PHOTO_EXTENSION.test(src) || ICON_URL_PATTERN.test(src)) return;
     const resolved = resolveUrl(src, baseUrl);
     if (resolved) urls.add(resolved);
   });
@@ -426,11 +750,285 @@ function extractImages($, baseUrl, jsonLdProduct) {
 }
 
 /**
+ * Extrait la poignée produit d'une URL Shopify. Les chemins varient beaucoup :
+ * `/products/mon-produit`, `/collections/x/products/mon-produit`, avec ou sans
+ * préfixe de langue, avec `.html`, ou sous `/fr/…/produits/…` pour les boutiques
+ * francophones. On cherche donc le segment `product(s)` et on prend le suivant.
+ *
+ * Le pluriel est exigé : `/product/123.html` (singulier, très répandu ailleurs)
+ * n'est PAS un permalien Shopify, et le confondre ferait interroger
+ * `/products/123.json` sur des sites qui ne sont pas des boutiques Shopify.
+ */
+function deriveProductHandle(pathname) {
+  const segments = String(pathname || '')
+    .split('/')
+    .map((segment) => {
+      try {
+        return decodeURIComponent(segment);
+      } catch {
+        return segment; // pourcentage invalide : on garde le segment brut
+      }
+    })
+    .filter(Boolean);
+  const index = segments.findIndex((segment) => /^(products|produits)$/i.test(segment));
+  if (index === -1) return null;
+  const handle = segments[index + 1];
+  if (!handle) return null;
+  return handle.replace(/\.(html?|json)$/i, '') || null;
+}
+
+/** Détecte un segment de plateforme dans le chemin : `/wp-json/…` trahit WordPress. */
+function hasWoocommerceHint(url) {
+  return /wp-json|wc\/store|\/wp-content\//i.test(url);
+}
+
+/** Nombre de décimales par défaut d'une devise (2), quand l'API ne le précise pas. */
+const DEFAULT_MINOR_UNIT = 2;
+
+/**
+ * Lit un prix WooCommerce Store API.
+ *
+ * Piège majeur : l'API renvoie des unités MINEURES. `"price": "1250"` avec
+ * `currency_minor_unit: 2` vaut 12,50 — et une devise sans décimale (JPY) a
+ * `currency_minor_unit: 0`, donc 1250 vaut bien 1250. La division dépend donc
+ * entièrement du champ `currency_minor_unit` ; la coder en dur (×100 ou ÷100)
+ * fausserait tous les prix.
+ */
+function parseWoocommercePrice(prices, fallbackCurrency) {
+  const currency = String(prices?.currency_code || fallbackCurrency || 'USD').toUpperCase();
+  const minorUnit = Number(prices?.currency_minor_unit);
+  const divisor = Number.isFinite(minorUnit) && minorUnit >= 0 ? 10 ** minorUnit : 10 ** DEFAULT_MINOR_UNIT;
+  // `price` est le prix courant (promotion incluse), `regular_price` le prix
+  // barré : on garde le prix courant comme prix d'achat, c'est celui qu'on paie.
+  const raw = prices?.price ?? prices?.regular_price ?? prices?.sale_price;
+  if (raw === null || raw === undefined || raw === '') return { price: 0, currency };
+  const value = Number(raw);
+  if (!Number.isFinite(value)) return { price: 0, currency };
+  return { price: value / divisor, currency };
+}
+
+/** JSON invalide, page de mot de passe ou erreur applicative : on ne devine pas, on abandonne le chemin rapide. */
+function parseJsonBody(text) {
+  if (!text) return null;
+  try {
+    const parsed = JSON.parse(text);
+    return parsed && typeof parsed === 'object' ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Détermine, sans réseau, quelle API plateforme essayer.
+ *
+ * Heuristique volontairement large : un hôte inconnu n'est PAS un motif
+ * suffisant pour s'abstenir (beaucoup de boutiques Shopify tournent sur leur
+ * propre domaine), donc on se fie au permalien `/products/…`. Les hôtes
+ * explicitement reconnus passent en tête, et un site dont l'URL contient
+ * `wp-json` est traité comme WooCommerce sans même essayer Shopify.
+ */
+function detectPlatformCandidates(parsedUrl, sourceSite) {
+  if (sourceSite === 'woocommerce' || hasWoocommerceHint(parsedUrl.href)) {
+    return [{ kind: 'woocommerce', handle: deriveProductHandle(parsedUrl.pathname) }];
+  }
+
+  // Pas de segment `products` : aucun permalien à interroger. On préfère ne
+  // rien tenter plutôt que de gaspiller deux requêtes sur une fiche inconnue —
+  // le HTML générique reste de toute façon le chemin de repli.
+  const handle = deriveProductHandle(parsedUrl.pathname);
+  if (!handle) return [];
+
+  // Une boutique WooCommerce peut très bien utiliser `/products/…` : on essaie
+  // donc les deux API, Shopify d'abord (la plus répandue) ; dès que l'une répond
+  // en JSON, l'autre n'est pas interrogée.
+  return [{ kind: 'shopify', handle }, { kind: 'woocommerce', handle }];
+}
+
+/**
+ * Chemin rapide Shopify. L'API produit publique expose exactement ce qu'on
+ * cherche — titre, description HTML, images, prix des variantes — sans passer par
+ * le HTML rendu côté client, qui est illisible sur beaucoup de thèmes.
+ *
+ * Deux points d'entrée, essayés dans cet ordre : `/products/{poignée}.json`
+ * (léger, la fiche exacte) puis `/products.json?limit=250` (catalogue, quand la
+ * fiche unitaire est désactivée ou illisible). Renvoie `{ responded, payload }` :
+ * `responded` vaut vrai seulement quand une API Shopify a réellement répondu du
+ * JSON — cela évite d'interroger WooCommerce inutilement. Tout échec (JSON
+ * désactivé, page de mot de passe, redirection, réseau) retombe silencieusement
+ * sur la suite : un chemin rapide ne doit JAMAIS faire échouer l'import.
+ */
+async function scrapeShopifyFastPath(origin, handle, { lookupHost, budget }) {
+  if (!handle) return { responded: false, payload: null };
+
+  const endpoints = [];
+  try {
+    endpoints.push(new URL(`/products/${encodeURIComponent(handle)}.json`, origin).toString());
+  } catch {
+    return { responded: false, payload: null };
+  }
+  try {
+    endpoints.push(new URL('/products.json?limit=250', origin).toString());
+  } catch {
+    /* origine sans chemin exploitable : on se contente du point d'entrée produit */
+  }
+
+  const expected = handle.toLowerCase();
+  let anyJson = false;
+  for (const endpoint of endpoints) {
+    let fetched;
+    try {
+      fetched = await fetchFollowingRedirects(endpoint, {
+        lookupHost,
+        budget,
+        maxBytes: MAX_API_RESPONSE_BYTES,
+      });
+    } catch {
+      continue; // API absente/refusée : on essaie l'entrée suivante, puis le HTML
+    }
+
+    // Corps non-JSON (page de mot de passe, HTML servi à la place de l'API…) :
+    // ce n'est pas une preuve que le site n'est pas Shopify, on tente donc le
+    // catalogue `products.json` avant d'abandonner.
+    const body = parseJsonBody(fetched.text);
+    if (!body) continue;
+    anyJson = true;
+
+    let product = body.product || null;
+    if (!product && Array.isArray(body.products)) {
+      // `products.json` renvoie le catalogue : on cherche la poignée exacte, puis
+      // le titre, quand l'URL ne portait pas de poignée exploitable.
+      product =
+        body.products.find((item) => String(item?.handle || '').toLowerCase() === expected) ||
+        body.products.find((item) => String(item?.title || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').includes(expected)) ||
+        null;
+    }
+    // JSON valide mais aucune fiche correspondante : on a bien affaire à une API
+    // Shopify (le catalogue a répondu), simplement sans ce produit.
+    if (!product || typeof product !== 'object') return { responded: true, payload: null };
+
+    const variant = Array.isArray(product.variants) ? product.variants[0] : null;
+    const variantPrice = parsePriceValue(variant?.price ?? product.price, { currencyHint: 'USD' });
+    const compareAt = parsePriceValue(variant?.compare_at_price ?? product.compare_at_price, { currencyHint: 'USD' });
+    const price = variantPrice ?? compareAt ?? 0;
+
+    const images = [];
+    const rawImages = Array.isArray(product.images) ? product.images : [];
+    for (const image of rawImages) {
+      const resolved = resolveUrl(typeof image === 'string' ? image : image?.src, origin);
+      if (resolved) images.push(resolved);
+    }
+
+    return {
+      responded: true,
+      payload: {
+        title: cleanText(product.title),
+        rawDescription: htmlToText(product.body_html),
+        purchasePrice: Number.isFinite(price) ? price : 0,
+        currency: detectCurrencyFromText(product.currency || variant?.price_currency || '', 'USD'),
+        imageUrls: images,
+      },
+    };
+  }
+
+  // Aucune fiche trouvée : on ne déclare « Shopify » que si l'API a réellement
+  // répondu du JSON, sinon la boutique mérite d'être interrogée autrement.
+  return { responded: anyJson, payload: null };
+}
+
+/**
+ * Chemin rapide WooCommerce. La Store API publique (`/wp-json/wc/store/v1`)
+ * répond même quand le thème rend le HTML en JavaScript ; elle expose aussi un
+ * mode `search=` pour les permaliens sans slug produit.
+ */
+async function scrapeWoocommerceFastPath(origin, handle, { lookupHost, budget }) {
+  const urls = [];
+  const slug = handle || deriveProductHandle(new URL(origin).pathname);
+  try {
+    if (slug) {
+      urls.push(new URL(`/wp-json/wc/store/v1/products?slug=${encodeURIComponent(slug)}`, origin).toString());
+      urls.push(new URL(`/wp-json/wc/store/v1/products?search=${encodeURIComponent(slug)}`, origin).toString());
+    } else {
+      urls.push(new URL('/wp-json/wc/store/v1/products?per_page=1', origin).toString());
+    }
+  } catch {
+    return { responded: false, payload: null };
+  }
+
+  let anyJson = false;
+  for (const endpoint of urls) {
+    let fetched;
+    try {
+      fetched = await fetchFollowingRedirects(endpoint, {
+        lookupHost,
+        budget,
+        maxBytes: MAX_API_RESPONSE_BYTES,
+      });
+    } catch {
+      continue; // Store API absente ou refusée : on essaie l'URL suivante, puis le HTML
+    }
+
+    const body = parseJsonBody(fetched.text);
+    if (!body) continue; // HTML servi à la place de l'API : le repli générique prendra le relais
+    anyJson = true;
+    const product = Array.isArray(body) ? body[0] : body;
+    // Tableau vide (slug inconnu) : on doit essayer la recherche `search=` avant
+    // de conclure. Un tableau non vide mais sans nom est en revanche une preuve
+    // que l'API a répondu, donc que le site est bien WooCommerce.
+    if (Array.isArray(body) && body.length === 0) continue;
+    if (!product || typeof product !== 'object' || (!product.name && !product.id)) return { responded: true, payload: null };
+
+    const images = [];
+    const rawImages = Array.isArray(product.images) ? product.images : [];
+    for (const image of rawImages) {
+      const resolved = resolveUrl(typeof image === 'string' ? image : image?.src, origin);
+      if (resolved) images.push(resolved);
+    }
+
+    const description = product.description || product.short_description || '';
+    const { price, currency } = parseWoocommercePrice(product.prices, product.currency || 'USD');
+
+    return {
+      responded: true,
+      payload: {
+        title: cleanText(product.name),
+        rawDescription: htmlToText(description),
+        purchasePrice: price,
+        currency,
+        imageUrls: images,
+      },
+    };
+  }
+
+  return { responded: anyJson, payload: null };
+}
+
+/** Rassemble les données extraites d'un JSON d'API plateforme en résultat d'import exploitable. */
+function normalizeFastPathResult(platform, payload) {
+  if (!payload || !payload.title) return null;
+  return {
+    sourceSite: platform,
+    title: String(payload.title).trim(),
+    rawDescription: cleanText(payload.rawDescription),
+    purchasePrice: Number.isFinite(payload.purchasePrice) ? payload.purchasePrice : 0,
+    currency: payload.currency || 'USD',
+    imageUrls: payload.imageUrls || [],
+  };
+}
+
+/**
  * Extrait titre, description, prix d'achat et photos depuis la page produit d'un fournisseur.
- * S'appuie d'abord sur les données structurées (JSON-LD schema.org) puis sur les méta-tags Open
- * Graph, avec repli sur le HTML brut. Des sites comme Alibaba/AliExpress bloquent activement les
- * requêtes automatisées ou chargent le contenu en JavaScript : dans ce cas l'extraction peut
- * échouer ou être incomplète — c'est signalé par une erreur claire plutôt qu'un résultat vide.
+ *
+ * Deux niveaux, du plus fiable au plus général :
+ * 1. les API publiques des plateformes (Shopify, WooCommerce), qui renvoient des
+ *    données structurées même quand la page est rendue en JavaScript ;
+ * 2. le HTML, en s'appuyant sur les données structurées (JSON-LD schema.org),
+ *    puis Open Graph, puis la microdata et le balisage brut.
+ *
+ * Les deux niveaux passent par la MÊME barrière SSRF (`assertHostIsPublic` à
+ * chaque saut) et partagent le MÊME budget de temps et d'octets. Des sites comme
+ * Alibaba/AliExpress bloquent activement les requêtes automatisées ou chargent le
+ * contenu en JavaScript : dans ce cas l'extraction peut échouer ou être
+ * incomplète — c'est signalé par une erreur claire plutôt qu'un résultat vide.
  */
 export async function scrapeProductFromUrl(url, { lookupHost = defaultLookup, timeoutMs = FETCH_TIMEOUT_MS, maxBytes = MAX_RESPONSE_BYTES } = {}) {
   let parsedUrl;
@@ -444,38 +1042,63 @@ export async function scrapeProductFromUrl(url, { lookupHost = defaultLookup, ti
   }
   await assertHostIsPublic(parsedUrl, lookupHost);
 
-  const sourceSite = detectSourceSite(url);
+  const patternSite = detectSourceSite(url);
+  const budget = createBudget(timeoutMs, maxBytes);
 
-  // `fetch` suivrait les 3xx tout seul et ne re-validerait pas la cible : on le
-  // remplace par une boucle qui repasse chaque saut par la barrière SSRF.
-  const html = await fetchFollowingRedirects(url, { lookupHost, timeoutMs, maxBytes });
+  // 1) API plateformes. Elles sont essayées uniquement quand le chemin y ressemble
+  // (`/products/…`, `wp-json`) ou que l'hôte est un hébergeur connu : on ne veut
+  // pas ajouter deux requêtes inutiles sur chaque import d'une boutique inconnue.
+  for (const candidate of detectPlatformCandidates(parsedUrl, patternSite)) {
+    // On garde toujours de quoi lire la page au moins une fois : une API lente ne
+    // doit pas condamner le repli HTML, qui est le chemin de dernier recours.
+    if (budget.deadline - Date.now() <= MIN_HTML_BUDGET_MS) break;
+
+    const { responded, payload } =
+      candidate.kind === 'shopify'
+        ? await scrapeShopifyFastPath(parsedUrl.origin, candidate.handle, { lookupHost, budget })
+        : await scrapeWoocommerceFastPath(parsedUrl.origin, candidate.handle, { lookupHost, budget });
+
+    const result = normalizeFastPathResult(candidate.kind, payload);
+    if (result) return result;
+    // L'API a répondu autre chose que la fiche attendue (page de mot de passe,
+    // JSON vide…) : inutile d'interroger une autre plateforme, on passe au HTML.
+    if (responded) break;
+  }
+
+  // 2) Repli HTML générique — le seul chemin possible pour un hôte inconnu.
+  const fetched = await fetchFollowingRedirects(url, { lookupHost, budget });
+  const html = fetched.text;
+  // Les images relatives se résolvent contre l'URL FINALE : une boutique qui
+  // redirige vers un autre domaine produirait sinon des liens cassés.
+  const finalUrl = fetched.finalUrl;
 
   const $ = cheerio.load(html);
   const jsonLdProduct = parseJsonLdProduct($);
 
   const title =
-    jsonLdProduct?.name ||
-    $('meta[property="og:title"]').attr('content') ||
-    $('h1').first().text().trim() ||
-    $('title').text().trim();
+    cleanText(jsonLdProduct?.name) ||
+    cleanText($('meta[property="og:title"]').attr('content')) ||
+    cleanText($('[itemprop="name"]').first().attr('content') || $('[itemprop="name"]').first().text()) ||
+    cleanText($('h1').first().text()) ||
+    cleanText($('title').text());
 
   const rawDescription =
-    jsonLdProduct?.description ||
-    $('meta[property="og:description"]').attr('content') ||
-    $('meta[name="description"]').attr('content') ||
-    '';
+    cleanText(jsonLdProduct?.description) ||
+    cleanText($('meta[property="og:description"]').attr('content')) ||
+    cleanText($('meta[name="description"]').attr('content')) ||
+    cleanText($('[itemprop="description"]').first().attr('content') || $('[itemprop="description"]').first().text());
 
   const { price, currency } = extractPrice(jsonLdProduct, $);
-  const imageUrls = extractImages($, url, jsonLdProduct);
+  const imageUrls = extractImages($, finalUrl, jsonLdProduct);
 
   if (!title) {
     throw new Error(
-      `Aucune information exploitable extraite de cette page (${sourceSite}). Le site bloque probablement les requêtes automatisées (contenu chargé en JavaScript) — remplis la fiche manuellement pour ce produit.`,
+      `Aucune information exploitable extraite de cette page (${patternSite}). Le site bloque probablement les requêtes automatisées (contenu chargé en JavaScript) — remplis la fiche manuellement pour ce produit.`,
     );
   }
 
   return {
-    sourceSite,
+    sourceSite: patternSite,
     title: title.trim(),
     rawDescription: rawDescription.trim(),
     purchasePrice: price,
