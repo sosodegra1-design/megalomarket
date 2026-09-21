@@ -106,6 +106,22 @@ async function rebuildTableIfNeeded({ table, marker, createTable, columns, selec
   return true;
 }
 
+/**
+ * Ajoute une colonne à une table existante, une seule fois.
+ *
+ * SQLite ne connaît pas « ADD COLUMN IF NOT EXISTS » : rejouer l'ALTER au
+ * démarrage suivant échoue sur « duplicate column name », ce qui empêcherait
+ * tout redémarrage après le premier. On interroge donc PRAGMA table_info avant
+ * d'agir — même esprit que rebuildTableIfNeeded, mais pour un simple ajout de
+ * colonne, qui ne justifie pas de reconstruire la table (et n'y touche pas).
+ */
+async function addColumnIfMissing(table, column, definition) {
+  const columns = await dbAll(`PRAGMA table_info(${table})`);
+  if (columns.some((existing) => existing.name === column)) return false;
+  await client.execute(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+  return true;
+}
+
 /* Le canal own_site a été ajouté à import_listings.marketplace, en même temps
    que la colonne site_payload qui porte la fiche détaillée exigée par le site. */
 async function migrateImportListings() {
@@ -174,6 +190,25 @@ async function migrateChannelListings() {
   return migrated;
 }
 
+/* Le rattachement d'un import à un partenaire enregistré est une colonne
+   ajoutée à une table existante : les bases créées avant cette évolution
+   doivent la recevoir sans être reconstruites (les imports et leurs fiches
+   sont des archives, on ne les recopie pas par plaisir). ON DELETE SET NULL
+   laisse la suppression d'un partenaire détacher ses imports au lieu de les
+   emporter ; la route DELETE détache elle aussi explicitement, pour pouvoir
+   annoncer combien d'imports ont été conservés. */
+async function migrateImportsSupplier() {
+  const added = await addColumnIfMissing(
+    'imports',
+    'supplier_id',
+    'INTEGER REFERENCES suppliers(id) ON DELETE SET NULL',
+  );
+  if (added) {
+    await logActivity('MIGRATION', 'Colonne imports.supplier_id ajoutée : chaque import peut être rattaché à un partenaire enregistré.');
+  }
+  return added;
+}
+
 /* Vérifie que la base branchée est bien celle de ce projet.
  *
  * Le réflexe naturel, quand on a déjà une base chez le même hébergeur, est de
@@ -208,6 +243,7 @@ export async function initDatabase() {
   await assertSchemaIsOurs();
   await migrateImportListings();
   await migrateChannelListings();
+  await migrateImportsSupplier();
 }
 
 export async function logActivity(kind, message) {

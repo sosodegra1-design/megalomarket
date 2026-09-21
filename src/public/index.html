@@ -521,6 +521,10 @@
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 8 12 3 3 8v8l9 5 9-5V8Z"/><path d="m3 8 9 5 9-5M12 13v8"/></svg>
         Produits
       </a>
+      <a class="nav-item" href="#/fournisseurs" data-view="fournisseurs">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 20V9.5l5 2.8V9.5l5 2.8V4.5h8V20H3Z"/><path d="M14 10.5h3M14 14.5h3"/></svg>
+        Fournisseurs
+      </a>
       <span class="nav-label">Exploitation</span>
       <a class="nav-item" href="#/canaux" data-view="canaux">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="6" cy="12" r="2.6"/><circle cx="18" cy="5.5" r="2.6"/><circle cx="18" cy="18.5" r="2.6"/><path d="m8.3 10.8 7.4-3.9m0 10.2-7.4-3.9"/></svg>
@@ -595,6 +599,11 @@
             <span class="kpi-hint" id="kpiCanauxHint">sur les canaux connus</span>
           </div>
           <div class="kpi">
+            <span class="kpi-label">Partenaires</span>
+            <span class="kpi-value" id="kpiPartenaires"><span class="skel skel-num"></span></span>
+            <span class="kpi-hint" id="kpiPartenairesHint">fournisseurs et distributeurs</span>
+          </div>
+          <div class="kpi">
             <span class="kpi-label">Entrées de journal</span>
             <span class="kpi-value" id="kpiJournal"><span class="skel skel-num"></span></span>
             <span class="kpi-hint" id="kpiJournalHint">100 dernières</span>
@@ -643,6 +652,13 @@
         <div class="card">
           <h2>Importer un produit par lien</h2>
           <p class="hint">Colle une URL fournisseur (AliExpress, Alibaba…). L'extraction puis la génération des fiches se font en deux étapes distinctes, pour que tu voies ce qui a été récupéré avant qu'une IA ne rédige quoi que ce soit.</p>
+          <!-- Le partenaire se choisit AVANT de coller l'URL : c'est lui qui
+               décide de la marge appliquée au prix conseillé de cet import. -->
+          <label for="importSupplier">Partenaire (fournisseur ou distributeur)</label>
+          <select id="importSupplier">
+            <option value="">— Aucun —</option>
+          </select>
+          <p class="hint hint-tight" id="importSupplierMargin">Aucun partenaire choisi : le coefficient de marge global du hub s'appliquera.</p>
           <label for="importUrl">URL du produit fournisseur</label>
           <input type="text" id="importUrl" placeholder="https://www.aliexpress.com/item/....html" autocomplete="off">
           <div class="row row-actions">
@@ -771,6 +787,80 @@
         </div>
       </section>
 
+      <!-- ==================== VUE : FOURNISSEURS ==================== -->
+      <section class="view" id="view-fournisseurs" data-view="fournisseurs" hidden>
+        <div class="card">
+          <h2>Enregistrer un partenaire</h2>
+          <p class="hint">Un fournisseur ou un distributeur s'enregistre une fois. À l'import, tu le choisis dans une liste au lieu de retaper son nom — et sa marge s'applique au prix conseillé. C'est ce qui distingue la plateforme de gros du distributeur local, qui ne vendent pas au même prix.</p>
+          <div class="field-grid">
+            <div class="field">
+              <label for="supKind">Type</label>
+              <select id="supKind">
+                <option value="fournisseur">Fournisseur</option>
+                <option value="distributeur">Distributeur</option>
+              </select>
+            </div>
+            <div class="field">
+              <label for="supName">Nom</label>
+              <input type="text" id="supName" placeholder="Shenzhen Toys Ltd" autocomplete="off">
+            </div>
+            <div class="field">
+              <label for="supSite">Site (optionnel)</label>
+              <input type="text" id="supSite" placeholder="https://exemple.com" autocomplete="off">
+            </div>
+            <div class="field">
+              <label for="supMargin">Coefficient de marge (optionnel)</label>
+              <input type="number" id="supMargin" step="0.01" min="1.01" placeholder="ex. 2.4">
+            </div>
+            <div class="field">
+              <label for="supStatus">Statut</label>
+              <select id="supStatus">
+                <option value="actif">Actif</option>
+                <option value="inactif">Inactif</option>
+              </select>
+            </div>
+            <div class="field field-wide">
+              <label for="supNotes">Notes (optionnel)</label>
+              <input type="text" id="supNotes" placeholder="conditions de paiement, délais, contact…" autocomplete="off">
+            </div>
+          </div>
+          <p class="hint hint-tight">Laisser la marge vide signifie « utiliser le coefficient global du hub » (<span id="suppliersGlobalMargin">…</span>). En dessous de 1, le hub refuse : ce serait vendre à perte.</p>
+          <div class="row row-actions"><button class="btn" id="btnCreateSupplier" type="button">Enregistrer le partenaire</button></div>
+        </div>
+
+        <div class="card table-card">
+          <div class="table-tools">
+            <h2>Partenaires enregistrés</h2>
+            <select class="input table-filter" id="suppliersKindFilter" aria-label="Filtrer les partenaires par type">
+              <option value="">Tous les types</option>
+              <option value="fournisseur">Fournisseurs</option>
+              <option value="distributeur">Distributeurs</option>
+            </select>
+            <input class="input table-filter" type="search" id="suppliersFilter" placeholder="Filtrer par nom, site, notes…" autocomplete="off" aria-label="Filtrer les partenaires">
+          </div>
+          <div class="table-scroll">
+            <table class="table">
+              <thead id="suppliersHead">
+                <tr>
+                  <th data-sort="name">Nom</th>
+                  <th data-sort="kind">Type</th>
+                  <th data-sort="site_url">Site</th>
+                  <th data-sort="margin">Marge</th>
+                  <th data-sort="status">Statut</th>
+                  <th data-sort="import_count">Imports</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="suppliers">
+                <tr class="skel-row"><td colspan="7"><span class="skel skel-bar" style="width:52%"></span></td></tr>
+                <tr class="skel-row"><td colspan="7"><span class="skel skel-bar" style="width:38%"></span></td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="table-foot" id="suppliersPager"></div>
+        </div>
+      </section>
+
       <!-- ==================== VUE : CANAUX ==================== -->
       <section class="view" id="view-canaux" data-view="canaux" hidden>
         <div class="card">
@@ -859,6 +949,8 @@ const state = {
   activity: [],
   channels: [],
   recommendations: [],
+  suppliers: [],
+  editingSupplierId: null,
   importDetails: new Map(),
   detailsTruncated: false,
   inflight: 0,
@@ -1536,6 +1628,7 @@ function renderDashboard() {
   animateCount($('kpiFiches'), fiches);
   animateCount($('kpiPubliees'), publiees);
   animateCount($('kpiCanaux'), configured);
+  animateCount($('kpiPartenaires'), state.suppliers.length);
   animateCount($('kpiJournal'), state.activity.length);
 
   const hint = (id, text) => { const el = $(id); if (el) el.textContent = text; };
@@ -1544,6 +1637,10 @@ function renderDashboard() {
   hint('kpiFichesHint', state.detailsTruncated ? 'sur les imports les plus récents' : 'toutes marketplaces');
   hint('kpiPublieesHint', publiees ? 'envoyées pour de bon' : 'aucune publication');
   hint('kpiCanauxHint', state.channels.length ? 'sur ' + state.channels.length + ' canaux connus' : 'canaux inconnus');
+  const fournisseurs = state.suppliers.filter((s) => s.kind === 'fournisseur').length;
+  hint('kpiPartenairesHint', state.suppliers.length
+    ? fournisseurs + ' fournisseur' + (fournisseurs > 1 ? 's' : '') + ' · ' + (state.suppliers.length - fournisseurs) + ' distributeur' + (state.suppliers.length - fournisseurs > 1 ? 's' : '')
+    : 'aucun partenaire enregistré');
   hint('kpiJournalHint', state.activity.length ? '100 dernières' : 'journal vide');
 
   renderSparkline();
@@ -1671,6 +1768,222 @@ async function loadProducts() {
   return products;
 }
 
+/* ===================== PARTENAIRES =====================
+   Le registre des fournisseurs et distributeurs. Il alimente deux endroits :
+   cette table (créer, modifier, supprimer) et la liste d'import, où le
+   partenaire se choisit avant de coller l'URL — c'est lui qui porte la marge. */
+const SUPPLIER_KIND_LABELS = { fournisseur: 'Fournisseur', distributeur: 'Distributeur' };
+const SUPPLIER_STATUS_LABELS = { actif: 'Actif', inactif: 'Inactif' };
+
+/* Marge affichée telle qu'elle sera appliquée : une marge propre (« ×2.40 ») ou,
+   à défaut, le coefficient global du hub (« défaut global ×1.80 »). Les
+   confondre serait grave : le défaut peut changer, pas la marge négociée. */
+function supplierMarginLabel(supplier) {
+  const own = supplier ? supplier.margin_coefficient : null;
+  if (own != null) return '×' + Number(own).toFixed(2) + ' (propre)';
+  const global = state.config && state.config.pricing ? Number(state.config.pricing.marginCoefficient) : NaN;
+  return Number.isFinite(global) ? 'défaut global ×' + global.toFixed(2) : 'défaut global';
+}
+
+/* Options de type / statut réutilisées par l'édition en ligne. */
+function selectOptions(labels, current) {
+  return Object.entries(labels).map(([value, label]) => (
+    '<option value="' + value + '"' + (value === current ? ' selected' : '') + '>' + label + '</option>'
+  )).join('');
+}
+
+/* Ligne en cours d'édition : mêmes champs que le formulaire de création, pour
+   qu'on n'apprenne pas deux vocabulaires. Rendue par la table elle-même, donc
+   un tri ou un filtre referme l'édition sans laisser de champs orphelins. */
+function supplierEditRow(supplier) {
+  const id = esc(supplier.id);
+  return '<tr class="row-in"><td colspan="7" data-label="Modifier">'
+    + '<div class="field-grid">'
+    + '<div class="field"><label for="sup-edit-name-' + id + '">Nom</label>'
+    + '<input class="input" type="text" id="sup-edit-name-' + id + '" value="' + esc(supplier.name) + '"></div>'
+    + '<div class="field"><label for="sup-edit-kind-' + id + '">Type</label>'
+    + '<select class="input" id="sup-edit-kind-' + id + '">' + selectOptions(SUPPLIER_KIND_LABELS, supplier.kind) + '</select></div>'
+    + '<div class="field"><label for="sup-edit-site-' + id + '">Site</label>'
+    + '<input class="input" type="text" id="sup-edit-site-' + id + '" value="' + esc(supplier.site_url || '') + '"></div>'
+    + '<div class="field"><label for="sup-edit-margin-' + id + '">Marge (vide = défaut global)</label>'
+    + '<input class="input" type="number" step="0.01" min="1.01" id="sup-edit-margin-' + id + '" value="'
+    + (supplier.margin_coefficient == null ? '' : esc(supplier.margin_coefficient)) + '"></div>'
+    + '<div class="field"><label for="sup-edit-status-' + id + '">Statut</label>'
+    + '<select class="input" id="sup-edit-status-' + id + '">' + selectOptions(SUPPLIER_STATUS_LABELS, supplier.status) + '</select></div>'
+    + '<div class="field field-wide"><label for="sup-edit-notes-' + id + '">Notes</label>'
+    + '<input class="input" type="text" id="sup-edit-notes-' + id + '" value="' + esc(supplier.notes || '') + '"></div>'
+    + '</div>'
+    + '<div class="actions">'
+    + '<button class="btn btn-sm" type="button" data-action="save" data-id="' + id + '">Enregistrer</button>'
+    + '<button class="btn btn-ghost btn-sm" type="button" data-action="cancel" data-id="' + id + '">Annuler</button>'
+    + '</div></td></tr>';
+}
+
+const suppliersTable = createTable({
+  body: 'suppliers',
+  head: 'suppliersHead',
+  filter: 'suppliersFilter',
+  pager: 'suppliersPager',
+  pageSize: 10,
+  skeleton: 3,
+  empty: 'Aucun partenaire enregistré. Ajoute le premier ci-dessus.',
+  defaultSort: 'name',
+  columns: [
+    { key: 'name', value: (s) => s.name },
+    { key: 'kind', value: (s) => s.kind },
+    { key: 'site_url', value: (s) => s.site_url },
+    { key: 'margin', value: (s) => (s.margin_coefficient == null ? -1 : Number(s.margin_coefficient)) },
+    { key: 'status', value: (s) => s.status },
+    { key: 'import_count', value: (s) => Number(s.import_count) },
+  ],
+  search: (s) => [s.name, s.kind, s.site_url, s.notes].join(' '),
+  row: (s) => {
+    const id = esc(s.id);
+    if (String(state.editingSupplierId) === String(s.id)) return supplierEditRow(s);
+    return '<tr class="row-in">'
+      + '<td data-label="Nom"><span class="cell-strong">' + esc(s.name) + '</span>'
+      + (s.notes ? '<div class="cell-muted" style="font-size:.75rem">' + esc(s.notes) + '</div>' : '') + '</td>'
+      + '<td data-label="Type"><span class="pill off">' + esc(SUPPLIER_KIND_LABELS[s.kind] || s.kind) + '</span></td>'
+      + '<td data-label="Site" class="cell-muted">'
+      + (s.site_url
+        ? '<a href="' + esc(s.site_url) + '" target="_blank" rel="noopener noreferrer">' + esc(s.site_url) + '</a>'
+        : '—') + '</td>'
+      + '<td data-label="Marge" class="num">' + esc(supplierMarginLabel(s)) + '</td>'
+      + '<td data-label="Statut"><span class="pill ' + (s.status === 'actif' ? 'ok' : 'off') + '">' + esc(s.status) + '</span></td>'
+      + '<td data-label="Imports" class="num">' + esc(s.import_count == null ? 0 : s.import_count) + '</td>'
+      + '<td data-label="Actions" class="cell-actions"><div class="actions">'
+      + '<button class="btn btn-ghost btn-xs" type="button" data-action="edit" data-id="' + id + '">Modifier</button>'
+      + '<button class="btn btn-danger btn-xs" type="button" data-action="delete" data-id="' + id + '" data-name="' + esc(s.name) + '">Supprimer</button>'
+      + '</div></td>'
+      + '</tr>';
+  },
+});
+
+/* Le filtre de type ne s'applique qu'à l'affichage : `state.suppliers` garde la
+   liste complète, car elle alimente aussi la liste déroulante d'import et le
+   compteur du tableau de bord, qui ne doivent pas se réduire au filtre. */
+function applySupplierFilter() {
+  const filter = $('suppliersKindFilter');
+  const kind = filter && filter.value ? filter.value : '';
+  suppliersTable.setRows(kind ? state.suppliers.filter((s) => s.kind === kind) : state.suppliers);
+}
+
+/* Remplit la liste déroulante de l'import, groupée par type, en conservant la
+   sélection courante : un rechargement ne doit pas changer en silence le
+   partenaire déjà choisi. */
+function populateImportSuppliers() {
+  const select = $('importSupplier');
+  if (!select) return;
+  const current = select.value || '';
+  let html = '<option value="">— Aucun —</option>';
+  for (const [kind, label] of [['fournisseur', 'Fournisseurs'], ['distributeur', 'Distributeurs']]) {
+    const rows = state.suppliers.filter((s) => s.kind === kind);
+    if (!rows.length) continue;
+    html += '<optgroup label="' + esc(label) + '">';
+    html += rows.map((s) => '<option value="' + esc(s.id) + '">' + esc(s.name)
+      + (s.margin_coefficient == null ? ' (défaut global)' : ' (×' + Number(s.margin_coefficient).toFixed(2) + ')')
+      + '</option>').join('');
+    html += '</optgroup>';
+  }
+  select.innerHTML = html;
+  select.value = state.suppliers.some((s) => String(s.id) === String(current)) ? current : '';
+  updateImportSupplierMargin();
+}
+
+/* Dit en clair quelle marge s'appliquera à l'import en cours de préparation —
+   et surtout quand ce sera le défaut global et non la marge du partenaire. */
+function updateImportSupplierMargin() {
+  const select = $('importSupplier');
+  const hint = $('importSupplierMargin');
+  if (!select || !hint) return;
+  const global = state.config && state.config.pricing ? Number(state.config.pricing.marginCoefficient) : NaN;
+  const globalText = Number.isFinite(global) ? ' (×' + global.toFixed(2) + ')' : '';
+  const supplier = state.suppliers.find((s) => String(s.id) === String(select.value || ''));
+  if (!supplier) {
+    hint.textContent = "Aucun partenaire choisi : le coefficient de marge global du hub s'appliquera" + globalText + '.';
+  } else if (supplier.margin_coefficient == null) {
+    hint.textContent = supplier.name + " n'a pas de marge propre : le coefficient global s'appliquera" + globalText + '.';
+  } else {
+    hint.textContent = 'Marge appliquée à cet import : ×' + Number(supplier.margin_coefficient).toFixed(2)
+      + ' (' + supplier.name + ').';
+  }
+  hint.className = 'hint hint-tight';
+}
+
+async function loadSuppliers() {
+  suppliersTable.setLoading();
+  // Liste complète, sans filtre : voir applySupplierFilter().
+  const rows = await api('/api/suppliers');
+  state.suppliers = rows;
+  applySupplierFilter();
+  populateImportSuppliers();
+  const globalEl = $('suppliersGlobalMargin');
+  if (globalEl) {
+    const configured = state.config && state.config.pricing
+      && Number.isFinite(Number(state.config.pricing.marginCoefficient));
+    globalEl.textContent = configured ? '×' + Number(state.config.pricing.marginCoefficient).toFixed(2) : 'coefficient global';
+  }
+  scheduleDashboard();
+  return rows;
+}
+
+onAction($('suppliers'), {
+  edit: (button) => { state.editingSupplierId = Number(button.dataset.id); suppliersTable.render(); },
+  cancel: () => { state.editingSupplierId = null; suppliersTable.render(); },
+
+  save: (button) => action(button, async () => {
+    const id = button.dataset.id;
+    const marginRaw = $('sup-edit-margin-' + id).value.trim();
+    const siteUrl = $('sup-edit-site-' + id).value.trim();
+    const notes = $('sup-edit-notes-' + id).value.trim();
+    await api('/api/suppliers/' + encodeURIComponent(id), {
+      method: 'PATCH',
+      body: JSON.stringify({
+        name: $('sup-edit-name-' + id).value.trim(),
+        kind: $('sup-edit-kind-' + id).value,
+        status: $('sup-edit-status-' + id).value,
+        siteUrl: siteUrl || null,
+        notes: notes || null,
+        // Champ vidé = retour explicite au coefficient global (null), jamais 0.
+        marginCoefficient: marginRaw === '' ? null : Number(marginRaw),
+      }),
+    });
+    state.editingSupplierId = null;
+    await loadSuppliers();
+  }, 'Partenaire modifié.'),
+
+  /* La suppression détache les imports au lieu de les détruire : on le dit dans
+     la confirmation, car c'est exactement ce que l'utilisateur veut savoir. */
+  delete: (button) => action(button, async () => {
+    const name = button.dataset.name || 'ce partenaire';
+    if (!window.confirm('Supprimer « ' + name + ' » ?\n\nSes imports ne sont PAS supprimés : ils sont seulement détachés, pour que l\'historique reste intact.')) return null;
+    const result = await api('/api/suppliers/' + encodeURIComponent(button.dataset.id), { method: 'DELETE' });
+    if (String(state.editingSupplierId) === String(button.dataset.id)) state.editingSupplierId = null;
+    await Promise.all([loadSuppliers(), loadImports()]);
+    renderDashboard();
+    return result;
+  }, 'Partenaire supprimé, imports détachés.'),
+});
+
+$('btnCreateSupplier').addEventListener('click', (event) => action(event.currentTarget, async () => {
+  const name = $('supName').value.trim();
+  if (!name) throw new Error('Le nom du partenaire est obligatoire.');
+  const siteUrl = $('supSite').value.trim();
+  const marginRaw = $('supMargin').value.trim();
+  const notes = $('supNotes').value.trim();
+  const body = { kind: $('supKind').value, name, status: $('supStatus').value };
+  if (siteUrl) body.siteUrl = siteUrl;
+  if (marginRaw !== '') body.marginCoefficient = Number(marginRaw);
+  if (notes) body.notes = notes;
+
+  await api('/api/suppliers', { method: 'POST', body: JSON.stringify(body) });
+  $('supName').value = ''; $('supSite').value = ''; $('supMargin').value = ''; $('supNotes').value = '';
+  await loadSuppliers();
+}, 'Partenaire enregistré.'));
+
+$('suppliersKindFilter').addEventListener('change', applySupplierFilter);
+$('importSupplier').addEventListener('change', updateImportSupplierMargin);
+
 /* ===================== RECOMMANDATIONS ===================== */
 async function loadRecommendations() {
   const box = $('recommendations');
@@ -1729,7 +2042,7 @@ const importsTable = createTable({
     { key: 'listings', value: (i) => importListingCount(i) ?? -1 },
     { key: 'created_at', value: (i) => Number(i.created_at) },
   ],
-  search: (i) => [i.title, i.source_site, i.status, i.currency].join(' '),
+  search: (i) => [i.title, i.source_site, i.status, i.currency, i.supplier_name].join(' '),
   row: (i) => {
     const id = esc(i.id);
     const count = importListingCount(i);
@@ -1739,7 +2052,8 @@ const importsTable = createTable({
       : (count ? '<span class="pill ok">' + count + '</span>' : '<span class="pill off">0</span>');
     return '<tr class="row-in">'
       + '<td data-label="Titre"><span class="cell-strong">' + esc(i.title) + '</span></td>'
-      + '<td data-label="Site" class="cell-muted">' + esc(i.source_site) + '</td>'
+      + '<td data-label="Site" class="cell-muted">' + esc(i.source_site)
+      + (i.supplier_name ? '<div style="font-size:.75rem">via ' + esc(i.supplier_name) + '</div>' : '') + '</td>'
       + '<td data-label="Statut"><span class="pill ' + (i.status === 'pret' ? 'ok' : 'off') + '">' + esc(i.status) + '</span></td>'
       + '<td data-label="Prix d\'achat" class="num">' + money(i.purchase_price) + ' ' + esc(i.currency) + '</td>'
       + '<td data-label="Fiches">' + countCell + '</td>'
@@ -1886,14 +2200,20 @@ $('btnSavePurchasePrice').addEventListener('click', (event) => action(event.curr
 $('btnExtract').addEventListener('click', (event) => action(event.currentTarget, async () => {
   const url = $('importUrl').value.trim();
   if (!url) throw new Error('Colle d\'abord une URL fournisseur.');
+  // Le partenaire choisi AVANT l'URL : il décide de la marge appliquée. « — Aucun — »
+  // n'envoie rien, donc le coefficient global reste le comportement par défaut.
+  const supplierId = $('importSupplier') ? $('importSupplier').value : '';
   beginStepper('extraction', 'Extraction en cours…');
   try {
-    const data = await api('/api/imports', { method: 'POST', body: JSON.stringify({ url }) });
+    const payload = { url };
+    if (supplierId) payload.supplierId = Number(supplierId);
+    const data = await api('/api/imports', { method: 'POST', body: JSON.stringify(payload) });
     state.importId = data.id;
     $('importDetail').style.display = 'block';
     $('importBody').innerHTML = [
       ['Titre extrait', esc(data.title)],
       ['Site détecté', esc(data.sourceSite)],
+      ['Partenaire', data.supplier ? esc(data.supplier.name) + ' · ' + esc(supplierMarginLabel(data.supplier)) : 'aucun (coefficient global)'],
       ['Prix d\'achat', money(data.purchasePrice) + ' ' + esc(data.currency)],
       ['Photos trouvées', (data.imageUrls || []).length],
       ['Description brute', esc((data.rawDescription || '(aucune)').slice(0, 400))],
@@ -1976,6 +2296,14 @@ async function showImport(id) {
   state.listingsOpen = true;
   state.importDetails.set(String(id), data);
   updateGenerateButton();
+  // La liste rappelle le partenaire réellement enregistré sur cet import : c'est
+  // lui, et non ce qui traîne dans le formulaire, que la régénération appliquera.
+  const supplierSelect = $('importSupplier');
+  if (supplierSelect) {
+    const wanted = data.supplier ? String(data.supplier.id) : '';
+    supplierSelect.value = state.suppliers.some((s) => String(s.id) === wanted) ? wanted : '';
+    updateImportSupplierMargin();
+  }
   // Le prix d'achat est visible avant les fiches : c'est lui qui explique
   // pourquoi elles valent 0 €, et il se corrige ici même.
   renderImportPrice(data);
@@ -2155,6 +2483,7 @@ const VIEWS = {
   dashboard: { el: 'view-dashboard', title: 'Tableau de bord' },
   imports: { el: 'view-imports', title: 'Imports' },
   produits: { el: 'view-produits', title: 'Produits' },
+  fournisseurs: { el: 'view-fournisseurs', title: 'Fournisseurs' },
   canaux: { el: 'view-canaux', title: 'Canaux' },
   journal: { el: 'view-journal', title: 'Journal' },
   support: { el: 'view-support', title: 'Support' },
@@ -2163,6 +2492,7 @@ const ROUTES = {
   '#/dashboard': 'dashboard',
   '#/imports': 'imports',
   '#/produits': 'produits',
+  '#/fournisseurs': 'fournisseurs',
   '#/canaux': 'canaux',
   '#/journal': 'journal',
   '#/support': 'support',
@@ -2223,7 +2553,7 @@ async function loadAll() {
   await loadConfig();
   // Chaque bloc est indépendant : une section en erreur ne doit pas vider les autres.
   const loadImportsAndDetails = async () => { await loadImports(); await hydrateImportDetails(); };
-  const blocks = [loadChannels, loadProducts, loadRecommendations, loadImportsAndDetails, loadActivity];
+  const blocks = [loadChannels, loadProducts, loadRecommendations, loadSuppliers, loadImportsAndDetails, loadActivity];
   const errors = [];
   await Promise.all(blocks.map((fn) => fn().catch((error) => { errors.push(fn.name + ' : ' + error.message); })));
   renderDashboard();

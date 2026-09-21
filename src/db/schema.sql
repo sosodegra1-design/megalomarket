@@ -49,6 +49,23 @@ CREATE TABLE IF NOT EXISTS activity_log (
   created_at INTEGER NOT NULL
 );
 
+-- Partenaires (plateformes de gros, distributeurs locaux…) enregistrés une fois
+-- pour toutes, afin qu'un import se rattache à une fiche au lieu d'un texte
+-- retapé. margin_coefficient NULL est volontaire et signifie « utiliser le
+-- coefficient global » : un fournisseur sans marge négociée n'a pas de marge
+-- propre, et confondre les deux ferait disparaître la distinction.
+CREATE TABLE IF NOT EXISTS suppliers (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  kind TEXT NOT NULL CHECK (kind IN ('fournisseur', 'distributeur')),
+  name TEXT NOT NULL,
+  site_url TEXT,
+  margin_coefficient REAL,
+  status TEXT NOT NULL DEFAULT 'actif' CHECK (status IN ('actif', 'inactif')),
+  notes TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS imports (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   source_url TEXT NOT NULL,
@@ -59,6 +76,10 @@ CREATE TABLE IF NOT EXISTS imports (
   currency TEXT NOT NULL DEFAULT 'USD',
   image_urls TEXT NOT NULL DEFAULT '[]',
   status TEXT NOT NULL DEFAULT 'brouillon' CHECK (status IN ('brouillon', 'pret')),
+  -- Partenaire d'où vient l'import, quand il a été choisi à l'extraction.
+  -- ON DELETE SET NULL : retirer un partenaire ne doit jamais effacer l'import
+  -- (ni ses fiches, ni l'historique des publications) — voir la route DELETE.
+  supplier_id INTEGER REFERENCES suppliers(id) ON DELETE SET NULL,
   created_at INTEGER NOT NULL
 );
 

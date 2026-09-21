@@ -4,6 +4,9 @@ import { scrapeProductFromUrl } from '../importer/scraper.js';
 import { generateListingsForImport, validateSitePayload } from '../importer/listingGenerator.js';
 import { publishListing } from '../importer/publisher.js';
 import { connectors } from '../connectors/index.js';
+import { computeSuggestedPrice } from '../importer/pricing.js';
+import { config } from '../config/env.js';
+import { withResolvedMargin } from './suppliers.js';
 
 export const importsRouter = Router();
 
@@ -15,11 +18,39 @@ function asyncRoute(handler) {
   };
 }
 
+/*
+ * `supplierId` vient d'un <select> du tableau de bord : on accepte le nombre ou
+ * son écriture décimale (« 3 »), mais jamais un partenaire inexistant. Un
+ * import rattaché à un identifiant fantôme afficherait « aucun partenaire »
+ * tout en prétendant le contraire, et sa marge ne serait jamais appliquée.
+ */
+async function resolveSupplierId(value) {
+  if (value === undefined || value === null || value === '') return null;
+
+  const id = Number(value);
+  if (!Number.isInteger(id) || id <= 0) {
+    throw new Error("Partenaire invalide : supplierId doit être l'identifiant d'un fournisseur ou distributeur enregistré.");
+  }
+
+  const supplier = await dbGet('SELECT id FROM suppliers WHERE id = ?', [id]);
+  if (!supplier) {
+    throw new Error(`Partenaire introuvable (id=${id}) : enregistre-le dans l'onglet Fournisseurs avant de l'associer à un import.`);
+  }
+  return id;
+}
+
 // --- Liste des imports ---
 importsRouter.get(
   '/',
   asyncRoute(async (req, res) => {
-    res.json(await dbAll('SELECT * FROM imports ORDER BY created_at DESC LIMIT 100'));
+    // Le partenaire est joint ici (et non rechargé ligne par ligne) pour que la
+    // table des imports puisse dire d'où vient chaque extraction sans N+1.
+    res.json(await dbAll(
+      `SELECT i.*, s.name AS supplier_name, s.kind AS supplier_kind
+       FROM imports i
+       LEFT JOIN suppliers s ON s.id = i.supplier_id
+       ORDER BY i.created_at DESC LIMIT 100`,
+    ));
   }),
 );
 
@@ -27,11 +58,14 @@ importsRouter.get(
 importsRouter.post(
   '/',
   asyncRoute(async (req, res) => {
-    const { url } = req.body || {};
+    const { url, supplierId } = req.body || {};
+    // Validé AVANT l'extraction : inutile de scraper une page si le partenaire
+    // choisi n'existe pas — l'erreur doit tomber tout de suite.
+    const resolvedSupplierId = await resolveSupplierId(supplierId);
     const data = await scrapeProductFromUrl(url);
     const info = await dbRun(
-      `INSERT INTO imports (source_url, source_site, title, raw_description, purchase_price, currency, image_urls, status, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, 'brouillon', ?)`,
+      `INSERT INTO imports (source_url, source_site, title, raw_description, purchase_price, currency, image_urls, status, supplier_id, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, 'brouillon', ?, ?)`,
       [
         url,
         data.sourceSite,
@@ -40,11 +74,18 @@ importsRouter.post(
         data.purchasePrice,
         data.currency,
         JSON.stringify(data.imageUrls),
+        resolvedSupplierId,
         Date.now(),
       ],
     );
-    await logActivity('IMPORT_CREE', `Produit importé depuis ${data.sourceSite} : ${data.title}`);
-    res.status(201).json({ id: info.lastInsertRowid, ...data });
+    const supplier = resolvedSupplierId == null
+      ? null
+      : withResolvedMargin(await dbGet('SELECT * FROM suppliers WHERE id = ?', [resolvedSupplierId]));
+    await logActivity(
+      'IMPORT_CREE',
+      `Produit importé depuis ${data.sourceSite} : ${data.title}${supplier ? ` (partenaire : ${supplier.name})` : ''}`,
+    );
+    res.status(201).json({ id: info.lastInsertRowid, ...data, supplier });
   }),
 );
 
@@ -58,7 +99,12 @@ async function readImportDetail(id) {
     'SELECT * FROM import_listings WHERE import_id = ? ORDER BY marketplace',
     [id],
   );
-  return { ...imp, imageUrls: JSON.parse(imp.image_urls || '[]'), listings };
+  // Le partenaire est renvoyé avec sa marge résolue : le tableau de bord peut
+  // dire quel partenaire est à l'origine de l'import ET quelle marge a servi.
+  const supplier = imp.supplier_id == null
+    ? null
+    : withResolvedMargin(await dbGet('SELECT * FROM suppliers WHERE id = ?', [imp.supplier_id]));
+  return { ...imp, imageUrls: JSON.parse(imp.image_urls || '[]'), listings, supplier };
 }
 
 // --- Détail d'un import + ses fiches par marketplace ---
@@ -131,11 +177,54 @@ importsRouter.patch(
   }),
 );
 
+/*
+ * Applique la marge du partenaire au prix conseillé de CET import.
+ *
+ * C'est tout l'intérêt d'avoir mémorisé le partenaire : la plateforme de gros et
+ * le distributeur local ne vendent pas au même prix, donc le coefficient global
+ * ne peut pas être le bon pour les deux. Le générateur, lui, ne connaît que le
+ * coefficient global (il est partagé et sert aussi hors import) : on réécrit
+ * donc ici le prix des fiches qui viennent d'être créées, en repassant par
+ * computeSuggestedPrice — seule source de vérité, verrou anti-vente à perte
+ * compris. Réécrire APRÈS coup plutôt que de modifier la configuration globale
+ * évite qu'une génération concurrente (autre partenaire, autre marge) hérite du
+ * coefficient d'une autre requête.
+ */
+async function applySupplierMargin(importId, result) {
+  const imp = await dbGet('SELECT purchase_price, supplier_id FROM imports WHERE id = ?', [importId]);
+  if (!imp || imp.supplier_id == null) return result;
+
+  const supplier = await dbGet('SELECT margin_coefficient FROM suppliers WHERE id = ?', [imp.supplier_id]);
+  // NULL = « utiliser le défaut global » : le générateur a déjà calculé le bon
+  // prix, et le réécrire avec la même valeur ne ferait que brouiller l'affichage.
+  if (!supplier || supplier.margin_coefficient == null) return result;
+
+  const price = computeSuggestedPrice(imp.purchase_price, {
+    marginCoefficient: supplier.margin_coefficient,
+    fixedFee: config.pricing.fixedFee,
+  });
+  await dbRun(
+    'UPDATE import_listings SET suggested_price = ?, updated_at = ? WHERE import_id = ?',
+    [price, Date.now(), importId],
+  );
+
+  // La réponse de /generate porte les prix calculés : on les aligne pour que
+  // l'affichage immédiat ne montre pas le coefficient global.
+  const listings = Array.isArray(result?.listings)
+    ? result.listings.map((listing) => (
+      listing && listing.suggestedPrice !== undefined ? { ...listing, suggestedPrice: price } : listing
+    ))
+    : result?.listings;
+  return { ...result, listings };
+}
+
 // --- Étape 2 : génération IA des fiches par marketplace + prix conseillé ---
 importsRouter.post(
   '/:id/generate',
   asyncRoute(async (req, res) => {
-    res.json(await generateListingsForImport(Number(req.params.id)));
+    const importId = Number(req.params.id);
+    const result = await generateListingsForImport(importId);
+    res.json(await applySupplierMargin(importId, result));
   }),
 );
 

@@ -112,6 +112,14 @@ api.get('/config', (req, res) => {
       reason: config.ai.reason,
     },
     channels,
+    /* Coefficient de marge global, exposé pour que le tableau de bord puisse
+       écrire noir sur blanc quelle marge s'applique quand le partenaire choisi
+       n'en a pas de propre. Ce n'est pas un secret : c'est la règle de prix du
+       hub, et la cacher obligerait l'interface à deviner ou à mentir. */
+    pricing: {
+      marginCoefficient: config.pricing.marginCoefficient,
+      fixedFee: config.pricing.fixedFee,
+    },
     missing: missingConfiguration(),
   });
 });
