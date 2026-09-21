@@ -6,6 +6,41 @@ import { config } from '../config/env.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
+/*
+ * Une variable d'environnement saisie dans la mauvaise case, sur la plateforme
+ * d'hébergement, produit sinon une erreur libsql qui ne dit pas d'où elle vient
+ * (« The URL 'openai/gpt-oss-120b' is not in a valid format »). Le service
+ * refuse alors de démarrer sans que rien n'indique QUELLE variable corriger :
+ * c'est exactement ce qu'on cherche pendant dix minutes à 2 h du matin. Ces
+ * deux contrôles nomment la variable fautive et la valeur reçue.
+ */
+const DATABASE_URL_PROTOCOLS = ['libsql:', 'https:', 'http:', 'ws:', 'wss:', 'file:'];
+
+function assertDatabaseConfigIsCoherent() {
+  const { url, authToken } = config.turso;
+
+  if (process.env.TURSO_DATABASE_URL && !DATABASE_URL_PROTOCOLS.some((p) => url.startsWith(p))) {
+    throw new Error(
+      `TURSO_DATABASE_URL n'est pas une adresse de base valide : ${JSON.stringify(String(url).slice(0, 80))}. `
+      + "Attendu : libsql://… (Turso), https://…, ou file:./data/megalomarket.db en local. "
+      + "Cause la plus fréquente : les variables d'environnement de la plateforme sont décalées "
+      + "et une valeur a été collée dans la mauvaise case. "
+      + 'Pour redémarrer immédiatement, vide TURSO_DATABASE_URL : le service repartira sur une base locale.',
+    );
+  }
+
+  const remote = url.startsWith('libsql:') || url.startsWith('http') || url.startsWith('ws');
+  if (remote && !authToken) {
+    throw new Error(
+      'TURSO_DATABASE_URL pointe vers une base distante mais TURSO_AUTH_TOKEN est absente : '
+      + 'la connexion sera refusée. Renseigne le jeton (turso db tokens create <base>), '
+      + 'ou vide TURSO_DATABASE_URL pour utiliser une base locale.',
+    );
+  }
+}
+
+assertDatabaseConfigIsCoherent();
+
 if (config.turso.url.startsWith('file:')) {
   mkdirSync(dirname(config.turso.url.slice('file:'.length)), { recursive: true });
 }
