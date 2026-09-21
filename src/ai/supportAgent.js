@@ -1,4 +1,4 @@
-import { askClaude } from './client.js';
+import { askClaude, parseJsonFromModel } from './client.js';
 import { dbGet, dbRun, logActivity } from '../db/database.js';
 
 const SYSTEM_PROMPT = `Tu es agent de support client pour Megalomarket, une boutique d'articles pour enfants vendant sur eBay, Amazon, TikTok Shop et son site propre.
@@ -39,7 +39,7 @@ ${customerMessage.trim()}
   const raw = await askClaude({ system: SYSTEM_PROMPT, prompt, maxTokens: 700 });
   let parsed;
   try {
-    parsed = JSON.parse(raw);
+    parsed = parseJsonFromModel(raw);
   } catch {
     throw new Error(`Réponse IA non exploitable (JSON invalide) : ${raw.slice(0, 200)}`);
   }

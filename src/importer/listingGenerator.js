@@ -1,4 +1,4 @@
-import { askClaude } from '../ai/client.js';
+import { askClaude, parseJsonFromModel } from '../ai/client.js';
 import { dbGet, dbRun } from '../db/database.js';
 import { computeSuggestedPrice } from './pricing.js';
 import { config } from '../config/env.js';
@@ -158,7 +158,7 @@ async function generateSiteListing(imp, taxonomy) {
 
   let parsed;
   try {
-    parsed = JSON.parse(raw);
+    parsed = parseJsonFromModel(raw);
   } catch {
     throw new Error(`Réponse IA non exploitable pour le site propre (JSON invalide) : ${raw.slice(0, 200)}`);
   }
@@ -190,7 +190,7 @@ export async function generateListingsForImport(importId) {
   const raw = await askClaude({ system: SYSTEM_PROMPT, prompt: buildPrompt(imp), maxTokens: 1800 });
   let parsed;
   try {
-    parsed = JSON.parse(raw);
+    parsed = parseJsonFromModel(raw);
   } catch {
     throw new Error(`Réponse IA non exploitable (JSON invalide) : ${raw.slice(0, 200)}`);
   }

@@ -1,4 +1,4 @@
-import { askClaude } from './client.js';
+import { askClaude, parseJsonFromModel } from './client.js';
 import { dbAll, dbGet, dbRun, logActivity } from '../db/database.js';
 
 const SYSTEM_PROMPT = `Tu es un expert en tarification e-commerce multicanal pour Megalomarket, une boutique pour enfants.
@@ -43,7 +43,7 @@ export async function generatePriceRecommendations(productId) {
 
   let parsed;
   try {
-    parsed = JSON.parse(raw);
+    parsed = parseJsonFromModel(raw);
   } catch {
     throw new Error(`Réponse IA non exploitable (JSON invalide) : ${raw.slice(0, 200)}`);
   }

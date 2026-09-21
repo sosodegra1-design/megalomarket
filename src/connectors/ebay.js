@@ -74,10 +74,42 @@ async function ebayFetch(path, options = {}) {
   return response.status === 204 ? null : response.json();
 }
 
+/**
+ * eBay ne rend qu'une page à la fois, et les syncs tournent en boucle : sans
+ * pagination, toute commande au-delà de la première page était perdue
+ * définitivement (le sync suivant repartait du même offset 0) et l'inventaire
+ * restait partiel dès le 51e SKU, sans erreur ni avertissement. On suit donc
+ * `offset`/`limit` jusqu'à une page incomplète.
+ *
+ * Le plafond de 20 pages évite une boucle infinie si l'API renvoyait toujours
+ * des pages pleines (bug ou données incohérentes côté eBay) : 20 × 20 = 400
+ * commandes et 20 × 50 = 1000 SKU couvrent largement le volume de la boutique,
+ * tout en bornant le nombre d'appels par cycle.
+ */
+const MAX_PAGES = 20;
+
+/** Parcourt toutes les pages d'un endpoint eBay en suivant offset/limit. */
+async function fetchAllPages(buildPath, limit, extractItems) {
+  const items = [];
+  for (let page = 0; page < MAX_PAGES; page += 1) {
+    const data = await ebayFetch(buildPath(limit, page * limit));
+    const batch = extractItems(data) || [];
+    items.push(...batch);
+    // Une page incomplète signale la dernière page : inutile d'en demander une
+    // autre, qui renverrait un tableau vide au prix d'un appel réseau.
+    if (batch.length < limit) break;
+  }
+  return items;
+}
+
 /** Liste les commandes récentes (Fulfillment API). */
 export async function listOrders({ limit = 20 } = {}) {
-  const data = await ebayFetch(`/sell/fulfillment/v1/order?limit=${limit}`);
-  return (data.orders || []).map((order) => ({
+  const orders = await fetchAllPages(
+    (pageLimit, offset) => `/sell/fulfillment/v1/order?limit=${pageLimit}&offset=${offset}`,
+    limit,
+    (data) => data.orders,
+  );
+  return orders.map((order) => ({
     externalOrderId: order.orderId,
     status: order.orderFulfillmentStatus,
     amount: Number(order.pricingSummary?.total?.value || 0),
@@ -92,8 +124,12 @@ export async function listOrders({ limit = 20 } = {}) {
 
 /** Liste les articles d'inventaire (Inventory API). */
 export async function listInventoryItems({ limit = 50 } = {}) {
-  const data = await ebayFetch(`/sell/inventory/v1/inventory_item?limit=${limit}`);
-  return (data.inventoryItems || []).map((item) => ({
+  const items = await fetchAllPages(
+    (pageLimit, offset) => `/sell/inventory/v1/inventory_item?limit=${pageLimit}&offset=${offset}`,
+    limit,
+    (data) => data.inventoryItems,
+  );
+  return items.map((item) => ({
     sku: item.sku,
     quantity: item.availability?.shipToLocationAvailability?.quantity ?? 0,
     title: item.product?.title,

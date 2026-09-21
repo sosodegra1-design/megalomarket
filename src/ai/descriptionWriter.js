@@ -1,4 +1,4 @@
-import { askClaude } from './client.js';
+import { askClaude, parseJsonFromModel } from './client.js';
 import { dbGet, dbRun, logActivity } from '../db/database.js';
 
 const CHANNEL_GUIDANCE = {
@@ -28,7 +28,7 @@ Rédige une description adaptée à ce canal.`;
   const raw = await askClaude({ system: SYSTEM_PROMPT, prompt, maxTokens: 600 });
   let parsed;
   try {
-    parsed = JSON.parse(raw);
+    parsed = parseJsonFromModel(raw);
   } catch {
     throw new Error(`Réponse IA non exploitable (JSON invalide) : ${raw.slice(0, 200)}`);
   }
