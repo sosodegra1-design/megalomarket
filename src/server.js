@@ -24,6 +24,53 @@ app.use('/api', api);
 app.use('/api/imports', importsRouter);
 app.use(express.static(join(__dirname, 'public')));
 
+/* Décrit la base visée sans jamais exposer le jeton : l'hôte suffit à voir d'un
+   coup d'œil si l'adresse est bien celle qu'on croit. */
+function describeDatabase() {
+  const url = config.turso.url;
+  if (url.startsWith('file:')) return 'locale (perdue à chaque redéploiement)';
+  try {
+    return `distante (${new URL(url).host})`;
+  } catch {
+    return 'distante (adresse illisible)';
+  }
+}
+
+/* Une erreur de connexion brute ne dit rien d'exploitable : « SERVER_ERROR:
+   Server returned HTTP status 400 » ne permet pas de savoir si l'adresse est
+   fausse, le jeton périmé, ou la base inexistante — et comme le service refuse
+   de démarrer, il ne reste aucun autre moyen de diagnostiquer. On traduit donc
+   les cas courants en actions concrètes. */
+function describeDatabaseStartupError(error) {
+  const url = config.turso.url;
+  if (url.startsWith('file:')) return error;
+
+  let host = url;
+  try { host = new URL(url).host; } catch { /* adresse illisible : on la montre telle quelle */ }
+
+  const status = error?.cause?.status ?? error?.status;
+  const hints = [];
+
+  // 400 et 404 sont ce que Turso renvoie quand l'adresse ne désigne aucune base
+  // accessible avec ce jeton (vérifié : 404 pour une base inexistante).
+  if (status === 400 || status === 404) {
+    hints.push("Turso ne trouve aucune base à cette adresse avec ce jeton : l'adresse ou le jeton est faux, ou ne correspond pas à la même base");
+  } else if (status === 401 || status === 403) {
+    hints.push('jeton refusé : il est peut-être révoqué, expiré, ou destiné à une autre base');
+  } else if (/ENOTFOUND|EAI_AGAIN|fetch failed/i.test(String(error?.message))) {
+    hints.push("l'hôte est injoignable : l'adresse comporte probablement une faute de frappe");
+  }
+
+  hints.push('vérifie les deux variables avec « turso db show <base> --url » et « turso db tokens create <base> »');
+  hints.push('pour repartir tout de suite, vide TURSO_DATABASE_URL : le service démarrera sur une base locale');
+
+  return new Error(
+    `Connexion à la base distante impossible (${host})${status ? ` — HTTP ${status}` : ''}. `
+    + `Pistes : ${hints.join(' ; ')}. `
+    + `Erreur d'origine : ${error?.message ?? error}`,
+  );
+}
+
 /* Récapitulatif au démarrage. Sur une plateforme gratuite on jongle avec une
    dizaine de variables, et une seule oubliée se traduit par un 503 opaque ou
    une fonction silencieusement inerte : ce journal dit en quelques lignes ce
@@ -33,7 +80,7 @@ function logConfigurationSummary() {
   const state = (value) => (value ? 'ok' : 'MANQUANT');
 
   const lines = [
-    ['base de données', config.turso.url.startsWith('file:') ? 'locale (perdue à chaque redéploiement)' : 'distante (persistante)'],
+    ['base de données', describeDatabase()],
     ['accès au service', config.admin.apiKey ? 'protégé par clé' : 'VERROUILLÉ — ADMIN_API_KEY manquante, tout répond 503'],
     ['fournisseur IA', config.ai?.ready
       ? `${config.ai.provider} (${config.ai.model})`
@@ -47,7 +94,14 @@ function logConfigurationSummary() {
 }
 
 export async function start() {
-  await initDatabase();
+  // La base est indispensable : sans elle il n'y a rien à servir. L'échec reste
+  // donc fatal, mais il doit être lisible.
+  try {
+    await initDatabase();
+  } catch (error) {
+    throw describeDatabaseStartupError(error);
+  }
+
   return app.listen(config.port, () => {
     logActivity('DEMARRAGE', `Serveur Megalomarket AI Core démarré sur le port ${config.port}.`).catch(console.error);
     console.log(`Megalomarket AI Core en écoute sur http://localhost:${config.port}`);
