@@ -18,7 +18,7 @@ export function getAnthropicClient() {
 export async function askClaude({ system, prompt, maxTokens = 1024 }) {
   const anthropic = getAnthropicClient();
   const response = await anthropic.messages.create({
-    model: 'claude-sonnet-4-5',
+    model: config.anthropicModel,
     max_tokens: maxTokens,
     system,
     messages: [{ role: 'user', content: prompt }],

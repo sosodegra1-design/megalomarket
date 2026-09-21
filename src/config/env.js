@@ -14,6 +14,13 @@ export const config = {
 
   anthropicApiKey: process.env.ANTHROPIC_API_KEY || null,
 
+  // Modèle utilisé pour toutes les fonctions IA. Configurable pour ne pas
+  // dépendre d'un déploiement le jour où un modèle est retiré : Anthropic
+  // annonce ces retraits à l'avance (claude-sonnet-4-5, le précédent choix,
+  // n'était plus garanti au-delà du 29 septembre 2026) et changer une variable
+  // d'environnement est plus rapide qu'une modification de code.
+  anthropicModel: process.env.ANTHROPIC_MODEL || 'claude-sonnet-5',
+
   // Clé partagée protégeant l'ensemble du service : routes d'API, module
   // d'import et tableau de bord. Lue via un getter, donc à chaque requête —
   // c'est ce qui permet de vérifier le comportement « échec en fermé » quand
