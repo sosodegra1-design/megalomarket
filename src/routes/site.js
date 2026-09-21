@@ -30,12 +30,154 @@ function requireOwnSite() {
   return connector;
 }
 
+/* Les libellés anglais sont exigés par le site (ses filtres reposent dessus),
+   mais imposer une saisie bilingue à quelqu'un qui gère sa boutique seul au
+   quotidien découragerait l'usage. On reprend donc automatiquement le texte
+   français quand le champ anglais est laissé vide — l'utilisateur peut
+   toujours le corriger ensuite s'il veut une vraie traduction. */
+function fallbackToFrench(value, frenchValue) {
+  const trimmed = typeof value === 'string' ? value.trim() : '';
+  return trimmed || (typeof frenchValue === 'string' ? frenchValue.trim() : '');
+}
+
+function requireNonEmpty(value, label) {
+  if (typeof value !== 'string' || !value.trim()) {
+    throw new Error(`Champ « ${label} » obligatoire.`);
+  }
+  return value.trim();
+}
+
+function parsePrice(value, { required }) {
+  if (value === undefined || value === null || value === '') {
+    if (required) throw new Error('Prix obligatoire.');
+    return undefined;
+  }
+  const price = Number(value);
+  if (!Number.isFinite(price) || price <= 0) {
+    throw new Error('Prix invalide : un nombre strictement supérieur à 0 est attendu.');
+  }
+  return price;
+}
+
+function parseImages(value) {
+  if (value === undefined) return undefined;
+  if (!Array.isArray(value)) throw new Error('images doit être un tableau d\'URLs.');
+  return value.map((url) => String(url).trim()).filter(Boolean);
+}
+
+/* Vérifie catégorie/univers/icône contre les listes fermées du site, quand
+   elles sont fournies. Une valeur absente n'est jamais forcée ici — c'est au
+   type d'appel (création ou modification) de dire ce qui est obligatoire. */
+async function checkTaxonomy(connector, { category, universe, iconKey }) {
+  if (category === undefined && universe === undefined && iconKey === undefined) return;
+  const taxonomy = await connector.getTaxonomy();
+  if (category !== undefined && !taxonomy.categories.includes(category)) {
+    throw new Error(`Catégorie "${category}" inconnue du site. Valeurs autorisées : ${taxonomy.categories.join(', ')}.`);
+  }
+  if (universe !== undefined && universe !== null && universe !== '' && !taxonomy.universes.includes(universe)) {
+    throw new Error(`Univers "${universe}" inconnu du site. Valeurs autorisées : ${taxonomy.universes.join(', ')}.`);
+  }
+  if (iconKey !== undefined && !taxonomy.iconKeys.includes(iconKey)) {
+    throw new Error(`Clé d'icône "${iconKey}" inconnue du site. Valeurs autorisées : ${taxonomy.iconKeys.join(', ')}.`);
+  }
+}
+
 // --- Catalogue complet du site (route publique côté site, pas besoin de clé site) ---
 siteRouter.get(
   '/products',
   asyncRoute(async (req, res) => {
     const connector = requireOwnSite();
     res.json(await connector.listProducts());
+  }),
+);
+
+// --- Listes fermées (catégories, univers, icônes) pour les menus déroulants du formulaire ---
+siteRouter.get(
+  '/taxonomy',
+  asyncRoute(async (req, res) => {
+    const connector = requireOwnSite();
+    res.json(await connector.getTaxonomy());
+  }),
+);
+
+// --- Détail d'un produit (pour pré-remplir le formulaire de modification) ---
+siteRouter.get(
+  '/products/:id',
+  asyncRoute(async (req, res) => {
+    const connector = requireOwnSite();
+    res.json(await connector.getProduct(req.params.id));
+  }),
+);
+
+// --- Ajoute un nouvel article, saisi à la main (pas d'URL fournisseur) ---
+siteRouter.post(
+  '/products',
+  asyncRoute(async (req, res) => {
+    const connector = requireOwnSite();
+    const body = req.body || {};
+
+    const name = requireNonEmpty(body.name, 'Nom');
+    const category = requireNonEmpty(body.category, 'Catégorie');
+    const age = requireNonEmpty(body.age, 'Âge');
+    const ageLabel = requireNonEmpty(body.ageLabel, 'Âge (libellé)');
+    const iconKey = requireNonEmpty(body.iconKey, 'Icône');
+    const universe = body.universe && body.universe.trim() ? body.universe.trim() : null;
+
+    await checkTaxonomy(connector, { category, universe, iconKey });
+
+    const payload = {
+      name,
+      name_en: fallbackToFrench(body.nameEn, name) || name,
+      description: typeof body.description === 'string' ? body.description.trim() : '',
+      description_en: fallbackToFrench(body.descriptionEn, body.description) || '',
+      category,
+      universe,
+      age,
+      ageLabel,
+      ageLabel_en: fallbackToFrench(body.ageLabelEn, ageLabel) || ageLabel,
+      iconKey,
+      price: parsePrice(body.price, { required: true }),
+      images: parseImages(body.images) || [],
+    };
+
+    const created = await connector.createListing(payload);
+    await logActivity('SITE_PRODUIT_CREE', `Article ajouté sur le site : ${name}${created?.offerId ? ` (${created.offerId})` : ''}.`);
+    res.status(201).json(created);
+  }),
+);
+
+// --- Modifie un article existant (textes, prix, photos) ---
+siteRouter.patch(
+  '/products/:id',
+  asyncRoute(async (req, res) => {
+    const connector = requireOwnSite();
+    const body = req.body || {};
+    const fields = {};
+
+    if (body.name !== undefined) fields.name = requireNonEmpty(body.name, 'Nom');
+    if (body.nameEn !== undefined) fields.name_en = requireNonEmpty(body.nameEn, 'Nom (anglais)');
+    if (body.description !== undefined) fields.description = String(body.description).trim();
+    if (body.descriptionEn !== undefined) fields.description_en = String(body.descriptionEn).trim();
+    if (body.category !== undefined) fields.category = requireNonEmpty(body.category, 'Catégorie');
+    if (body.universe !== undefined) fields.universe = body.universe && body.universe.trim() ? body.universe.trim() : null;
+    if (body.iconKey !== undefined) fields.iconKey = requireNonEmpty(body.iconKey, 'Icône');
+    if (body.age !== undefined) fields.age = requireNonEmpty(body.age, 'Âge');
+    if (body.ageLabel !== undefined) fields.ageLabel = requireNonEmpty(body.ageLabel, 'Âge (libellé)');
+    if (body.ageLabelEn !== undefined) fields.ageLabel_en = requireNonEmpty(body.ageLabelEn, 'Âge (libellé anglais)');
+    if (body.price !== undefined) fields.price = parsePrice(body.price, { required: false });
+    if (body.images !== undefined) fields.images = parseImages(body.images);
+
+    if (!Object.keys(fields).length) throw new Error('Aucune modification fournie.');
+
+    await checkTaxonomy(connector, {
+      category: fields.category,
+      universe: fields.universe,
+      iconKey: fields.iconKey,
+    });
+
+    const updated = await connector.updateProduct(req.params.id, fields);
+    await logActivity('SITE_PRODUIT_MODIFIE', `Article modifié sur le site : ${req.params.id}.`);
+    res.json(updated);
   }),
 );
 

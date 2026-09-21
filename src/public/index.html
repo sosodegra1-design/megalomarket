@@ -1773,7 +1773,94 @@
         <!-- Catalogue réel du site propre, indépendant des imports Megalomarket :
              un produit déjà en ligne avant l'import (ou ajouté directement) n'a
              pas de fiche à côté du bouton « Dépublier » des Imports — c'est ici
-             qu'on peut le retrouver et le retirer. -->
+             qu'on peut le retrouver et le retirer.
+
+             Mini-CMS : un seul formulaire sert à la fois à ajouter un nouvel
+             article et à en modifier un existant (bouton « Modifier » sur sa
+             ligne) — un utilisateur non technique n'a qu'un seul écran à
+             apprendre, pas deux. -->
+        <div class="card reveal-in" id="siteArticleFormCard">
+          <div class="card-head card-head-line">
+            <div class="card-head-text">
+              <h2 id="siteArticleFormTitle">Ajouter un article</h2>
+              <p>Un article correspond à un produit affiché sur ton site. Remplis ce formulaire pour en publier un nouveau ; pour corriger un article déjà en ligne, clique « Modifier » sur sa ligne dans le tableau plus bas.</p>
+            </div>
+          </div>
+
+          <details class="site-details">
+            <summary>Tutoriel rapide (clique pour l'afficher)</summary>
+            <ol class="teach-steps" style="margin-top:10px">
+              <li><span class="teach-num" aria-hidden="true">1</span><span><b>Ajouter un article</b> : remplis le nom, la catégorie, le prix et au moins une photo, puis clique « Publier l'article ». Il apparaît tout de suite sur ton site.</span></li>
+              <li><span class="teach-num" aria-hidden="true">2</span><span><b>Modifier un article</b> : dans le tableau plus bas, clique « Modifier » sur sa ligne — le formulaire se remplit tout seul avec ce qui existe déjà. Corrige, puis clique « Enregistrer les modifications ».</span></li>
+              <li><span class="teach-num" aria-hidden="true">3</span><span><b>Supprimer un article</b> : clique « Supprimer » sur sa ligne, puis confirme. C'est définitif : l'article disparaît vraiment du site.</span></li>
+              <li><span class="teach-num" aria-hidden="true">4</span><span><b>Photos</b> : colle une adresse de photo par ligne (elle doit commencer par http:// ou https://) — pas d'envoi de fichier ici, il faut d'abord héberger la photo quelque part (ton téléphone, un service de stockage d'images) puis coller son adresse.</span></li>
+            </ol>
+          </details>
+
+          <div class="panel">
+            <section class="panel-section">
+              <h3 class="panel-section-title">Texte</h3>
+              <div class="field-grid">
+                <div class="field field-wide field-required" id="artNameField">
+                  <label for="artName">Nom du produit</label>
+                  <input type="text" id="artName" placeholder="Puzzle 3D en bois Tour Eiffel" autocomplete="off">
+                </div>
+                <div class="field field-wide">
+                  <label for="artDescription">Description (optionnel)</label>
+                  <textarea class="input textarea" id="artDescription" rows="3" placeholder="Un joli puzzle en bois, pour les curieux dès 6 ans."></textarea>
+                </div>
+              </div>
+              <p class="field-help">La version anglaise du site reprend automatiquement ce texte si tu ne la remplis pas — utile si tu ne traduis pas toi-même.</p>
+            </section>
+
+            <section class="panel-section">
+              <h3 class="panel-section-title">Classement et prix</h3>
+              <div class="field-grid">
+                <div class="field field-required">
+                  <label for="artCategory">Catégorie</label>
+                  <select id="artCategory"><option value="">— Choisir —</option></select>
+                </div>
+                <div class="field">
+                  <label for="artUniverse">Univers (optionnel)</label>
+                  <select id="artUniverse"><option value="">Aucun</option></select>
+                </div>
+                <div class="field field-required">
+                  <label for="artIconKey">Icône</label>
+                  <select id="artIconKey"><option value="">— Choisir —</option></select>
+                </div>
+                <div class="field field-required">
+                  <label for="artAge">Âge (code court)</label>
+                  <input type="text" id="artAge" placeholder="6-8" autocomplete="off">
+                </div>
+                <div class="field field-required">
+                  <label for="artAgeLabel">Âge (libellé affiché)</label>
+                  <input type="text" id="artAgeLabel" placeholder="6-8 ans" autocomplete="off">
+                </div>
+                <div class="field field-required">
+                  <label for="artPrice">Prix (€)</label>
+                  <input type="number" id="artPrice" step="0.01" min="0.01" placeholder="19.90">
+                </div>
+              </div>
+            </section>
+
+            <section class="panel-section">
+              <h3 class="panel-section-title">Photos</h3>
+              <div class="field field-wide">
+                <label for="artImages">Adresses des photos (une par ligne)</label>
+                <textarea class="input textarea mono" id="artImages" rows="4" placeholder="https://…/photo1.jpg
+https://…/photo2.jpg"></textarea>
+              </div>
+              <div id="artImagesPreview" style="display:flex;flex-wrap:wrap;gap:8px;margin-top:8px"></div>
+            </section>
+
+            <div class="panel-foot">
+              <button class="btn" id="btnPublishArticle" type="button">Publier l'article</button>
+              <button class="btn btn-ghost" id="btnResetArticle" type="button">Vider le formulaire</button>
+              <p class="hint hint-tight" id="artEditingHint" hidden>Modification en cours — clique « Vider le formulaire » pour annuler et repartir sur un nouvel article.</p>
+            </div>
+          </div>
+        </div>
+
         <div class="card table-card reveal-in" id="siteProductsCard">
           <div class="table-tools">
             <div class="table-tools-text">
@@ -4954,7 +5041,10 @@ const siteProductsTable = createTable({
     + '<td data-label="Nom">' + esc(p.name || '(sans nom)') + '</td>'
     + '<td data-label="Identifiant"><span class="pill off">' + esc(p.id) + '</span></td>'
     + '<td data-label="Prix">' + (p.price != null ? money(p.price) : '<span class="muted">—</span>') + '</td>'
-    + '<td class="table-actions"><button class="btn btn-ghost btn-xs" type="button" data-action="delete-site-product" data-id="' + esc(p.id) + '" data-name="' + esc(p.name || p.id) + '">Supprimer</button></td>'
+    + '<td class="table-actions">'
+    + '<button class="btn btn-ghost btn-xs" type="button" data-action="edit-site-product" data-id="' + esc(p.id) + '">Modifier</button>'
+    + '<button class="btn btn-ghost btn-xs" type="button" data-action="delete-site-product" data-id="' + esc(p.id) + '" data-name="' + esc(p.name || p.id) + '">Supprimer</button>'
+    + '</td>'
     + '</tr>'
   ),
 });
@@ -4983,14 +5073,144 @@ async function loadSiteProducts() {
 }
 
 onAction($('siteProducts'), {
+  'edit-site-product': (button) => action(button, async () => {
+    const product = await api('/api/site/products/' + encodeURIComponent(button.dataset.id));
+    fillArticleForm(button.dataset.id, product);
+    $('siteArticleFormCard').scrollIntoView({ behavior: motionOK() ? 'smooth' : 'auto', block: 'start' });
+  }),
+
   'delete-site-product': (button) => action(button, async () => {
     const name = button.dataset.name || button.dataset.id;
     if (!confirmChannelWrite('Retirer réellement « ' + name + ' » du site ?')) return null;
     const result = await api('/api/site/products/' + encodeURIComponent(button.dataset.id), { method: 'DELETE' });
+    if (state.editingSiteProductId === button.dataset.id) resetArticleForm();
     await loadSiteProducts();
     confirmFlash($('siteProductsCard'));
     return result;
   }, 'Produit retiré du site.'),
+});
+
+/* ===================== FORMULAIRE ARTICLE (mini-CMS) =====================
+   Un seul formulaire pour créer (POST) et modifier (PATCH) : « Modifier »
+   sur une ligne le pré-remplit et bascule son bouton sur l'enregistrement,
+   plutôt que de dupliquer les champs dans chaque ligne de tableau — un seul
+   écran à apprendre pour quelqu'un qui gère son site seul au quotidien. */
+state.siteTaxonomy = { categories: [], universes: [], iconKeys: [] };
+state.editingSiteProductId = null;
+
+function fillSelect(id, values, { placeholder } = {}) {
+  const select = $(id);
+  if (!select) return;
+  const current = select.value;
+  select.innerHTML = (placeholder ? '<option value="">' + esc(placeholder) + '</option>' : '')
+    + values.map((v) => '<option value="' + esc(v) + '">' + esc(v) + '</option>').join('');
+  if (values.includes(current)) select.value = current;
+}
+
+async function loadSiteTaxonomy() {
+  try {
+    state.siteTaxonomy = await api('/api/site/taxonomy');
+  } catch {
+    state.siteTaxonomy = { categories: [], universes: [], iconKeys: [] }; // connecteur non configuré : formulaire vide, pas d'erreur bruyante
+  }
+  fillSelect('artCategory', state.siteTaxonomy.categories || [], { placeholder: '— Choisir —' });
+  fillSelect('artUniverse', state.siteTaxonomy.universes || [], { placeholder: 'Aucun' });
+  fillSelect('artIconKey', state.siteTaxonomy.iconKeys || [], { placeholder: '— Choisir —' });
+}
+
+/* Aperçu en direct des photos collées (une URL par ligne) : une image cassée
+   s'efface plutôt que d'afficher l'icône de lien rompu du navigateur, pour
+   qu'une adresse fausse se voie tout de suite sans jargon technique. */
+function renderArticleImagesPreview() {
+  const box = $('artImagesPreview');
+  if (!box) return;
+  const urls = ($('artImages').value || '').split('\n').map((u) => u.trim()).filter(Boolean);
+  box.innerHTML = urls.map((url) => (
+    '<div style="width:72px;height:72px;border-radius:10px;overflow:hidden;border:1px solid rgba(255,255,255,.14)">'
+    + '<img src="' + esc(url) + '" alt="" loading="lazy" style="width:100%;height:100%;object-fit:cover;display:block" onerror="this.style.opacity=\'0.15\'">'
+    + '</div>'
+  )).join('');
+}
+$('artImages').addEventListener('input', renderArticleImagesPreview);
+
+function resetArticleForm() {
+  state.editingSiteProductId = null;
+  for (const id of ['artName', 'artDescription', 'artAge', 'artAgeLabel', 'artPrice', 'artImages']) {
+    const el = $(id);
+    if (el) el.value = '';
+  }
+  $('artCategory').value = '';
+  $('artUniverse').value = '';
+  $('artIconKey').value = '';
+  $('siteArticleFormTitle').textContent = 'Ajouter un article';
+  $('btnPublishArticle').textContent = 'Publier l\'article';
+  $('artEditingHint').hidden = true;
+  renderArticleImagesPreview();
+}
+
+/* Pré-remplit le formulaire avec un article existant. Le détail complet
+   (GET /api/site/products/:id) porte les champs bruts du site (name_en,
+   ageLabel_en…) : on ne montre que la version française, les champs anglais
+   restent en secours automatique tant que l'utilisateur ne les touche pas. */
+function fillArticleForm(id, product) {
+  state.editingSiteProductId = String(id);
+  $('artName').value = product.name || '';
+  $('artDescription').value = product.description || '';
+  $('artCategory').value = product.category || '';
+  $('artUniverse').value = product.universe || '';
+  $('artIconKey').value = product.iconKey || '';
+  $('artAge').value = product.age || '';
+  $('artAgeLabel').value = product.ageLabel || '';
+  $('artPrice').value = product.price != null ? String(product.price) : '';
+  $('artImages').value = Array.isArray(product.images) ? product.images.join('\n') : '';
+  renderArticleImagesPreview();
+  $('siteArticleFormTitle').textContent = 'Modifier « ' + (product.name || id) + ' »';
+  $('btnPublishArticle').textContent = 'Enregistrer les modifications';
+  $('artEditingHint').hidden = false;
+}
+
+function readArticleImages() {
+  return ($('artImages').value || '').split('\n').map((u) => u.trim()).filter(Boolean);
+}
+
+$('btnPublishArticle').addEventListener('click', (event) => action(event.currentTarget, async () => {
+  const name = $('artName').value.trim();
+  if (!name) throw new Error('Le nom du produit est obligatoire.');
+
+  const body = {
+    name,
+    description: $('artDescription').value.trim(),
+    category: $('artCategory').value,
+    universe: $('artUniverse').value || null,
+    iconKey: $('artIconKey').value,
+    age: $('artAge').value.trim(),
+    ageLabel: $('artAgeLabel').value.trim(),
+    price: Number($('artPrice').value),
+    images: readArticleImages(),
+  };
+
+  if (state.editingSiteProductId) {
+    await api('/api/site/products/' + encodeURIComponent(state.editingSiteProductId), {
+      method: 'PATCH', body: JSON.stringify(body),
+    });
+  } else {
+    if (!body.category || !body.iconKey) throw new Error('Choisis une catégorie et une icône avant de publier.');
+    if (!body.age || !body.ageLabel) throw new Error('Renseigne l\'âge (code court et libellé) avant de publier.');
+    await api('/api/site/products', { method: 'POST', body: JSON.stringify(body) });
+  }
+
+  const wasEditing = Boolean(state.editingSiteProductId);
+  resetArticleForm();
+  await loadSiteProducts();
+  confirmFlash($('siteProductsCard'));
+  return { wasEditing };
+}, 'Article enregistré.'));
+
+$('btnResetArticle').addEventListener('click', (event) => {
+  event.preventDefault();
+  resetArticleForm();
+  const name = $('artName');
+  if (name && typeof name.focus === 'function') name.focus();
 });
 
 /* ===================== ROUTAGE PAR ANCRE =====================
@@ -5168,7 +5388,7 @@ async function loadAll() {
   await loadConfig();
   // Chaque bloc est indépendant : une section en erreur ne doit pas vider les autres.
   const loadImportsAndDetails = async () => { await loadImports(); await hydrateImportDetails(); };
-  const blocks = [loadChannels, loadProducts, loadRecommendations, loadSuppliers, loadImportsAndDetails, loadActivity, loadDistributors, loadDenicheur, loadSiteProducts];
+  const blocks = [loadChannels, loadProducts, loadRecommendations, loadSuppliers, loadImportsAndDetails, loadActivity, loadDistributors, loadDenicheur, loadSiteProducts, loadSiteTaxonomy];
   const errors = [];
   await Promise.all(blocks.map((fn) => fn().catch((error) => { errors.push(fn.name + ' : ' + error.message); })));
   renderDashboard();
