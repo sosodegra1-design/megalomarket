@@ -12,6 +12,51 @@ Service central de recommandations IA et de synchronisation omnicanale pour Mega
 - **Qualification de messages de support client** (catégorie, urgence, réponse proposée) — la décision finale sur un remboursement ou un litige reste toujours humaine, l'IA ne fait qu'assister (`src/ai/supportAgent.js`).
 - **Tableau de bord** (`src/public/index.html`) : import d'un produit par lien en deux étapes (extraction puis génération IA), édition et publication par canal, produits, recommandations à appliquer, support, synchronisations, journal d'activité.
 
+## Fournisseur IA : Anthropic ou compatible OpenAI (dont le gratuit)
+
+Toutes les fonctions IA passent par **un seul point d'entrée** (`askModel` dans `src/ai/client.js`),
+dont le fournisseur est configurable. La raison n'est pas le confort : le moteur était branché sur
+un seul vendeur, donc un changement de prix, un modèle retiré ou un compte sans crédit faisait
+tomber d'un coup l'import, les prix, les descriptions **et** le support. Groq, Cerebras,
+OpenRouter, Google Gemini et Ollama local exposent tous la même API « compatible OpenAI »
+(`/chat/completions`) : un seul adaptateur les couvre, et changer de fournisseur ne demande aucune
+modification de code.
+
+**Anthropic** (comportement historique) :
+
+```bash
+ANTHROPIC_API_KEY=sk-ant-...
+ANTHROPIC_MODEL=claude-sonnet-5
+```
+
+**Fournisseur compatible OpenAI** (ici Groq, gratuit) :
+
+```bash
+AI_BASE_URL=https://api.groq.com/openai/v1
+AI_API_KEY=...
+AI_MODEL=<le modèle exact, visible dans la console du fournisseur>
+```
+
+`AI_PROVIDER` (`anthropic` | `openai`) est facultatif : sans lui, la clé Anthropic l'emporte si
+elle est présente, sinon le chemin compatible OpenAI est utilisé dès que `AI_BASE_URL` et
+`AI_API_KEY` sont renseignées. `AI_MODEL` est **obligatoire** sur le chemin compatible OpenAI — il
+n'existe aucun nom de modèle commun à ces fournisseurs. Les bases et les paliers gratuits connus
+sont détaillés dans `.env.example`.
+
+### Ce qu'il faut savoir sur les paliers gratuits
+
+Ils changent leurs limites souvent, et un plafond journalier atteint **arrête la fonction IA
+jusqu'au lendemain** (un plafond par minute, jusqu'à la minute suivante). L'erreur HTTP 429 le dit
+explicitement plutôt que de laisser croire à une panne.
+
+Un point de confidentialité compte plus que les quotas : sur le **palier gratuit de Google
+Gemini**, Google utilise le contenu envoyé pour améliorer ses produits. L'agent de support traite
+des **messages clients** (données personnelles) : un palier qui s'entraîne sur les données est un
+vrai problème RGPD/vie privée. Pour cette fonction, n'utilise donc pas le palier gratuit Gemini —
+son palier payant, lui, ne s'entraîne pas sur ton contenu. Groq, Cerebras et OpenRouter
+n'entraînent pas sur tes données. Ollama local est gratuit et totalement privé, mais ne peut pas
+tourner quand le hub est hébergé.
+
 ## État des connecteurs
 
 | Canal | État | Fichier |
@@ -68,7 +113,8 @@ taxonomie lue sur `/api/admin/taxonomy`.
 ```bash
 npm install
 cp .env.example .env
-# remplis .env avec tes vraies clés (au minimum ANTHROPIC_API_KEY pour tester l'IA)
+# remplis .env avec tes vraies clés (au minimum une clé IA — ANTHROPIC_API_KEY
+# ou les variables AI_BASE_URL / AI_API_KEY / AI_MODEL — pour tester l'IA)
 npm run dev
 ```
 
@@ -96,7 +142,8 @@ bancaire requise). La base de données ne vit donc pas sur un disque Render (pay
 2. Pousse ce projet sur un dépôt GitHub.
 3. Sur Render, "New" → "Blueprint" → sélectionne ce dépôt. Render détecte `render.yaml`.
 4. Renseigne les variables secrètes demandées : `TURSO_DATABASE_URL`, `TURSO_AUTH_TOKEN`,
-   `ANTHROPIC_API_KEY`, puis les clés eBay si tu les as déjà.
+   `ANTHROPIC_API_KEY` (ou les variables `AI_*` d'un fournisseur compatible OpenAI), puis les clés
+   eBay si tu les as déjà.
 5. Déploie.
 
 ### Le service gratuit se met en veille — comment le garder actif

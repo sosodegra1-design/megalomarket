@@ -46,14 +46,25 @@ test('ANTHROPIC_MODEL overrides the default without a code change', () => {
 
 test('every AI caller goes through the shared client', async () => {
   // Si un module appelait l'API Anthropic directement, il contournerait à la
-  // fois le modèle configuré et la lecture tolérante du JSON.
+  // fois le modèle configuré, le fournisseur choisi et la lecture tolérante du
+  // JSON. Le point d'entrée s'appelle désormais askModel (et non plus
+  // askClaude) : le nom doit suivre le fournisseur configurable.
   const { readFileSync } = await import('node:fs');
   for (const file of ['priceOptimizer.js', 'descriptionWriter.js', 'supportAgent.js']) {
     const source = readFileSync(new URL(`../src/ai/${file}`, import.meta.url), 'utf8');
-    assert.match(source, /askClaude/, `${file} doit passer par askClaude`);
+    assert.match(source, /askModel/, `${file} doit passer par askModel`);
+    assert.doesNotMatch(source, /askClaude/, `${file} ne doit plus référencer l'ancien nom`);
     assert.doesNotMatch(source, /messages\.create/, `${file} ne doit pas appeler l'API directement`);
   }
   const generator = readFileSync(new URL('../src/importer/listingGenerator.js', import.meta.url), 'utf8');
-  assert.match(generator, /askClaude/);
+  assert.match(generator, /askModel/);
+  assert.doesNotMatch(generator, /askClaude/);
   assert.doesNotMatch(generator, /messages\.create/);
+  // listingGenerator appelle le point d'entrée deux fois (marketplaces + site
+  // propre) : les deux doivent passer par le client partagé.
+  assert.equal(
+    (generator.match(/askModel\(/g) || []).length,
+    2,
+    'listingGenerator doit appeler askModel pour les marketplaces ET pour le site propre',
+  );
 });

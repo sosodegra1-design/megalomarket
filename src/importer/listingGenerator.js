@@ -1,4 +1,4 @@
-import { askClaude, parseJsonFromModel } from '../ai/client.js';
+import { askModel, parseJsonFromModel } from '../ai/client.js';
 import { dbGet, dbRun } from '../db/database.js';
 import { computeSuggestedPrice } from './pricing.js';
 import { config } from '../config/env.js';
@@ -150,7 +150,7 @@ async function fetchSiteTaxonomy() {
 
 /** Génère la fiche détaillée du site propre, validée contre sa taxonomie. */
 async function generateSiteListing(imp, taxonomy) {
-  const raw = await askClaude({
+  const raw = await askModel({
     system: buildSiteSystemPrompt(taxonomy),
     prompt: buildSitePrompt(imp, taxonomy),
     maxTokens: 2500,
@@ -187,7 +187,7 @@ export async function generateListingsForImport(importId) {
   const imp = await dbGet('SELECT * FROM imports WHERE id = ?', [importId]);
   if (!imp) throw new Error(`Import introuvable (id=${importId}).`);
 
-  const raw = await askClaude({ system: SYSTEM_PROMPT, prompt: buildPrompt(imp), maxTokens: 1800 });
+  const raw = await askModel({ system: SYSTEM_PROMPT, prompt: buildPrompt(imp), maxTokens: 1800 });
   let parsed;
   try {
     parsed = parseJsonFromModel(raw);

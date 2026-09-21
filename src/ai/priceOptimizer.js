@@ -1,4 +1,4 @@
-import { askClaude, parseJsonFromModel } from './client.js';
+import { askModel, parseJsonFromModel } from './client.js';
 import { dbAll, dbGet, dbRun, logActivity } from '../db/database.js';
 
 const SYSTEM_PROMPT = `Tu es un expert en tarification e-commerce multicanal pour Megalomarket, une boutique pour enfants.
@@ -39,7 +39,7 @@ export async function generatePriceRecommendations(productId) {
   );
 
   const prompt = buildPrompt(product, listings, recentOrders);
-  const raw = await askClaude({ system: SYSTEM_PROMPT, prompt, maxTokens: 800 });
+  const raw = await askModel({ system: SYSTEM_PROMPT, prompt, maxTokens: 800 });
 
   let parsed;
   try {

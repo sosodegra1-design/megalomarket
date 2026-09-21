@@ -1,4 +1,4 @@
-import { askClaude, parseJsonFromModel } from './client.js';
+import { askModel, parseJsonFromModel } from './client.js';
 import { dbGet, dbRun, logActivity } from '../db/database.js';
 
 const SYSTEM_PROMPT = `Tu es agent de support client pour Megalomarket, une boutique d'articles pour enfants vendant sur eBay, Amazon, TikTok Shop et son site propre.
@@ -36,7 +36,7 @@ Message du client :
 ${customerMessage.trim()}
 """`;
 
-  const raw = await askClaude({ system: SYSTEM_PROMPT, prompt, maxTokens: 700 });
+  const raw = await askModel({ system: SYSTEM_PROMPT, prompt, maxTokens: 700 });
   let parsed;
   try {
     parsed = parseJsonFromModel(raw);

@@ -1,4 +1,4 @@
-import { askClaude, parseJsonFromModel } from './client.js';
+import { askModel, parseJsonFromModel } from './client.js';
 import { dbGet, dbRun, logActivity } from '../db/database.js';
 
 const CHANNEL_GUIDANCE = {
@@ -25,7 +25,7 @@ Consigne du canal ${channel} : ${guidance}
 
 Rédige une description adaptée à ce canal.`;
 
-  const raw = await askClaude({ system: SYSTEM_PROMPT, prompt, maxTokens: 600 });
+  const raw = await askModel({ system: SYSTEM_PROMPT, prompt, maxTokens: 600 });
   let parsed;
   try {
     parsed = parseJsonFromModel(raw);
