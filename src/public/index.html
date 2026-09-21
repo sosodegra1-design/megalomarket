@@ -1769,6 +1769,34 @@
           </div>
           <p class="hint hint-tight" style="margin-top:10px">Chaque synchronisation rapporte ses erreurs canal par canal : un succès partiel ne doit jamais passer pour un succès complet.</p>
         </div>
+
+        <!-- Catalogue réel du site propre, indépendant des imports Megalomarket :
+             un produit déjà en ligne avant l'import (ou ajouté directement) n'a
+             pas de fiche à côté du bouton « Dépublier » des Imports — c'est ici
+             qu'on peut le retrouver et le retirer. -->
+        <div class="card table-card reveal-in" id="siteProductsCard">
+          <div class="table-tools">
+            <div class="table-tools-text">
+              <h2>Produits en ligne sur le site</h2>
+              <p id="siteProductsCount">…</p>
+            </div>
+            <input class="input table-filter table-filter-sm" type="search" id="siteProductsFilter" placeholder="Filtrer par nom, identifiant…" autocomplete="off" aria-label="Filtrer les produits du site">
+          </div>
+          <div class="table-scroll">
+            <table class="table">
+              <thead id="siteProductsHead">
+                <tr>
+                  <th data-sort="name">Nom</th>
+                  <th data-sort="id">Identifiant</th>
+                  <th data-sort="price">Prix</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody id="siteProducts"></tbody>
+            </table>
+          </div>
+          <div class="table-pager" id="siteProductsPager"></div>
+        </div>
       </section>
 
       <!-- ==================== VUE : DISTRIBUTEURS ====================
@@ -4899,6 +4927,72 @@ $('btnHuntNiches').addEventListener('click', (event) => action(event.currentTarg
   confirmFlash($('denicheurTableCard'));
 }, 'Nouvelle chasse aux pépites terminée.'));
 
+/* ===================== CATALOGUE DU SITE =====================
+   Indépendant des imports Megalomarket : un produit déjà en ligne avant
+   l'import (ou ajouté directement sur le site) n'a pas de fiche
+   import_listings, donc pas de bouton « Dépublier » côté Imports. Cette
+   section s'appuie directement sur GET/DELETE /api/site/products. */
+state.siteProducts = [];
+
+const siteProductsTable = createTable({
+  body: 'siteProducts',
+  head: 'siteProductsHead',
+  filter: 'siteProductsFilter',
+  pager: 'siteProductsPager',
+  view: 'canaux',
+  pageSize: 10,
+  skeleton: 4,
+  empty: 'Aucun produit sur le site, ou connecteur non configuré.',
+  columns: [
+    { key: 'name', value: (p) => p.name || '' },
+    { key: 'id', value: (p) => p.id || '' },
+    { key: 'price', value: (p) => Number(p.price) || 0 },
+  ],
+  search: (p) => [p.name, p.id].join(' '),
+  row: (p) => (
+    '<tr class="row-in">'
+    + '<td data-label="Nom">' + esc(p.name || '(sans nom)') + '</td>'
+    + '<td data-label="Identifiant"><span class="pill off">' + esc(p.id) + '</span></td>'
+    + '<td data-label="Prix">' + (p.price != null ? money(p.price) : '<span class="muted">—</span>') + '</td>'
+    + '<td class="table-actions"><button class="btn btn-ghost btn-xs" type="button" data-action="delete-site-product" data-id="' + esc(p.id) + '" data-name="' + esc(p.name || p.id) + '">Supprimer</button></td>'
+    + '</tr>'
+  ),
+});
+
+function updateSiteProductsCount() {
+  const count = $('siteProductsCount');
+  if (count) {
+    count.textContent = state.siteProducts.length
+      ? state.siteProducts.length + ' produit' + (state.siteProducts.length > 1 ? 's' : '') + ' en ligne'
+      : 'Aucun produit, ou connecteur site propre non configuré.';
+  }
+}
+
+async function loadSiteProducts() {
+  siteProductsTable.setLoading();
+  let rows = [];
+  try {
+    rows = await api('/api/site/products');
+  } catch {
+    rows = []; // connecteur non configuré : la vue Canaux le dit déjà, pas la peine de doubler l'erreur ici
+  }
+  state.siteProducts = Array.isArray(rows) ? rows : [];
+  siteProductsTable.setRows(state.siteProducts);
+  updateSiteProductsCount();
+  return state.siteProducts;
+}
+
+onAction($('siteProducts'), {
+  'delete-site-product': (button) => action(button, async () => {
+    const name = button.dataset.name || button.dataset.id;
+    if (!confirmChannelWrite('Retirer réellement « ' + name + ' » du site ?')) return null;
+    const result = await api('/api/site/products/' + encodeURIComponent(button.dataset.id), { method: 'DELETE' });
+    await loadSiteProducts();
+    confirmFlash($('siteProductsCard'));
+    return result;
+  }, 'Produit retiré du site.'),
+});
+
 /* ===================== ROUTAGE PAR ANCRE =====================
    Chaque vue a une ancre (#/imports, #/produits…) : elle est partageable et
    survit à un rafraîchissement, sans dépendre d'un serveur qui ne connaît que
@@ -5074,7 +5168,7 @@ async function loadAll() {
   await loadConfig();
   // Chaque bloc est indépendant : une section en erreur ne doit pas vider les autres.
   const loadImportsAndDetails = async () => { await loadImports(); await hydrateImportDetails(); };
-  const blocks = [loadChannels, loadProducts, loadRecommendations, loadSuppliers, loadImportsAndDetails, loadActivity, loadDistributors, loadDenicheur];
+  const blocks = [loadChannels, loadProducts, loadRecommendations, loadSuppliers, loadImportsAndDetails, loadActivity, loadDistributors, loadDenicheur, loadSiteProducts];
   const errors = [];
   await Promise.all(blocks.map((fn) => fn().catch((error) => { errors.push(fn.name + ' : ' + error.message); })));
   renderDashboard();
