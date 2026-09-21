@@ -40,7 +40,14 @@ async function countSuppliers() {
 
 test('chaque entrée du catalogue est exploitable telle quelle', () => {
   assert.ok(SUPPLIER_CATALOGUE.length > 0, 'un catalogue vide ne réglerait pas le problème');
-  assert.equal(SUPPLIER_CATALOGUE.length, 25, 'les 25 partenaires réels doivent tous être présents');
+
+  // Le catalogue d'origine comptait 25 plateformes généralistes. Le propriétaire
+  // vend dans une dizaine de familles de produits : le catalogue doit désormais
+  // couvrir chaque rayon, et non plus seulement les places de marché générales.
+  assert.ok(
+    SUPPLIER_CATALOGUE.length >= 65,
+    'le catalogue doit couvrir toutes les familles de produits (au moins 65 entrées)',
+  );
 
   for (const entry of SUPPLIER_CATALOGUE) {
     const label = entry?.name ?? JSON.stringify(entry);
@@ -65,6 +72,104 @@ test('chaque entrée du catalogue est exploitable telle quelle', () => {
 test('aucun nom de partenaire n’est présent deux fois', () => {
   const names = SUPPLIER_CATALOGUE.map((entry) => entry.name);
   assert.equal(new Set(names).size, names.length, 'un doublon créerait deux fiches indiscernables dans la liste d’import');
+});
+
+/*
+ * Les 25 fiches du catalogue d'origine sont déjà semées dans la base de
+ * production. Les renommer — même pour corriger une faute — désynchroniserait
+ * la fiche installée du code : ce test les épingle donc par leur nom exact.
+ */
+const NOMS_ORIGINAUX = [
+  'Alibaba',
+  'AliExpress',
+  'Made-in-China',
+  '1688 (Chine)',
+  'Global Sources',
+  'DHgate',
+  'Banggood',
+  'Temu',
+  'Taobao',
+  'Yiwugo',
+  'Alibaba France (revendeurs)',
+  'BigBuy',
+  'Spocket',
+  'Syncee',
+  'Modalyst',
+  'Faire',
+  'Ankorstore',
+  'Orderchamp',
+  'Tundra',
+  'Printful',
+  'Printify',
+  'Gelato',
+  'Cdiscount Pro',
+  'ManoMano Pro',
+  'Amazon Business',
+];
+
+test('les 25 partenaires d’origine sont toujours présents, sous le même nom', () => {
+  const names = new Set(SUPPLIER_CATALOGUE.map((entry) => entry.name));
+
+  for (const original of NOMS_ORIGINAUX) {
+    assert.ok(
+      names.has(original),
+      `${original} a disparu ou a été renommé : la fiche semée en production ne correspondrait plus au code`,
+    );
+  }
+});
+
+test('chaque famille de produits de la boutique a ses grossistes', () => {
+  const corpus = SUPPLIER_CATALOGUE
+    .map((entry) => `${entry.name} ${entry.notes}`)
+    .join(' ')
+    .toLowerCase();
+
+  // Un mot-clé par famille vendue. Le test échoue si une famille entière
+  // disparaît du catalogue, pas si telle plateforme précise est retirée.
+  const familles = [
+    'jouets',
+    'puériculture',
+    'vêtements enfants',
+    'prêt-à-porter',
+    'chaussures',
+    'électronique',
+    'informatique',
+    'maison',
+    'beauté',
+    'sport',
+    'bijoux',
+    'emballage',
+    'destockage',
+    'papeterie',
+    'animalerie',
+    'bricolage',
+    'auto et moto',
+  ];
+  assert.ok(familles.length >= 12, 'au moins une douzaine de familles doivent être couvertes');
+
+  for (const famille of familles) {
+    assert.ok(corpus.includes(famille), `aucune plateforme ne couvre « ${famille} »`);
+  }
+});
+
+test('aucune plateforme n’est présente deux fois sous deux adresses', () => {
+  const parHote = new Map();
+  for (const entry of SUPPLIER_CATALOGUE) {
+    const hote = new URL(entry.siteUrl).hostname.replace(/^www\./, '');
+    if (!parHote.has(hote)) parHote.set(hote, []);
+    parHote.get(hote).push(entry.name);
+  }
+
+  // Seule exception, héritée du catalogue d'origine : Alibaba figure deux fois
+  // volontairement (la racine et l'annuaire des fournisseurs français), et ces
+  // deux fiches sont conservées telles quelles pour ne pas casser la production.
+  const exceptions = new Set(['alibaba.com']);
+
+  for (const [hote, noms] of parHote) {
+    if (noms.length === 1) continue;
+    assert.ok(exceptions.has(hote), `${hote} apparaît deux fois : ${noms.join(', ')}`);
+    assert.deepEqual(noms.slice().sort(), ['Alibaba', 'Alibaba France (revendeurs)']);
+  }
 });
 
 /* ===================== INSTALLATION ===================== */
