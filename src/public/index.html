@@ -33,7 +33,6 @@
         <p style="color: #aaa; margin-top: -15px;">Tableau de bord de synchronisation omnicanale et de recommandations IA.</p>
 
         <div class="grid-3">
-            <!-- Colonne 1 : Importateur IA Pro -->
             <div class="card">
                 <h2>Importateur par Lien IA</h2>
                 <label for="importUrl">URL du produit Fournisseur :</label>
@@ -49,7 +48,6 @@
                 <button class="btn btn-secondary" id="btnManagePartners">Gérer les Fournisseurs & Distributeurs</button>
             </div>
 
-            <!-- Colonne 2 : Canaux connectés -->
             <div class="card">
                 <h2>Canaux Connectés</h2>
                 <div style="display: flex; flex-direction: column; gap: 10px;">
@@ -61,7 +59,6 @@
                 </div>
             </div>
 
-            <!-- Colonne 3 : Support Client -->
             <div class="card">
                 <h2>Qualifier un message client</h2>
                 <textarea id="clientMessage" rows="4" placeholder="Collez ici le message du client..."></textarea>
@@ -69,7 +66,6 @@
             </div>
         </div>
 
-        <!-- Section de prévisualisation des fiches générées -->
         <div class="card" id="importResultBox" style="display: none;">
             <h2>Résultat de l'extraction IA</h2>
             <div id="productPreview" style="display: flex; gap: 20px; align-items: center; margin-bottom: 20px;"></div>
@@ -89,7 +85,6 @@
         </div>
     </div>
 
-    <!-- Fenêtre Pop-up Modale : Gestion des Fournisseurs & Distributeurs -->
     <div class="modal" id="partnerModal">
         <div class="modal-content">
             <span class="close-btn" id="modalClose">&times;</span>
@@ -112,10 +107,7 @@
     </div>
 
     <script>
-        // Attente du chargement complet du navigateur pour eviter tout bug de clic
         document.addEventListener('DOMContentLoaded', function() {
-            
-            // Securite 1 : Gestion de la fenetre Pop-up
             const modal = document.getElementById('partnerModal');
             document.getElementById('btnManagePartners').addEventListener('click', function() {
                 modal.style.display = 'flex';
@@ -125,7 +117,6 @@
                 modal.style.display = 'none';
             });
 
-            // Securite 2 : Enregistrement d'un nouveau grossiste
             document.getElementById('btnSavePartner').addEventListener('click', function() {
                 const name = document.getElementById('partnerName').value.trim();
                 const margin = document.getElementById('partnerMargin').value;
@@ -143,7 +134,6 @@
                 document.getElementById('partnerName').value = '';
             });
 
-            // Securite 3 : Gestion du changement d'onglets boutiques
             document.querySelectorAll('.tab-btn').forEach(button => {
                 button.addEventListener('click', function() {
                     document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
@@ -155,9 +145,20 @@
                 });
             });
 
-            // Securite 4 : Lancement de l'importateur IA par lien
             document.getElementById('btnImport').addEventListener('click', function() {
                 const url = document.getElementById('importUrl').value.trim();
                 if(!url) { return alert("Veuillez d'abord coller un lien de produit valide."); }
                 
                 alert("L'IA Claude analyse le lien fournisseur en arriere-plan... (Appel a l'API /api/imports)");
+                
+                document.getElementById('importResultBox').style.display = 'block';
+                document.getElementById('productPreview').innerHTML = `
+                    <div style="background:#444; width:80px; height:80px; border-radius:5px; display:flex; align-items:center; justify-content:center;">🖼️ Photo</div>
+                    <div><strong>Produit extrait avec succes !</strong><br><span style="color:#28a745;">Prix de revient fournisseur : 4.50 €</span></div>
+                `;
+                
+                const channels = ['ebay', 'amazon', 'tiktok', 'allegro'];
+                channels.forEach(ch => {
+
+                
+ 
