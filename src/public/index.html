@@ -6,70 +6,134 @@
   <title>Megalomarket — AI Core</title>
   <style>
     :root {
-      --bg: #16161c; --card: #21212b; --card-2: #2a2a36; --line: #3a3a48;
-      --text: #f2f2f5; --muted: #9b9baa; --accent: #4c8dff; --accent-2: #3a6fd8;
+      --bg: #0f1117; --panel: #171a22; --panel-2: #1e222c; --line: #2b313d;
+      --text: #eef1f6; --muted: #9aa3b2; --accent: #4c8dff; --accent-2: #3a6fd8;
       --ok: #35c46b; --warn: #e8b23a; --bad: #e5544b;
+      --radius: 14px;
     }
     * { box-sizing: border-box; }
+    html { -webkit-text-size-adjust: 100%; }
     body {
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-      background: var(--bg); color: var(--text); margin: 0; padding: 22px;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background: radial-gradient(1200px 600px at 50% -200px, #1b2130 0%, var(--bg) 60%);
+      color: var(--text); margin: 0; padding: 26px 20px 60px; line-height: 1.45;
     }
     .wrap { max-width: 1180px; margin: 0 auto; display: flex; flex-direction: column; gap: 18px; }
-    header { display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap; }
-    header h1 { margin: 0; font-size: 1.5rem; }
-    header p { margin: 0; color: var(--muted); font-size: .9rem; }
-    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 18px; }
-    .card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 18px; }
-    .card h2 { margin: 0 0 4px; font-size: 1.05rem; }
-    .card .hint { color: var(--muted); font-size: .82rem; margin: 0 0 14px; }
-    label { display: block; font-size: .82rem; color: var(--muted); margin: 10px 0 4px; }
+    header { display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap; }
+    header h1 { margin: 0; font-size: 1.45rem; letter-spacing: -.02em; }
+    header p { margin: 2px 0 0; color: var(--muted); font-size: .88rem; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 18px; align-items: start; }
+    .card {
+      background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
+      padding: 18px; box-shadow: 0 1px 0 rgba(255,255,255,.02), 0 10px 30px -24px #000;
+    }
+    .card h2 { margin: 0 0 4px; font-size: 1.02rem; letter-spacing: -.01em; }
+    .card .hint { color: var(--muted); font-size: .82rem; margin: 0 0 12px; }
+    label { display: block; font-size: .8rem; color: var(--muted); margin: 10px 0 4px; }
     input, select, textarea {
-      width: 100%; padding: 9px 10px; border-radius: 6px; border: 1px solid var(--line);
-      background: #1b1b24; color: var(--text); font: inherit; font-size: .9rem;
+      width: 100%; padding: 9px 11px; border-radius: 8px; border: 1px solid var(--line);
+      background: #12151c; color: var(--text); font: inherit; font-size: .9rem;
+    }
+    input:focus, select:focus, textarea:focus, button:focus-visible {
+      outline: 2px solid var(--accent); outline-offset: 1px; border-color: var(--accent);
     }
     textarea { min-height: 70px; resize: vertical; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .8rem; }
     button {
-      background: var(--accent); color: #fff; border: 0; padding: 9px 14px; border-radius: 6px;
-      cursor: pointer; font: inherit; font-size: .87rem; font-weight: 600;
+      display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+      background: var(--accent); color: #fff; border: 0; padding: 9px 15px; border-radius: 8px;
+      cursor: pointer; font: inherit; font-size: .86rem; font-weight: 600; transition: background .15s, opacity .15s;
     }
     button:hover:not(:disabled) { background: var(--accent-2); }
     button:disabled { opacity: .45; cursor: not-allowed; }
-    button.ghost { background: #3a3a48; }
-    button.ghost:hover:not(:disabled) { background: #474756; }
-    button.tiny { padding: 5px 9px; font-size: .78rem; }
+    button.ghost { background: #2c313d; }
+    button.ghost:hover:not(:disabled) { background: #39404e; }
+    button.tiny { padding: 6px 10px; font-size: .78rem; }
+    button.danger { background: #a7362f; }
+    button.danger:hover:not(:disabled) { background: #8f2c26; }
     .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 12px; }
     .list { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
-    .item { background: var(--card-2); border: 1px solid var(--line); border-radius: 8px; padding: 11px 13px; }
+    .item { background: var(--panel-2); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; }
     .item .top { display: flex; justify-content: space-between; gap: 10px; align-items: baseline; }
-    .item .name { font-weight: 600; font-size: .92rem; }
-    .item .meta { color: var(--muted); font-size: .78rem; margin-top: 3px; }
-    .pill { font-size: .72rem; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--line); white-space: nowrap; }
+    .item .name { font-weight: 600; font-size: .92rem; word-break: break-word; }
+    .item .meta { color: var(--muted); font-size: .78rem; margin-top: 3px; word-break: break-word; }
+    .pill { font-size: .72rem; padding: 3px 9px; border-radius: 999px; border: 1px solid var(--line); white-space: nowrap; }
     .pill.ok { color: var(--ok); border-color: #2a6b45; }
     .pill.off { color: var(--muted); }
     .pill.bad { color: var(--bad); border-color: #6b2f2c; }
     .pill.warn { color: var(--warn); border-color: #6b552a; }
-    #status { min-height: 20px; font-size: .86rem; padding: 9px 12px; border-radius: 6px; display: none; }
+
+    /* Bandeau de configuration : c'est la première chose que l'œil doit heurter. */
+    .banner { border-radius: var(--radius); padding: 16px 18px; border: 1px solid var(--line); background: var(--panel); }
+    .banner.ok { background: linear-gradient(180deg, #17301f, #14231a); border-color: #2a6b45; }
+    .banner.warn { background: linear-gradient(180deg, #332a16, #241f14); border-color: #6b552a; }
+    .banner.err { background: linear-gradient(180deg, #331d1b, #241614); border-color: #6b2f2c; }
+    .banner-head { display: flex; align-items: center; gap: 10px; font-size: 1rem; }
+    .banner-icon {
+      display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px;
+      border-radius: 50%; font-size: .82rem; font-weight: 700; flex: none;
+    }
+    .banner.ok .banner-icon { background: #1f5a38; color: #b6f0cd; }
+    .banner.warn .banner-icon { background: #5c4a1e; color: #ffe4a3; }
+    .banner.err .banner-icon { background: #5c2723; color: #ffc0ba; }
+    .banner-sub { color: var(--muted); font-size: .84rem; margin: 8px 0 0; }
+    .banner-facts { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+    .missing-list { list-style: none; padding: 0; margin: 12px 0 0; display: flex; flex-direction: column; gap: 9px; }
+    .missing-list li { border-left: 3px solid var(--warn); padding-left: 11px; }
+    .missing-list .why { display: block; font-size: .87rem; }
+    .missing-list code { display: inline-block; margin-top: 4px; }
+    code { background: #10131a; border: 1px solid var(--line); padding: 2px 7px; border-radius: 6px; font-size: .8rem; word-break: break-word; }
+    .ai-note {
+      margin: 12px 0 0; font-size: .82rem; color: #f0d28a; background: #2a2317;
+      border: 1px solid #6b552a; border-radius: 8px; padding: 9px 11px;
+    }
+
+    #status { min-height: 20px; font-size: .86rem; padding: 10px 13px; border-radius: 10px; display: none; }
     #status.show { display: block; }
-    #status.info { background: #22304a; border: 1px solid #35507d; }
-    #status.good { background: #1d3a29; border: 1px solid #2a6b45; }
-    #status.err { background: #3d2321; border: 1px solid #6b2f2c; }
+    #status.info { background: #1b2740; border: 1px solid #35507d; }
+    #status.good { background: #17301f; border: 1px solid #2a6b45; }
+    #status.err { background: #331d1b; border: 1px solid #6b2f2c; }
     .empty { color: var(--muted); font-size: .85rem; font-style: italic; }
-    .pre { white-space: pre-wrap; word-break: break-word; font-size: .82rem; color: #d6d6e0; }
-    details { margin-top: 8px; }
+    .pre { white-space: pre-wrap; word-break: break-word; font-size: .82rem; color: #d6dae3; }
+    details { margin-top: 10px; }
     summary { cursor: pointer; color: var(--muted); font-size: .8rem; }
-    .kv { display: flex; justify-content: space-between; font-size: .82rem; padding: 2px 0; }
-    .kv span:first-child { color: var(--muted); }
-    code { background: #1b1b24; padding: 1px 5px; border-radius: 4px; font-size: .82rem; }
+    .kv { display: flex; justify-content: space-between; gap: 12px; font-size: .82rem; padding: 3px 0; }
+    .kv span:first-child { color: var(--muted); flex: none; }
+    .kv span:last-child { text-align: right; word-break: break-word; }
+
+    /* Rotation visible tant que la requête est en vol : l'utilisateur sait que
+       le clic a été pris en compte, même si le réseau est lent. */
+    .spinner {
+      width: 13px; height: 13px; border-radius: 50%; flex: none;
+      border: 2px solid rgba(255,255,255,.35); border-top-color: #fff;
+      animation: spin .7s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    @media (prefers-reduced-motion: reduce) { .spinner { animation-duration: 1.6s; } }
+
+    @media (max-width: 640px) {
+      body { padding: 16px 12px 48px; }
+      .grid { grid-template-columns: 1fr; }
+      header { align-items: flex-start; }
+      .item .top { flex-direction: column; align-items: flex-start; gap: 4px; }
+      .kv { flex-direction: column; gap: 2px; }
+      .kv span:last-child { text-align: left; }
+    }
   </style>
 </head>
 <body>
 <div class="wrap">
   <header>
-    <h1>Megalomarket — AI Core</h1>
-    <p>Hub de synchronisation omnicanale et de décision IA.</p>
-    <button class="ghost tiny" id="btnRefresh">Tout recharger</button>
+    <div>
+      <h1>Megalomarket — AI Core</h1>
+      <p>Hub de synchronisation omnicanale et de décision IA.</p>
+    </div>
+    <button class="ghost" id="btnRefresh">Tout recharger</button>
   </header>
+
+  <!-- État de la configuration : présent en permanence, avant toute action. -->
+  <section id="configBanner" class="banner" aria-live="polite">
+    <div class="banner-head"><span class="banner-icon">…</span><strong>Vérification de la configuration…</strong></div>
+  </section>
 
   <div id="status"></div>
 
@@ -79,11 +143,12 @@
       <h2>Importer un produit par lien</h2>
       <p class="hint">Colle une URL fournisseur (AliExpress, Alibaba…). L'extraction puis la génération des fiches se font en deux étapes distinctes, pour que tu voies ce qui a été récupéré avant qu'une IA ne rédige quoi que ce soit.</p>
       <label for="importUrl">URL du produit fournisseur</label>
-      <input type="text" id="importUrl" placeholder="https://www.aliexpress.com/item/....html">
+      <input type="text" id="importUrl" placeholder="https://www.aliexpress.com/item/....html" autocomplete="off">
       <div class="row">
         <button id="btnExtract">1. Extraire la fiche</button>
         <button class="ghost" id="btnGenerate" disabled>2. Générer les fiches IA</button>
       </div>
+      <p class="ai-note" data-ai-note hidden>Génération IA désactivée : aucun fournisseur IA n'est configuré (voir le bandeau ci-dessus). L'extraction, elle, reste disponible.</p>
       <details id="importDetail" style="display:none">
         <summary>Détail de l'import</summary>
         <div id="importBody" class="pre" style="margin-top:8px"></div>
@@ -107,7 +172,8 @@
       <p class="hint">L'IA propose une catégorie, une urgence et une réponse. Elle ne décide jamais d'un remboursement.</p>
       <label for="supportMsg">Message du client</label>
       <textarea id="supportMsg" rows="4" placeholder="Bonjour, ma commande n'est toujours pas arrivée..."></textarea>
-      <div class="row"><button id="btnQualify">Qualifier</button></div>
+      <div class="row"><button id="btnQualify" data-needs-ai disabled>Qualifier</button></div>
+      <p class="ai-note" data-ai-note hidden>Qualification IA désactivée : configure un fournisseur IA (bandeau ci-dessus) pour l'activer.</p>
       <div id="supportResult" class="pre" style="margin-top:10px"></div>
     </div>
   </div>
@@ -125,19 +191,20 @@
       <h2>Produits internes</h2>
       <p class="hint">Le catalogue de référence du hub. Les prix suggérés par l'IA partent de son prix de revient.</p>
       <label for="pSku">SKU</label>
-      <input type="text" id="pSku" placeholder="JOUET-001">
+      <input type="text" id="pSku" placeholder="JOUET-001" autocomplete="off">
       <label for="pName">Nom</label>
-      <input type="text" id="pName" placeholder="Peluche renard">
+      <input type="text" id="pName" placeholder="Peluche renard" autocomplete="off">
       <label for="pCost">Prix de revient (€)</label>
       <input type="number" id="pCost" step="0.01" min="0" placeholder="8.50">
       <div class="row"><button id="btnCreateProduct">Créer le produit</button></div>
+      <p class="ai-note" data-ai-note hidden>« Suggérer un prix » et « Générer une description » sont désactivés tant qu'aucun fournisseur IA n'est configuré. La création de produit et l'envoi d'un prix restent disponibles.</p>
       <div class="list" id="products"></div>
     </div>
 
     <!-- ============ RECOMMANDATIONS ============ -->
     <div class="card">
       <h2>Recommandations en attente</h2>
-      <p class="hint">Toute suggestion sous le prix de revient est rejetée avant d'arriver ici.</p>
+      <p class="hint">Toute suggestion sous le prix de revient est rejetée avant d'arriver ici. « Appliquer » un prix l'envoie réellement au canal.</p>
       <div class="list" id="recommendations"></div>
     </div>
   </div>
@@ -170,6 +237,12 @@ function esc(value) {
     { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
   ));
 }
+
+/* État partagé : la configuration connue (donc si l'IA est utilisable) et
+   l'import courant. Tant que /api/config n'a pas répondu, `aiReady` reste faux :
+   en cas de panne de la route, les actions IA restent bloquées plutôt que
+   d'échouer une par une. */
+const state = { config: null, aiReady: false, importId: null };
 
 function say(message, kind = 'info') {
   const box = $('status');
@@ -220,6 +293,144 @@ async function guard(work, successMessage) {
   }
 }
 
+/* Occupe le bouton pendant la requête : libellé remplacé par un indicateur et
+   bouton désactivé. C'est ce qui empêche le double-clic de publier deux fois —
+   sans cela, un clic impatient envoyait deux publications réelles. Le libellé
+   d'origine est restauré dans tous les cas, y compris en cas d'erreur. */
+async function withBusy(button, work) {
+  if (!button || button.dataset.busy === '1') return null;
+  const label = (button.dataset.label || button.textContent || '').trim();
+  button.dataset.label = label;
+  button.dataset.busy = '1';
+  button.disabled = true;
+  button.textContent = '';
+  const spinner = document.createElement('span');
+  spinner.className = 'spinner';
+  spinner.setAttribute('aria-hidden', 'true');
+  button.append(spinner, document.createTextNode(label));
+  try {
+    return await work();
+  } finally {
+    delete button.dataset.busy;
+    button.textContent = label;
+    // Une action IA bloquée doit le rester après la requête (`data-needs-ai` est
+    // un attribut sans valeur : on teste sa présence, pas sa valeur).
+    button.disabled = button.hasAttribute('data-needs-ai') && !state.aiReady;
+  }
+}
+
+/* Enveloppe standard : bouton occupé + erreurs affichées au lieu d'être avalées. */
+function action(button, work, successMessage) {
+  return withBusy(button, () => guard(work, successMessage));
+}
+
+/* Confirmation obligatoire avant toute écriture vers un canal de vente réel :
+   publier ou pousser un prix est irréversible. */
+function confirmChannelWrite(question) {
+  return window.confirm(question + '\n\nCette action est irréversible : elle modifie réellement le canal de vente.');
+}
+
+/* ===================== BANDEAU DE CONFIGURATION ===================== */
+function configFacts(cfg) {
+  const db = cfg.database || {};
+  const facts = [];
+  facts.push(db.persistent
+    ? 'Base distante' + (db.host ? ' (' + esc(db.host) + ')' : '')
+    : 'Base locale — perdue à chaque redéploiement');
+  facts.push(cfg.access && cfg.access.protected ? 'Accès protégé par clé' : 'Accès NON protégé');
+  if (cfg.ai && cfg.ai.configured) {
+    facts.push('IA : ' + esc(cfg.ai.provider) + (cfg.ai.model ? ' (' + esc(cfg.ai.model) + ')' : ''));
+  } else {
+    facts.push('IA : non configurée');
+  }
+  return facts.map((f) => '<span class="pill ok">' + f + '</span>').join('');
+}
+
+/* Traduit l'entrée technique de `missing` en conséquence lisible. On garde le
+   nom exact des variables à côté : c'est lui qu'on recopie dans l'hébergeur. */
+function explainMissing(entry) {
+  if (/ANTHROPIC_API_KEY|AI_BASE_URL/.test(entry)) {
+    return "Fournisseur IA non configuré — l'import, les prix, les descriptions et le support resteront inertes.";
+  }
+  if (/OWN_SITE_/.test(entry)) {
+    return 'Site propre non configuré — impossible de publier sur ta boutique.';
+  }
+  if (/EBAY_/.test(entry)) {
+    return 'eBay non configuré — publication et synchronisation eBay impossibles.';
+  }
+  return 'Réglage manquant.';
+}
+
+function renderBanner(cfg) {
+  const box = $('configBanner');
+  const missing = Array.isArray(cfg.missing) ? cfg.missing : [];
+  const facts = configFacts(cfg);
+
+  if (!missing.length) {
+    box.className = 'banner ok';
+    box.innerHTML =
+      '<div class="banner-head"><span class="banner-icon">✓</span><strong>Tout est configuré.</strong></div>'
+      + '<div class="banner-facts">' + facts + '</div>';
+    return;
+  }
+
+  box.className = 'banner warn';
+  box.innerHTML =
+    '<div class="banner-head"><span class="banner-icon">!</span><strong>Configuration incomplète — '
+    + missing.length + (missing.length > 1 ? ' réglages à ajouter' : ' réglage à ajouter') + '.</strong></div>'
+    + "<p class=\"banner-sub\">Ces variables se renseignent dans l'environnement de l'hébergeur (Render), puis un redéploiement les prend en compte. Tant qu'elles manquent, les fonctions concernées restent inertes — rien n'est perdu.</p>"
+    + '<ul class="missing-list">'
+    + missing.map((entry) => (
+      '<li><span class="why">' + esc(explainMissing(entry)) + '</span><code>' + esc(entry) + '</code></li>'
+    )).join('')
+    + '</ul>'
+    + '<div class="banner-facts">' + facts + '</div>';
+}
+
+function renderBannerError(message) {
+  const box = $('configBanner');
+  box.className = 'banner err';
+  box.innerHTML =
+    '<div class="banner-head"><span class="banner-icon">×</span><strong>Configuration illisible.</strong></div>'
+    + '<p class="banner-sub">' + esc(message) + ' Les actions IA restent bloquées par prudence.</p>';
+}
+
+async function loadConfig() {
+  try {
+    const cfg = await api('/api/config');
+    state.config = cfg;
+    renderBanner(cfg);
+  } catch (error) {
+    state.config = null;
+    renderBannerError(error.message);
+  }
+  applyAiState();
+}
+
+/* Active ou bloque toutes les actions qui dépendent de l'IA. Le bouton de
+   génération dépend en plus d'un import extrait : updateGenerateButton() tranche. */
+function applyAiState() {
+  state.aiReady = Boolean(state.config && state.config.ai && state.config.ai.configured);
+  document.querySelectorAll('[data-needs-ai]').forEach((el) => {
+    el.disabled = !state.aiReady;
+    el.classList.toggle('blocked', !state.aiReady);
+    if (!state.aiReady) el.title = 'IA non configurée : voir le bandeau de configuration en haut de page.';
+    else el.removeAttribute('title');
+  });
+  document.querySelectorAll('[data-ai-note]').forEach((el) => { el.hidden = state.aiReady; });
+  updateGenerateButton();
+}
+
+function updateGenerateButton() {
+  const btn = $('btnGenerate');
+  const ready = state.aiReady && state.importId != null;
+  btn.disabled = !ready;
+  btn.classList.toggle('blocked', !state.aiReady);
+  if (!state.aiReady) btn.title = 'IA non configurée : voir le bandeau de configuration en haut de page.';
+  else if (state.importId == null) btn.title = "Extrais d'abord une fiche à l'étape 1.";
+  else btn.removeAttribute('title');
+}
+
 /* ===================== CHARGEMENTS ===================== */
 async function loadChannels() {
   const channels = await api('/api/channels');
@@ -268,36 +479,43 @@ async function loadProducts() {
       </div>
       <div class="meta">Revient ${money(p.cost_price)} · ${listingSummary(p)}</div>
       <div class="row">
-        <button class="ghost tiny" data-price="${p.id}">Suggérer un prix</button>
-        <button class="ghost tiny" data-desc="${p.id}">Générer une description</button>
+        <button class="ghost tiny" data-price="${esc(p.id)}" data-needs-ai ${state.aiReady ? '' : 'disabled'}>Suggérer un prix</button>
+        <button class="ghost tiny" data-desc="${esc(p.id)}" data-needs-ai ${state.aiReady ? '' : 'disabled'}>Générer une description</button>
       </div>
       <div class="row">
-        <input type="number" id="pp-${p.id}" step="0.01" min="0" placeholder="prix à pousser" style="width:150px">
-        <button class="tiny" data-push="${p.id}">Pousser ce prix</button>
+        <input type="number" id="pp-${esc(p.id)}" step="0.01" min="0" placeholder="prix à pousser" style="width:150px">
+        <button class="tiny" data-push="${esc(p.id)}">Pousser ce prix</button>
       </div>
     </div>
   `).join('');
 
-  box.querySelectorAll('[data-price]').forEach((b) => b.addEventListener('click', () => guard(
-    () => api('/api/recommendations/price/' + b.dataset.price, { method: 'POST' }),
-    'Suggestions de prix générées.',
-  ).then(loadRecommendations)));
+  box.querySelectorAll('[data-price]').forEach((b) => b.addEventListener('click', () => action(b, async () => {
+    const result = await api('/api/recommendations/price/' + encodeURIComponent(b.dataset.price), { method: 'POST' });
+    await loadRecommendations();
+    return result;
+  }, 'Suggestions de prix générées.')));
 
   box.querySelectorAll('[data-desc]').forEach((b) => b.addEventListener('click', () => {
     const channel = prompt('Canal visé (ebay, amazon, tiktok_shop, own_site) :', 'ebay');
     if (!channel) return;
-    guard(
-      () => api('/api/recommendations/description/' + b.dataset.desc + '/' + encodeURIComponent(channel), { method: 'POST' }),
-      'Description générée.',
-    ).then(loadRecommendations);
+    action(b, async () => {
+      const result = await api(
+        '/api/recommendations/description/' + encodeURIComponent(b.dataset.desc) + '/' + encodeURIComponent(channel),
+        { method: 'POST' },
+      );
+      await loadRecommendations();
+      return result;
+    }, 'Description générée.');
   }));
 
   /* Pousse réellement le prix vers les canaux. Le hub refuse tout prix sous le
-     prix de revient, avant même d'appeler le canal. */
-  box.querySelectorAll('[data-push]').forEach((b) => b.addEventListener('click', () => guard(async () => {
+     prix de revient, avant même d'appeler le canal. Un prix publié est
+     irréversible : on demande confirmation avant d'envoyer. */
+  box.querySelectorAll('[data-push]').forEach((b) => b.addEventListener('click', () => action(b, async () => {
     const price = Number($('pp-' + b.dataset.push).value);
     if (!Number.isFinite(price) || price <= 0) throw new Error('Saisis un prix supérieur à zéro.');
-    const results = await api('/api/products/' + b.dataset.push + '/price', {
+    if (!confirmChannelWrite('Pousser le prix ' + money(price) + ' vers les canaux de vente ?')) return null;
+    const results = await api('/api/products/' + encodeURIComponent(b.dataset.push) + '/price', {
       method: 'POST', body: JSON.stringify({ price }),
     });
     await Promise.all([loadProducts(), loadActivity()]);
@@ -323,9 +541,9 @@ async function loadRecommendations() {
         <div class="meta">${esc(String(why).slice(0, 220))}</div>
         <div class="row">
           ${r.type === 'price'
-            ? `<button class="tiny" data-apply="${r.id}">Appliquer le prix sur ${esc(r.channel || '?')}</button>`
-            : `<button class="ghost tiny" data-apply="${r.id}">Marquer appliquée</button>`}
-          <button class="ghost tiny" data-dismiss="${r.id}">Rejeter</button>
+            ? `<button class="tiny" data-apply="${esc(r.id)}" data-channel="${esc(r.channel || '')}">Appliquer le prix sur ${esc(r.channel || '?')}</button>`
+            : `<button class="ghost tiny" data-apply="${esc(r.id)}">Marquer appliquée</button>`}
+          <button class="ghost tiny" data-dismiss="${esc(r.id)}">Rejeter</button>
         </div>
       </div>
     `;
@@ -334,8 +552,9 @@ async function loadRecommendations() {
   /* Pour une recommandation de prix, « appliquer » pousse réellement le prix sur
      le canal : la recommandation n'est marquée appliquée que si le canal a
      accepté. Un échec laisse la ligne en attente et affiche la raison. */
-  box.querySelectorAll('[data-apply]').forEach((b) => b.addEventListener('click', () => guard(async () => {
-    const result = await api('/api/recommendations/' + b.dataset.apply + '/apply', { method: 'POST' });
+  box.querySelectorAll('[data-apply]').forEach((b) => b.addEventListener('click', () => action(b, async () => {
+    if (b.dataset.channel && !confirmChannelWrite('Appliquer le prix conseillé sur ' + b.dataset.channel + ' ?')) return null;
+    const result = await api('/api/recommendations/' + encodeURIComponent(b.dataset.apply) + '/apply', { method: 'POST' });
     await Promise.all([loadRecommendations(), loadActivity(), loadProducts()]);
     if (result && result.price != null) {
       say('Prix ' + money(result.price) + ' appliqué sur ' + result.channel + '.', 'good');
@@ -343,10 +562,11 @@ async function loadRecommendations() {
     return result;
   })));
 
-  box.querySelectorAll('[data-dismiss]').forEach((b) => b.addEventListener('click', () => guard(
-    () => api('/api/recommendations/' + b.dataset.dismiss + '/dismiss', { method: 'POST' }),
-    'Recommandation rejetée.',
-  ).then(loadRecommendations)));
+  box.querySelectorAll('[data-dismiss]').forEach((b) => b.addEventListener('click', () => action(b, async () => {
+    const result = await api('/api/recommendations/' + encodeURIComponent(b.dataset.dismiss) + '/dismiss', { method: 'POST' });
+    await loadRecommendations();
+    return result;
+  }, 'Recommandation rejetée.')));
 }
 
 async function loadImports() {
@@ -359,23 +579,24 @@ async function loadImports() {
         <span class="name">${esc(i.title)}</span>
         <span class="pill ${i.status === 'pret' ? 'ok' : 'off'}">${esc(i.status)}</span>
       </div>
-      <div class="meta">#${i.id} · ${esc(i.source_site)} · achat ${money(i.purchase_price)} ${esc(i.currency)}</div>
+      <div class="meta">#${esc(i.id)} · ${esc(i.source_site)} · achat ${money(i.purchase_price)} ${esc(i.currency)}</div>
       <div class="row">
-        <button class="ghost tiny" data-open="${i.id}">Ouvrir les fiches</button>
-        <button class="ghost tiny" data-regen="${i.id}">Régénérer</button>
+        <button class="ghost tiny" data-open="${esc(i.id)}">Ouvrir les fiches</button>
+        <button class="ghost tiny" data-regen="${esc(i.id)}" data-needs-ai ${state.aiReady ? '' : 'disabled'}>Régénérer</button>
       </div>
     </div>
   `).join('');
 
-  box.querySelectorAll('[data-open]').forEach((b) => b.addEventListener('click', () => guard(
+  box.querySelectorAll('[data-open]').forEach((b) => b.addEventListener('click', () => action(b,
     () => showImport(Number(b.dataset.open)),
   )));
 
-  box.querySelectorAll('[data-regen]').forEach((b) => b.addEventListener('click', () => guard(async () => {
-    const saved = await api('/api/imports/' + b.dataset.regen + '/generate', { method: 'POST' });
+  box.querySelectorAll('[data-regen]').forEach((b) => b.addEventListener('click', () => action(b, async () => {
+    const saved = await api('/api/imports/' + encodeURIComponent(b.dataset.regen) + '/generate', { method: 'POST' });
     await showImport(Number(b.dataset.regen));
+    await loadImports();
     return saved;
-  }, 'Fiches régénérées.').then(loadImports)));
+  }, 'Fiches régénérées.')));
 }
 
 async function loadActivity() {
@@ -394,14 +615,11 @@ async function loadActivity() {
 }
 
 /* ===================== IMPORT : EXTRACTION ===================== */
-let currentImportId = null;
-
-$('btnExtract').addEventListener('click', () => guard(async () => {
+$('btnExtract').addEventListener('click', (event) => action(event.currentTarget, async () => {
   const url = $('importUrl').value.trim();
   if (!url) throw new Error('Colle d\'abord une URL fournisseur.');
-  $('btnGenerate').disabled = true;
   const data = await api('/api/imports', { method: 'POST', body: JSON.stringify({ url }) });
-  currentImportId = data.id;
+  state.importId = data.id;
   $('importDetail').style.display = 'block';
   $('importBody').innerHTML = [
     ['Titre extrait', esc(data.title)],
@@ -410,22 +628,23 @@ $('btnExtract').addEventListener('click', () => guard(async () => {
     ['Photos trouvées', (data.imageUrls || []).length],
     ['Description brute', esc((data.rawDescription || '(aucune)').slice(0, 400))],
   ].map(([k, v]) => `<div class="kv"><span>${k}</span><span>${v}</span></div>`).join('');
-  $('btnGenerate').disabled = false;
   await loadImports();
+  updateGenerateButton();
   return data;
-}, 'Fiche extraite. Tu peux maintenant générer les fiches.') );
+}, 'Fiche extraite. Tu peux maintenant générer les fiches.'));
 
-$('btnGenerate').addEventListener('click', () => guard(async () => {
-  if (!currentImportId) throw new Error('Extrais d\'abord une fiche.');
-  await api('/api/imports/' + currentImportId + '/generate', { method: 'POST' });
-  await showImport(currentImportId);
+$('btnGenerate').addEventListener('click', (event) => action(event.currentTarget, async () => {
+  if (state.importId == null) throw new Error('Extrais d\'abord une fiche.');
+  await api('/api/imports/' + encodeURIComponent(state.importId) + '/generate', { method: 'POST' });
+  await showImport(state.importId);
   await loadImports();
 }, 'Fiches générées par l\'IA.'));
 
 /* ===================== IMPORT : FICHES ===================== */
 async function showImport(id) {
-  const data = await api('/api/imports/' + id);
-  currentImportId = id;
+  const data = await api('/api/imports/' + encodeURIComponent(id));
+  state.importId = id;
+  updateGenerateButton();
   $('listingsCard').style.display = 'block';
   const listings = data.listings || [];
   const box = $('listings');
@@ -443,26 +662,26 @@ async function showImport(id) {
       </div>
       <div class="meta">Prix conseillé ${money(l.suggested_price)}${l.published_external_id ? ' · publié sous ' + esc(l.published_external_id) : ''}</div>
       ${l.publish_error ? `<div class="meta" style="color:var(--bad)">${esc(l.publish_error)}</div>` : ''}
-      <label for="t-${l.id}">Titre</label>
-      <input type="text" id="t-${l.id}" value="${esc(l.title)}">
-      <label for="p-${l.id}">Prix (€)</label>
-      <input type="number" id="p-${l.id}" step="0.01" min="0" value="${esc(l.suggested_price)}">
-      <label for="d-${l.id}">Description</label>
-      <textarea id="d-${l.id}" rows="4">${esc(l.description)}</textarea>
+      <label for="t-${esc(l.id)}">Titre</label>
+      <input type="text" id="t-${esc(l.id)}" value="${esc(l.title)}">
+      <label for="p-${esc(l.id)}">Prix (€)</label>
+      <input type="number" id="p-${esc(l.id)}" step="0.01" min="0" value="${esc(l.suggested_price)}">
+      <label for="d-${esc(l.id)}">Description</label>
+      <textarea id="d-${esc(l.id)}" rows="4">${esc(l.description)}</textarea>
       ${l.marketplace === 'own_site' ? `
         <details>
           <summary>Fiche détaillée du site (catégorie, univers, âge, icône, bilingue)</summary>
           <div class="meta" style="margin:6px 0">Le site exige ces champs, que les marketplaces ne demandent pas. Corrige le JSON si la génération s'est trompée, puis enregistre avant de publier.</div>
-          <textarea id="s-${l.id}" rows="12">${esc(l.site_payload || '')}</textarea>
+          <textarea id="s-${esc(l.id)}" rows="12">${esc(l.site_payload || '')}</textarea>
         </details>` : ''}
       <div class="row">
-        <button class="ghost tiny" data-save="${l.id}" data-mp="${esc(l.marketplace)}">Enregistrer</button>
-        <button class="tiny" data-publish="${l.id}" data-mp="${esc(l.marketplace)}">Publier sur ${esc(l.marketplace)}</button>
+        <button class="ghost tiny" data-save="${esc(l.id)}" data-mp="${esc(l.marketplace)}">Enregistrer</button>
+        <button class="tiny" data-publish="${esc(l.id)}" data-mp="${esc(l.marketplace)}">Publier sur ${esc(l.marketplace)}</button>
       </div>
     </div>
   `).join('');
 
-  box.querySelectorAll('[data-save]').forEach((b) => b.addEventListener('click', () => guard(async () => {
+  box.querySelectorAll('[data-save]').forEach((b) => b.addEventListener('click', () => action(b, async () => {
     const id = b.dataset.save;
     const patch = {
       title: $('t-' + id).value.trim(),
@@ -474,16 +693,21 @@ async function showImport(id) {
       try { patch.sitePayload = JSON.parse(siteField.value); }
       catch { throw new Error('La fiche site n\'est pas un JSON valide.'); }
     }
-    await api('/api/imports/' + currentImportId + '/listings/' + b.dataset.mp, {
+    await api('/api/imports/' + encodeURIComponent(state.importId) + '/listings/' + encodeURIComponent(b.dataset.mp), {
       method: 'PATCH', body: JSON.stringify(patch),
     });
-    await showImport(currentImportId);
+    await showImport(state.importId);
   }, 'Fiche enregistrée et marquée validée.')));
 
-  box.querySelectorAll('[data-publish]').forEach((b) => b.addEventListener('click', () => guard(async () => {
-    if (!confirm('Publier réellement sur ' + b.dataset.mp + ' ?')) return null;
-    const result = await api('/api/imports/' + currentImportId + '/listings/' + b.dataset.mp + '/publish', { method: 'POST' });
-    await showImport(currentImportId);
+  /* La publication écrit pour de bon sur le canal : confirmation obligatoire,
+     et bouton occupé jusqu'à la réponse pour éviter une double publication. */
+  box.querySelectorAll('[data-publish]').forEach((b) => b.addEventListener('click', () => action(b, async () => {
+    if (!confirmChannelWrite('Publier réellement sur ' + b.dataset.mp + ' ?')) return null;
+    const result = await api(
+      '/api/imports/' + encodeURIComponent(state.importId) + '/listings/' + encodeURIComponent(b.dataset.mp) + '/publish',
+      { method: 'POST' },
+    );
+    await showImport(state.importId);
     await loadActivity();
     return result;
   }, 'Publication effectuée.')));
@@ -492,7 +716,7 @@ async function showImport(id) {
 }
 
 /* ===================== PRODUITS ===================== */
-$('btnCreateProduct').addEventListener('click', () => guard(async () => {
+$('btnCreateProduct').addEventListener('click', (event) => action(event.currentTarget, async () => {
   const sku = $('pSku').value.trim();
   const name = $('pName').value.trim();
   const costPrice = Number($('pCost').value || 0);
@@ -503,7 +727,7 @@ $('btnCreateProduct').addEventListener('click', () => guard(async () => {
 }, 'Produit créé.'));
 
 /* ===================== SUPPORT ===================== */
-$('btnQualify').addEventListener('click', () => guard(async () => {
+$('btnQualify').addEventListener('click', (event) => action(event.currentTarget, async () => {
   const customerMessage = $('supportMsg').value.trim();
   if (!customerMessage) throw new Error('Le message client est vide.');
   const result = await api('/api/support/qualify', { method: 'POST', body: JSON.stringify({ customerMessage }) });
@@ -517,7 +741,7 @@ $('btnQualify').addEventListener('click', () => guard(async () => {
 }));
 
 /* ===================== SYNCHRONISATIONS ===================== */
-$('btnSyncStock').addEventListener('click', () => guard(async () => {
+$('btnSyncStock').addEventListener('click', (event) => action(event.currentTarget, async () => {
   const result = await api('/api/sync/stock', { method: 'POST' });
   await loadActivity();
   const errors = (result.errors || []).map((e) => e.channel + ' : ' + e.message).join(' · ');
@@ -525,7 +749,7 @@ $('btnSyncStock').addEventListener('click', () => guard(async () => {
   return result;
 }));
 
-$('btnSyncOrders').addEventListener('click', () => guard(async () => {
+$('btnSyncOrders').addEventListener('click', (event) => action(event.currentTarget, async () => {
   const result = await api('/api/sync/orders', { method: 'POST' });
   await loadActivity();
   const errors = (result.errors || []).map((e) => e.channel + ' : ' + e.message).join(' · ');
@@ -535,12 +759,16 @@ $('btnSyncOrders').addEventListener('click', () => guard(async () => {
 
 /* ===================== DEMARRAGE ===================== */
 async function loadAll() {
+  // La configuration d'abord : elle décide quelles actions restent bloquées.
+  await loadConfig();
   // Chaque bloc est indépendant : une section en erreur ne doit pas vider les autres.
   const blocks = [loadChannels, loadProducts, loadRecommendations, loadImports, loadActivity];
-  await Promise.all(blocks.map((fn) => fn().catch((error) => say(fn.name + ' : ' + error.message, 'err'))));
+  const errors = [];
+  await Promise.all(blocks.map((fn) => fn().catch((error) => { errors.push(fn.name + ' : ' + error.message); })));
+  if (errors.length) say(errors.join('  |  '), 'err');
 }
 
-$('btnRefresh').addEventListener('click', () => guard(loadAll, 'Données rechargées.'));
+$('btnRefresh').addEventListener('click', (event) => action(event.currentTarget, loadAll, 'Données rechargées.'));
 document.addEventListener('DOMContentLoaded', loadAll);
 if (document.readyState !== 'loading') loadAll();
 </script>

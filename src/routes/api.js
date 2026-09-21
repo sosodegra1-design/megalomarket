@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { dbAll, dbGet, dbRun, logActivity } from '../db/database.js';
+import { config } from '../config/env.js';
 import { allChannelsStatus } from '../connectors/index.js';
 import { generatePriceRecommendations } from '../ai/priceOptimizer.js';
 import { generateDescription } from '../ai/descriptionWriter.js';
@@ -22,6 +23,61 @@ function asyncRoute(handler) {
   };
 }
 
+/*
+ * Décrit la base visée sans jamais exposer le jeton ni l'adresse complète.
+ * `persistent` distingue la base locale (perdue à chaque redéploiement) d'une
+ * base distante, et l'hôte seul suffit à vérifier d'un coup d'œil qu'on pointe
+ * la bonne. Même idée que describeDatabase() dans server.js, recopiée ici :
+ * importer server.js depuis une route créerait un cycle (server → routes).
+ */
+export function describeDatabaseConfig(url) {
+  if (String(url).startsWith('file:')) return { persistent: false, host: null };
+  try {
+    return { persistent: true, host: new URL(url).hostname || null };
+  } catch {
+    // Adresse illisible : on ne prétend pas connaître l'hôte, mais une base
+    // qui n'est pas un fichier local reste une base distante (donc persistante).
+    return { persistent: true, host: null };
+  }
+}
+
+/*
+ * Noms des variables encore à renseigner, en français et groupés par fonction.
+ * On ne renvoie jamais une valeur : le tableau de bord doit pouvoir dire
+ * « ajoute AI_MODEL » sans qu'aucune clé ne transite par le navigateur. La
+ * liste est déduite de l'état réel (getters de config), pas d'une liste figée :
+ * une variable ajoutée sur la plateforme disparaît d'ici immédiatement.
+ */
+export function missingConfiguration() {
+  const missing = [];
+
+  if (!config.ai.ready) {
+    // Nommer précisément ce qui bloque : « IA non configurée » n'aide personne
+    // à réparer, alors que « AI_MODEL » se corrige en dix secondes.
+    const provider = config.ai.provider;
+    if (provider === 'anthropic') {
+      missing.push('ANTHROPIC_API_KEY');
+    } else if (provider === 'openai') {
+      missing.push(['AI_BASE_URL', 'AI_API_KEY', 'AI_MODEL'].filter((key) => !process.env[key]).join(' + '));
+    } else {
+      missing.push('ANTHROPIC_API_KEY (ou AI_BASE_URL + AI_API_KEY + AI_MODEL)');
+    }
+  }
+
+  if (!config.ownSite.ready) {
+    missing.push(['OWN_SITE_API_URL', 'OWN_SITE_API_KEY'].filter((key) => !process.env[key]).join(' + '));
+  }
+
+  /* eBay est volontairement exclu de cette liste. C'est un canal optionnel,
+     dont les clés dépendent d'un compte vendeur et d'une inscription
+     développeur : on peut parfaitement ne jamais le configurer. L'y inclure
+     rendrait le bandeau d'état définitivement orange, y compris quand tout ce
+     dont on a besoin est en place — et un avertissement qu'on ne peut pas faire
+     disparaître finit par ne plus être lu. Son état reste visible dans
+     `channels.ebay` : c'est une information, pas une alerte. */
+  return missing;
+}
+
 // --- Supervision ---
 api.get('/health', (req, res) => {
   res.json({ ok: true });
@@ -30,6 +86,34 @@ api.get('/health', (req, res) => {
 // --- État des connecteurs ---
 api.get('/channels', (req, res) => {
   res.json(allChannelsStatus());
+});
+
+/*
+ * État de la configuration, à destination du tableau de bord.
+ *
+ * Sans cette route, une variable oubliée ne se voyait qu'au moment du clic :
+ * l'utilisateur lançait une génération et recevait une erreur sans jamais
+ * apprendre que le fournisseur IA n'avait jamais été configuré. On expose donc
+ * des présences/absences et des NOMS de variables — jamais une valeur secrète.
+ */
+api.get('/config', (req, res) => {
+  const channels = {};
+  for (const { channel, configured } of allChannelsStatus()) channels[channel] = configured;
+
+  res.json({
+    database: describeDatabaseConfig(config.turso.url),
+    access: { protected: Boolean(config.admin.apiKey) },
+    ai: {
+      configured: config.ai.ready,
+      provider: config.ai.provider,
+      model: config.ai.model,
+      // La raison est écrite pour être affichée telle quelle : c'est elle qui
+      // explique le bandeau rouge, sans que le tableau de bord ait à deviner.
+      reason: config.ai.reason,
+    },
+    channels,
+    missing: missingConfiguration(),
+  });
 });
 
 // --- Produits ---
