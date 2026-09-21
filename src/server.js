@@ -9,6 +9,7 @@ import { suppliersRouter } from './routes/suppliers.js';
 import { requireAdmin } from './middleware/auth.js';
 import { startScheduler } from './services/scheduler.js';
 import { initDatabase, logActivity } from './db/database.js';
+import { seedSuppliersIfEmpty } from './db/supplier-catalogue.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -117,6 +118,23 @@ export async function start() {
     await initDatabase();
   } catch (error) {
     throw describeDatabaseStartupError(error);
+  }
+
+  /* Le catalogue de partenaires est installé juste après le schéma : sur un
+     déploiement neuf, la table suppliers serait sinon vide, et l'écran d'import
+     n'aurait aucun partenaire à proposer. Le seed ne remplit que la table vide,
+     donc sur la base de production déjà garnie il ne fait rien.
+
+     Cet échec n'est PAS fatal, contrairement à celui de la base : un catalogue
+     de confort ne vaut pas un service à l'arrêt. On le signale et on démarre
+     quand même — l'ajout manuel de partenaires reste possible. */
+  try {
+    const { seeded } = await seedSuppliersIfEmpty();
+    if (seeded > 0) {
+      console.log(`Catalogue de partenaires installé : ${seeded} fournisseurs et distributeurs par défaut.`);
+    }
+  } catch (error) {
+    console.error('Catalogue de partenaires non installé (le service démarre quand même) :', error);
   }
 
   return app.listen(config.port, () => {
