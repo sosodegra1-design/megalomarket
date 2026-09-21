@@ -1,7 +1,9 @@
-/* La contrainte CHECK de import_listings ne peut pas être modifiée en place en
- * SQLite : autoriser le canal `own_site` impose de reconstruire la table.
+/* Les contraintes CHECK ne peuvent pas être modifiées en place en SQLite :
+ * autoriser le canal `own_site` dans import_listings, et `allegro` dans
+ * channel_listings, impose de reconstruire ces tables.
  * Ce test rejoue le cas réel — une base créée avec l'ancien schéma, contenant
- * déjà des données — pour vérifier que la migration s'applique et ne perd rien.
+ * déjà des données — pour vérifier que les migrations s'appliquent sans rien
+ * perdre ni affaiblir les contraintes existantes.
  */
 
 import { test, before, after } from 'node:test';
@@ -42,6 +44,29 @@ CREATE TABLE IF NOT EXISTS import_listings (
   updated_at INTEGER NOT NULL,
   UNIQUE (import_id, marketplace)
 );
+
+CREATE TABLE IF NOT EXISTS products (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  sku TEXT NOT NULL UNIQUE,
+  name TEXT NOT NULL,
+  description TEXT NOT NULL DEFAULT '',
+  cost_price REAL NOT NULL DEFAULT 0,
+  created_at INTEGER NOT NULL
+);
+
+/* Ancienne définition : la contrainte ne connaissait pas encore allegro. */
+CREATE TABLE IF NOT EXISTS channel_listings (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  product_id INTEGER NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+  channel TEXT NOT NULL CHECK (channel IN ('ebay', 'own_site', 'amazon', 'tiktok_shop')),
+  external_id TEXT,
+  price REAL NOT NULL DEFAULT 0,
+  description TEXT NOT NULL DEFAULT '',
+  stock INTEGER NOT NULL DEFAULT 0,
+  status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'paused', 'out_of_stock')),
+  updated_at INTEGER NOT NULL,
+  UNIQUE (product_id, channel)
+);
 `;
 
 before(async () => {
@@ -64,6 +89,28 @@ before(async () => {
       `INSERT INTO import_listings (import_id, marketplace, title, description, suggested_price, created_at, updated_at)
        VALUES (1, 'own_site', 'x', 'y', 1, ?, ?)`,
       [Date.now(), Date.now()],
+    ),
+    /CHECK constraint failed/,
+  );
+
+  // Une ligne de channel_listings préexiste : elle doit survivre à la
+  // reconstruction de la table.
+  await dbRun(
+    'INSERT INTO products (sku, name, description, cost_price, created_at) VALUES (?, ?, ?, ?, ?)',
+    ['SKU-LEGACY', 'Produit existant', '', 5, Date.now()],
+  );
+  await dbRun(
+    `INSERT INTO channel_listings (product_id, channel, external_id, price, stock, updated_at)
+     VALUES (1, 'ebay', 'EXT-1', 19.9, 4, ?)`,
+    [Date.now()],
+  );
+
+  // Avant migration : allegro doit être refusé dans channel_listings.
+  await assert.rejects(
+    () => dbRun(
+      `INSERT INTO channel_listings (product_id, channel, price, stock, updated_at)
+       VALUES (1, 'allegro', 1, 0, ?)`,
+      [Date.now()],
     ),
     /CHECK constraint failed/,
   );
@@ -127,5 +174,45 @@ test('the other tables are created alongside and stay usable', async () => {
   await dbRun(
     'INSERT INTO channel_listings (product_id, channel, price, stock, updated_at) VALUES (?, ?, ?, ?, ?)',
     [product.id, 'own_site', 12.9, 0, Date.now()],
+  );
+});
+
+test('channel_listings keeps its rows and now accepts allegro', async () => {
+  const rows = await dbAll('SELECT * FROM channel_listings WHERE channel = ?', ['ebay']);
+  assert.equal(rows.length, 1, 'la ligne existante est conservée');
+  assert.equal(rows[0].external_id, 'EXT-1');
+  assert.equal(rows[0].price, 19.9);
+  assert.equal(rows[0].stock, 4);
+
+  // Le registre des connecteurs expose allegro et import_listings l'acceptait
+  // déjà : sans cette migration, chaque synchronisation de stock aurait échoué
+  // sur cette contrainte dès qu'Allegro serait configuré.
+  const info = await dbRun(
+    'INSERT INTO channel_listings (product_id, channel, price, stock, updated_at) VALUES (?, ?, ?, ?, ?)',
+    [1, 'allegro', 24.9, 3, Date.now()],
+  );
+  assert.ok(info.changes > 0, 'allegro est désormais accepté');
+
+  await assert.rejects(
+    () => dbRun(
+      'INSERT INTO channel_listings (product_id, channel, price, stock, updated_at) VALUES (?, ?, ?, ?, ?)',
+      [1, 'allegro', 30, 1, Date.now()],
+    ),
+    /UNIQUE constraint failed/,
+    'UNIQUE(product_id, channel) doit survivre à la reconstruction',
+  );
+});
+
+test('both rebuilt tables carry the widened constraint, with no leftovers', async () => {
+  for (const [table, marker] of [['import_listings', 'own_site'], ['channel_listings', 'allegro']]) {
+    const row = await dbGet("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = ?", [table]);
+    assert.ok(row.sql.includes(marker), `${table} doit accepter ${marker}`);
+    assert.equal(row.sql.includes('_migrated'), false, `${table} ne doit pas rester une table temporaire`);
+  }
+
+  const tables = await dbAll("SELECT name FROM sqlite_master WHERE type = 'table'");
+  assert.deepEqual(
+    tables.map((t) => t.name).filter((name) => name.endsWith('_migrated')),
+    [],
   );
 });

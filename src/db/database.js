@@ -38,57 +38,113 @@ export async function dbRun(sql, args = []) {
 }
 
 /**
- * SQLite ne sait pas modifier une contrainte CHECK en place : ajouter
- * `own_site` à import_listings.marketplace impose de reconstruire la table.
- * `CREATE TABLE IF NOT EXISTS` ne touche pas une table déjà existante, donc les
- * bases créées avant cette évolution ont besoin de cette migration explicite.
- * Idempotente : on ne reconstruit que si la contrainte n'accepte pas encore
- * `own_site`. La reconstruction est atomique (batch en mode write).
+ * SQLite ne sait pas modifier une contrainte CHECK en place : l'assouplir
+ * impose de reconstruire la table. `CREATE TABLE IF NOT EXISTS` ne touche pas
+ * une table déjà existante, donc les bases créées avant l'évolution ont besoin
+ * de cette reconstruction explicite.
+ *
+ * `marker` est un fragment de la définition cible : s'il figure déjà dans le SQL
+ * de la table, la migration a eu lieu et on ne fait rien. La reconstruction est
+ * atomique (`batch` en mode write) : en cas d'échec, tout est annulé et
+ * l'ancienne table reste en place, intacte.
  */
-async function migrateImportListingsForOwnSite() {
+async function rebuildTableIfNeeded({ table, marker, createTable, columns, select }) {
   const existing = await dbGet(
-    "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'import_listings'",
+    "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = ?",
+    [table],
   );
-  if (!existing?.sql || existing.sql.includes('own_site')) return false;
+  if (!existing?.sql || existing.sql.includes(marker)) return false;
 
+  const target = `${table}_migrated`;
   await client.batch(
     [
-      `CREATE TABLE import_listings_migrated (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        import_id INTEGER NOT NULL REFERENCES imports(id) ON DELETE CASCADE,
-        marketplace TEXT NOT NULL CHECK (marketplace IN ('amazon', 'tiktok_shop', 'allegro', 'ebay', 'own_site')),
-        title TEXT NOT NULL,
-        description TEXT NOT NULL,
-        suggested_price REAL NOT NULL,
-        site_payload TEXT,
-        status TEXT NOT NULL DEFAULT 'a_valider' CHECK (status IN ('a_valider', 'valide', 'publie', 'echec')),
-        published_external_id TEXT,
-        publish_error TEXT,
-        created_at INTEGER NOT NULL,
-        updated_at INTEGER NOT NULL,
-        UNIQUE (import_id, marketplace)
-      )`,
-      `INSERT INTO import_listings_migrated
-         (id, import_id, marketplace, title, description, suggested_price, site_payload,
-          status, published_external_id, publish_error, created_at, updated_at)
-       SELECT id, import_id, marketplace, title, description, suggested_price, NULL,
-              status, published_external_id, publish_error, created_at, updated_at
-       FROM import_listings`,
-      'DROP TABLE import_listings',
-      'ALTER TABLE import_listings_migrated RENAME TO import_listings',
+      // Une reconstruction interrompue laisserait la table temporaire derrière
+      // elle ; on la reprend à zéro plutôt que d'échouer au redémarrage suivant.
+      `DROP TABLE IF EXISTS ${target}`,
+      createTable(target),
+      `INSERT INTO ${target} (${columns.join(', ')}) SELECT ${select.join(', ')} FROM ${table}`,
+      `DROP TABLE ${table}`,
+      `ALTER TABLE ${target} RENAME TO ${table}`,
     ],
     'write',
   );
-
-  await logActivity('MIGRATION', "Table import_listings reconstruite : canal 'own_site' autorisé, colonne site_payload ajoutée.");
   return true;
+}
+
+/* Le canal own_site a été ajouté à import_listings.marketplace, en même temps
+   que la colonne site_payload qui porte la fiche détaillée exigée par le site. */
+async function migrateImportListings() {
+  const migrated = await rebuildTableIfNeeded({
+    table: 'import_listings',
+    marker: 'own_site',
+    createTable: (name) => `CREATE TABLE ${name} (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      import_id INTEGER NOT NULL REFERENCES imports(id) ON DELETE CASCADE,
+      marketplace TEXT NOT NULL CHECK (marketplace IN ('amazon', 'tiktok_shop', 'allegro', 'ebay', 'own_site')),
+      title TEXT NOT NULL,
+      description TEXT NOT NULL,
+      suggested_price REAL NOT NULL,
+      site_payload TEXT,
+      status TEXT NOT NULL DEFAULT 'a_valider' CHECK (status IN ('a_valider', 'valide', 'publie', 'echec')),
+      published_external_id TEXT,
+      publish_error TEXT,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL,
+      UNIQUE (import_id, marketplace)
+    )`,
+    columns: [
+      'id', 'import_id', 'marketplace', 'title', 'description', 'suggested_price', 'site_payload',
+      'status', 'published_external_id', 'publish_error', 'created_at', 'updated_at',
+    ],
+    select: [
+      'id', 'import_id', 'marketplace', 'title', 'description', 'suggested_price', 'NULL',
+      'status', 'published_external_id', 'publish_error', 'created_at', 'updated_at',
+    ],
+  });
+
+  if (migrated) {
+    await logActivity('MIGRATION', "Table import_listings reconstruite : canal 'own_site' autorisé, colonne site_payload ajoutée.");
+  }
+  return migrated;
+}
+
+/* Le registre des connecteurs expose `allegro`, et import_listings l'acceptait
+   déjà, mais channel_listings le refusait. Tant qu'Allegro n'était pas
+   configuré le défaut restait invisible ; dès qu'il le serait, chaque
+   synchronisation de stock aurait échoué sur cette contrainte, produit par
+   produit. */
+async function migrateChannelListings() {
+  const migrated = await rebuildTableIfNeeded({
+    table: 'channel_listings',
+    marker: 'allegro',
+    createTable: (name) => `CREATE TABLE ${name} (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      product_id INTEGER NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+      channel TEXT NOT NULL CHECK (channel IN ('ebay', 'own_site', 'amazon', 'tiktok_shop', 'allegro')),
+      external_id TEXT,
+      price REAL NOT NULL DEFAULT 0,
+      description TEXT NOT NULL DEFAULT '',
+      stock INTEGER NOT NULL DEFAULT 0,
+      status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'paused', 'out_of_stock')),
+      updated_at INTEGER NOT NULL,
+      UNIQUE (product_id, channel)
+    )`,
+    columns: ['id', 'product_id', 'channel', 'external_id', 'price', 'description', 'stock', 'status', 'updated_at'],
+    select: ['id', 'product_id', 'channel', 'external_id', 'price', 'description', 'stock', 'status', 'updated_at'],
+  });
+
+  if (migrated) {
+    await logActivity('MIGRATION', "Table channel_listings reconstruite : canal 'allegro' autorisé.");
+  }
+  return migrated;
 }
 
 export async function initDatabase() {
   await client.execute('PRAGMA foreign_keys = ON');
   const schemaSql = readFileSync(`${__dirname}/schema.sql`, 'utf8');
   await client.executeMultiple(schemaSql);
-  await migrateImportListingsForOwnSite();
+  await migrateImportListings();
+  await migrateChannelListings();
 }
 
 export async function logActivity(kind, message) {
