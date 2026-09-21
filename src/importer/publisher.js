@@ -80,3 +80,30 @@ export async function publishListing(importListingId) {
     throw error;
   }
 }
+
+/**
+ * Retire une fiche du canal où elle a été publiée (ex. un article sur le site
+ * propre) et remet la fiche en statut "valide" : elle reste modifiable et
+ * republiable, sans repasser par la génération IA.
+ */
+export async function unpublishListing(importListingId) {
+  const listing = await dbGet('SELECT * FROM import_listings WHERE id = ?', [importListingId]);
+  if (!listing) throw new Error(`Fiche produit introuvable (id=${importListingId}).`);
+  if (listing.status !== 'publie' || !listing.published_external_id) {
+    throw new Error(`Cette fiche n'est pas publiée sur ${listing.marketplace} — rien à retirer.`);
+  }
+
+  const connector = connectors[listing.marketplace];
+  if (!connector?.deleteListing) {
+    throw new Error(`Retrait non supporté pour le canal "${listing.marketplace}".`);
+  }
+
+  await connector.deleteListing(listing.published_external_id);
+
+  await dbRun(
+    "UPDATE import_listings SET status = 'valide', published_external_id = NULL, publish_error = NULL, updated_at = ? WHERE id = ?",
+    [Date.now(), importListingId],
+  );
+  await logActivity('IMPORT_DEPUBLIE', `Fiche "${listing.title}" retirée de ${listing.marketplace}.`);
+  return { ok: true };
+}

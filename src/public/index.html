@@ -1338,6 +1338,21 @@
             </section>
           </div>
 
+          <!-- Photos extraites du fournisseur : retirer une image mal choisie ou en
+               ajouter une manuellement, sans recréer l'import. La liste alimente à la
+               fois les fiches marketplace et la fiche du site propre. -->
+          <div id="importImagesBlock" style="display:none">
+            <section class="panel-section">
+              <h3 class="panel-section-title">Photos (<span id="importImagesCount">0</span>)</h3>
+              <p class="field-help">Clique sur « × » pour retirer une photo, ou colle une URL pour en ajouter une.</p>
+              <div id="importImagesGrid" style="display:flex;flex-wrap:wrap;gap:8px"></div>
+              <div class="row row-actions" style="margin-top:10px">
+                <input class="input" type="text" id="importImageUrlInput" placeholder="https://… (nouvelle photo)" autocomplete="off" style="flex:1;min-width:220px">
+                <button class="btn btn-sm" id="btnAddImportImage" type="button">Ajouter la photo</button>
+              </div>
+            </section>
+          </div>
+
           <details id="importDetail" style="display:none">
             <summary>Détail de l'extraction</summary>
             <div id="importBody" class="pre" style="margin-top:8px"></div>
@@ -4301,6 +4316,69 @@ function renderImportPrice(data) {
   warning.innerHTML = usable ? '' : esc(MISSING_PURCHASE_PRICE_WARNING);
 }
 
+/* Vignettes des photos extraites, avec retrait au clic et ajout manuel. `data`
+   accepte les deux formes déjà utilisées par renderImportPrice (POST /api/imports
+   ou GET /api/imports/:id) : `imageUrls` y est toujours un tableau de chaînes. */
+function renderImportImages(data) {
+  const block = $('importImagesBlock');
+  const grid = $('importImagesGrid');
+  if (!block || !grid) return;
+  const urls = data.imageUrls || [];
+  block.style.display = 'block';
+  const count = $('importImagesCount');
+  if (count) count.textContent = String(urls.length);
+  grid.innerHTML = urls.length
+    ? urls.map((url, i) => (
+      '<div style="position:relative;width:84px;height:84px;border-radius:10px;overflow:hidden;border:1px solid rgba(255,255,255,.14)">'
+      + '<img src="' + esc(url) + '" alt="" loading="lazy" style="width:100%;height:100%;object-fit:cover;display:block" onerror="this.style.opacity=\'0.2\'">'
+      + '<button type="button" class="btn btn-ghost btn-xs" data-action="remove-image" data-index="' + i + '" title="Retirer cette photo" '
+      + 'style="position:absolute;top:2px;right:2px;padding:0 6px;background:rgba(0,0,0,.6);border-radius:6px;line-height:1.6">&times;</button>'
+      + '</div>'
+    )).join('')
+    : '<p class="empty" style="margin:0">Aucune photo pour cet import.</p>';
+}
+
+/* Enregistre la liste complète (PATCH remplace, il n'y a pas d'ajout/retrait
+   côté serveur) puis met à jour l'état local et les vignettes affichées. */
+async function saveImportImages(urls) {
+  const updated = await api('/api/imports/' + encodeURIComponent(state.importId), {
+    method: 'PATCH',
+    body: JSON.stringify({ imageUrls: urls }),
+  });
+  state.importDetails.set(String(state.importId), updated);
+  renderImportImages(updated);
+  return updated;
+}
+
+onAction($('importImagesGrid'), {
+  'remove-image': (button) => action(button, async () => {
+    const detail = state.importDetails.get(String(state.importId));
+    const urls = (detail && detail.imageUrls ? detail.imageUrls : []).slice();
+    const index = Number(button.dataset.index);
+    if (!Number.isInteger(index) || index < 0 || index >= urls.length) return null;
+    urls.splice(index, 1);
+    return saveImportImages(urls);
+  }, 'Photo retirée.'),
+});
+
+$('btnAddImportImage').addEventListener('click', (event) => action(event.currentTarget, async () => {
+  if (state.importId == null) throw new Error('Extrais ou ouvre d\'abord un import.');
+  const input = $('importImageUrlInput');
+  const url = input.value.trim();
+  if (!url) throw new Error('Colle une URL de photo avant d\'ajouter.');
+  try {
+    const parsed = new URL(url);
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') throw new Error('protocole');
+  } catch {
+    throw new Error('URL de photo invalide : une adresse http(s) complète est attendue.');
+  }
+  const detail = state.importDetails.get(String(state.importId));
+  const urls = (detail && detail.imageUrls ? detail.imageUrls : []).slice();
+  urls.push(url);
+  await saveImportImages(urls);
+  input.value = '';
+}, 'Photo ajoutée.'));
+
 function scrollToListings() {
   const box = $('listingsCard');
   if (box && typeof box.scrollIntoView === 'function') {
@@ -4354,6 +4432,8 @@ $('btnExtract').addEventListener('click', (event) => action(event.currentTarget,
       ['Description brute', esc((data.rawDescription || '(aucune)').slice(0, 400))],
     ].map(([k, v]) => '<div class="kv"><span>' + k + '</span><span>' + v + '</span></div>').join('');
     renderImportPrice(data);
+    state.importDetails.set(String(data.id), data);
+    renderImportImages(data);
     await loadImports();
     updateGenerateButton();
     renderDashboard();
@@ -4418,7 +4498,9 @@ function renderListings(listings) {
       : '')
     + '<div class="actions">'
     + '<button class="btn btn-ghost btn-sm" type="button" data-action="save-listing" data-id="' + esc(l.id) + '" data-mp="' + esc(l.marketplace) + '">Enregistrer</button>'
-    + '<button class="btn btn-sm" type="button" data-action="publish-listing" data-id="' + esc(l.id) + '" data-mp="' + esc(l.marketplace) + '">Publier sur ' + esc(l.marketplace) + '</button>'
+    + (l.status === 'publie'
+      ? '<button class="btn btn-ghost btn-sm" type="button" data-action="unpublish-listing" data-id="' + esc(l.id) + '" data-mp="' + esc(l.marketplace) + '">Dépublier de ' + esc(l.marketplace) + '</button>'
+      : '<button class="btn btn-sm" type="button" data-action="publish-listing" data-id="' + esc(l.id) + '" data-mp="' + esc(l.marketplace) + '">Publier sur ' + esc(l.marketplace) + '</button>')
     + '</div>'
     + '</article>'
   )).join('');
@@ -4445,6 +4527,7 @@ async function showImport(id) {
   // Le prix d'achat est visible avant les fiches : c'est lui qui explique
   // pourquoi elles valent 0 €, et il se corrige ici même.
   renderImportPrice(data);
+  renderImportImages(data);
   $('listingsCard').style.display = 'block';
   renderListings(data.listings || []);
   scrollToListings();
@@ -4569,6 +4652,20 @@ onAction($('listings'), {
     renderDashboard();
     return result;
   }, 'Publication effectuée.'),
+
+  /* Retire réellement l'article du canal (ex. le supprime du site propre) :
+     même confirmation obligatoire que la publication, dans l'autre sens. */
+  'unpublish-listing': (button) => action(button, async () => {
+    if (!confirmChannelWrite('Retirer réellement cette fiche de ' + button.dataset.mp + ' ?')) return null;
+    const result = await api(
+      '/api/imports/' + encodeURIComponent(state.importId) + '/listings/' + encodeURIComponent(button.dataset.mp) + '/publish',
+      { method: 'DELETE' },
+    );
+    await showImport(state.importId);
+    await loadActivity();
+    renderDashboard();
+    return result;
+  }, 'Fiche retirée du canal.'),
 });
 
 /* ===================== CRÉATION DE PRODUIT ===================== */

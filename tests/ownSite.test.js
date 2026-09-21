@@ -116,6 +116,31 @@ test('createListing posts the rich site payload and lets the site assign the id'
   }
 });
 
+test('deleteListing DELETEs the product and authenticates with X-Admin-Key', async () => {
+  const mock = mockFetch(() => ({ status: 204 }));
+  try {
+    const result = await ownSite.deleteListing('p13');
+    const call = mock.calls[0];
+    assert.equal(call.url, 'https://bbhappy.example.com/api/admin/products/p13');
+    assert.equal(call.method, 'DELETE');
+    assert.equal(call.headers['X-Admin-Key'], 'site-admin-key');
+    assert.equal(call.body, undefined, 'a DELETE carries no body');
+    assert.equal(result, null, '204 No Content resolves to null');
+  } finally {
+    mock.restore();
+  }
+});
+
+test('deleteListing refuses a missing id before any request', async () => {
+  const mock = mockFetch(() => ({ json: {} }));
+  try {
+    await assert.rejects(() => ownSite.deleteListing(), /Identifiant de produit manquant/);
+    assert.equal(mock.calls.length, 0);
+  } finally {
+    mock.restore();
+  }
+});
+
 test('getTaxonomy reads the closed lists the generator must respect', async () => {
   const mock = mockFetch(() => ({ json: { categories: ['jouets'], universes: ['educatif'], iconKeys: ['puzzle'] } }));
   try {

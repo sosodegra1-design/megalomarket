@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { dbAll, dbGet, dbRun, logActivity } from '../db/database.js';
 import { scrapeProductFromUrl } from '../importer/scraper.js';
 import { generateListingsForImport, validateSitePayload } from '../importer/listingGenerator.js';
-import { publishListing } from '../importer/publisher.js';
+import { publishListing, unpublishListing } from '../importer/publisher.js';
 import { connectors } from '../connectors/index.js';
 import { computeSuggestedPrice } from '../importer/pricing.js';
 import { config } from '../config/env.js';
@@ -16,6 +16,32 @@ function asyncRoute(handler) {
       res.status(400).json({ error: error.message });
     });
   };
+}
+
+const MAX_IMAGES = 30;
+
+/* Valide et nettoie la liste de photos envoyée par le tableau de bord (ajout
+   manuel ou retrait d'une photo extraite) avant de l'enregistrer — une URL
+   mal formée ne doit jamais atteindre buildPublishPayload plus tard. */
+function parseImageUrls(value) {
+  if (!Array.isArray(value)) throw new Error('imageUrls doit être un tableau d\'URLs.');
+  if (value.length > MAX_IMAGES) throw new Error(`imageUrls : ${MAX_IMAGES} photos maximum.`);
+  return value.map((url, i) => {
+    if (typeof url !== 'string' || !url.trim()) {
+      throw new Error(`imageUrls[${i}] invalide : une URL non vide est attendue.`);
+    }
+    const trimmed = url.trim();
+    let parsed;
+    try {
+      parsed = new URL(trimmed);
+    } catch {
+      throw new Error(`imageUrls[${i}] invalide : « ${trimmed.slice(0, 80)} » n'est pas une URL lisible.`);
+    }
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+      throw new Error(`imageUrls[${i}] invalide : seuls http et https sont acceptés.`);
+    }
+    return trimmed;
+  });
 }
 
 /*
@@ -123,7 +149,7 @@ importsRouter.get(
 importsRouter.patch(
   '/:id',
   asyncRoute(async (req, res) => {
-    const { purchasePrice, currency, title, rawDescription } = req.body || {};
+    const { purchasePrice, currency, title, rawDescription, imageUrls } = req.body || {};
 
     const imp = await dbGet('SELECT id FROM imports WHERE id = ?', [req.params.id]);
     if (!imp) throw new Error('Import introuvable.');
@@ -166,6 +192,11 @@ importsRouter.patch(
       }
       fields.push('raw_description = ?');
       values.push(rawDescription.trim());
+    }
+
+    if (imageUrls !== undefined) {
+      fields.push('image_urls = ?');
+      values.push(JSON.stringify(parseImageUrls(imageUrls)));
     }
 
     // Aucun champ exploitable : on refuse plutôt que de répondre « ok » sur une
@@ -309,5 +340,18 @@ importsRouter.post(
     ]);
     if (!listing) throw new Error('Fiche produit introuvable pour ce canal — génère les fiches avant de publier.');
     res.json(await publishListing(listing.id));
+  }),
+);
+
+// --- Retire une fiche déjà publiée (dépublication) ---
+importsRouter.delete(
+  '/:id/listings/:marketplace/publish',
+  asyncRoute(async (req, res) => {
+    const listing = await dbGet('SELECT * FROM import_listings WHERE import_id = ? AND marketplace = ?', [
+      req.params.id,
+      req.params.marketplace,
+    ]);
+    if (!listing) throw new Error('Fiche produit introuvable pour ce canal.');
+    res.json(await unpublishListing(listing.id));
   }),
 );

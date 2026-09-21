@@ -200,7 +200,7 @@ test('unknown fields alone are ignored, which leaves nothing to update', async (
   const id = await createImport();
   const { status, body } = await call(`/api/imports/${id}`, {
     method: 'PATCH',
-    body: { status: 'pret', source_url: 'https://evil.example', imageUrls: [] },
+    body: { status: 'pret', source_url: 'https://evil.example', randomField: 123 },
   });
   assert.equal(status, 400);
   assert.match(body.error, /Aucune modification fournie/);
@@ -227,4 +227,68 @@ test('an unknown import is reported clearly, not silently created', async () => 
   });
   assert.equal(status, 400);
   assert.match(body.error, /introuvable/i);
+});
+
+/* ===================== PHOTOS (imageUrls) ===================== */
+
+test('imageUrls replaces the extracted photo list, in the order given', async () => {
+  const id = await createImport();
+  const { status, body } = await call(`/api/imports/${id}`, {
+    method: 'PATCH',
+    body: { imageUrls: ['https://supplier.example/img2.jpg', 'https://manual.example/added.jpg'] },
+  });
+  assert.equal(status, 200);
+  assert.deepEqual(body.imageUrls, [
+    'https://supplier.example/img2.jpg',
+    'https://manual.example/added.jpg',
+  ]);
+});
+
+test('imageUrls can be emptied entirely (every photo removed)', async () => {
+  const id = await createImport();
+  const { status, body } = await call(`/api/imports/${id}`, { method: 'PATCH', body: { imageUrls: [] } });
+  assert.equal(status, 200);
+  assert.deepEqual(body.imageUrls, []);
+});
+
+test('a non-array imageUrls is refused', async () => {
+  const id = await createImport();
+  const { status, body } = await call(`/api/imports/${id}`, { method: 'PATCH', body: { imageUrls: 'not-an-array' } });
+  assert.equal(status, 400);
+  assert.match(body.error, /tableau/);
+});
+
+test('a malformed image URL is refused before anything is saved', async () => {
+  const id = await createImport();
+  const { status, body } = await call(`/api/imports/${id}`, {
+    method: 'PATCH',
+    body: { imageUrls: ['https://ok.example/a.jpg', 'pas-une-url'] },
+  });
+  assert.equal(status, 400);
+  assert.match(body.error, /imageUrls\[1\]/);
+
+  const stored = await dbGet('SELECT image_urls FROM imports WHERE id = ?', [id]);
+  assert.deepEqual(
+    JSON.parse(stored.image_urls),
+    ['https://supplier.example/img1.jpg', 'https://supplier.example/img2.jpg'],
+    'refused write must not partially apply',
+  );
+});
+
+test('a non-http(s) image URL is refused', async () => {
+  const id = await createImport();
+  const { status, body } = await call(`/api/imports/${id}`, {
+    method: 'PATCH',
+    body: { imageUrls: ['ftp://supplier.example/a.jpg'] },
+  });
+  assert.equal(status, 400);
+  assert.match(body.error, /http et https/);
+});
+
+test('more than 30 images is refused', async () => {
+  const id = await createImport();
+  const imageUrls = Array.from({ length: 31 }, (_, i) => `https://supplier.example/img${i}.jpg`);
+  const { status, body } = await call(`/api/imports/${id}`, { method: 'PATCH', body: { imageUrls } });
+  assert.equal(status, 400);
+  assert.match(body.error, /30 photos maximum/);
 });
