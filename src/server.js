@@ -51,6 +51,21 @@ function describeDatabaseStartupError(error) {
   const status = error?.cause?.status ?? error?.status;
   const hints = [];
 
+  /* Le jeton est la cause la plus fréquente, et la plus difficile à voir : deux
+     valeurs recopiées dans la mauvaise case restent « présentes » du point de
+     vue de la configuration, donc rien ne les signale. Les jetons Turso sont
+     des JWT et commencent toujours par « eyJ » : tout le reste est suspect. */
+  const token = String(config.turso.authToken ?? '');
+  if (token) {
+    if (token !== token.trim()) {
+      hints.push("TURSO_AUTH_TOKEN commence ou finit par un espace ou un retour à la ligne : recopie-le sans caractère parasite");
+    } else if (/^(libsql|https?|wss?):\/\//i.test(token)) {
+      hints.push("TURSO_AUTH_TOKEN contient une ADRESSE et non un jeton : les deux valeurs sont probablement croisées ou décalées");
+    } else if (!token.startsWith('eyJ')) {
+      hints.push("TURSO_AUTH_TOKEN ne ressemble pas à un jeton Turso (ils commencent par « eyJ ») : il vient probablement d'une autre base, ou a été tronqué au copier-coller");
+    }
+  }
+
   // 400 et 404 sont ce que Turso renvoie quand l'adresse ne désigne aucune base
   // accessible avec ce jeton (vérifié : 404 pour une base inexistante).
   if (status === 400 || status === 404) {
