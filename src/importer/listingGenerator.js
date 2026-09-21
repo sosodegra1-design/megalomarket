@@ -1,10 +1,19 @@
 import { askModel, parseJsonFromModel } from '../ai/client.js';
-import { dbGet, dbRun } from '../db/database.js';
+import { dbGet, dbRun, logActivity } from '../db/database.js';
 import { computeSuggestedPrice } from './pricing.js';
 import { config } from '../config/env.js';
 import { connectors } from '../connectors/index.js';
 
 const MARKETPLACES = ['amazon', 'tiktok_shop', 'allegro', 'ebay'];
+
+/* Quand le scraper n'a pas lu le prix d'achat, le prix conseillé vaut 0 € et les
+   fiches sont invendables (les canaux refusent un prix nul). Le texte reste
+   utile, donc on le génère quand même — mais l'utilisateur doit savoir POURQUOI
+   le prix est nul et comment le corriger. Message exporté : le tableau de bord
+   affiche exactement les mêmes mots, sans quoi l'explication divergerait. */
+export const MISSING_PURCHASE_PRICE_WARNING =
+  "Prix d'achat fournisseur introuvable : la page source n'exposait aucun prix lisible, le prix conseillé a donc été calculé à 0 €. "
+  + "Les fiches texte restent utilisables, mais renseigne le prix d'achat réel via PATCH /api/imports/:id avant de publier — les canaux refusent une fiche à 0 €.";
 
 const SYSTEM_PROMPT = `Tu es un expert e-commerce multi-marketplaces pour Megalomarket, une boutique d'articles pour enfants.
 On te donne les informations brutes d'une fiche produit fournisseur (souvent en anglais ou chinois, parfois mal traduites).
@@ -196,6 +205,10 @@ export async function generateListingsForImport(importId) {
   }
 
   const suggestedPrice = computeSuggestedPrice(imp.purchase_price, config.pricing);
+  // Le prix d'achat est « exploitable » dès qu'il est strictement positif. On ne
+  // touche pas à l'arithmétique (computeSuggestedPrice reste la seule source du
+  // prix) : on se contente de rendre le cas dégénéré impossible à manquer.
+  const purchasePriceIsUsable = Number.isFinite(imp.purchase_price) && imp.purchase_price > 0;
   const now = Date.now();
   const saved = [];
 
@@ -246,5 +259,20 @@ export async function generateListingsForImport(importId) {
   }
 
   await dbRun("UPDATE imports SET status = 'pret' WHERE id = ?", [importId]);
-  return saved;
+
+  const payload = { listings: saved };
+
+  // Prix d'achat illisible : on le signale dans la réponse ET dans le journal,
+  // pour que le tableau de bord l'affiche au moment même de la génération. Le
+  // champ n'est ajouté QUE dans ce cas — sinon il deviendrait un bruit permanent
+  // que plus personne ne lirait.
+  if (!purchasePriceIsUsable) {
+    payload.warning = MISSING_PURCHASE_PRICE_WARNING;
+    await logActivity(
+      'IMPORT_PRIX_MANQUANT',
+      `Import #${importId} : ${MISSING_PURCHASE_PRICE_WARNING}`,
+    );
+  }
+
+  return payload;
 }

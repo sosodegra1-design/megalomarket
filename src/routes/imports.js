@@ -48,17 +48,86 @@ importsRouter.post(
   }),
 );
 
+/* Détail d'un import : la ligne, ses images parsées et ses fiches par canal.
+   Partagé par GET et PATCH pour que les deux répondent EXACTEMENT la même
+   forme — le tableau de bord les traite sans distinction. */
+async function readImportDetail(id) {
+  const imp = await dbGet('SELECT * FROM imports WHERE id = ?', [id]);
+  if (!imp) throw new Error('Import introuvable.');
+  const listings = await dbAll(
+    'SELECT * FROM import_listings WHERE import_id = ? ORDER BY marketplace',
+    [id],
+  );
+  return { ...imp, imageUrls: JSON.parse(imp.image_urls || '[]'), listings };
+}
+
 // --- Détail d'un import + ses fiches par marketplace ---
 importsRouter.get(
   '/:id',
   asyncRoute(async (req, res) => {
-    const imp = await dbGet('SELECT * FROM imports WHERE id = ?', [req.params.id]);
+    res.json(await readImportDetail(req.params.id));
+  }),
+);
+
+// --- Correction d'un import après extraction ---
+/* Le scraper ne lit pas toujours le prix d'achat : une page fournisseur sans
+   données structurées donne 0, et toutes les fiches générées partent alors à
+   0 €. Sans cette route, la donnée source était définitive : l'import restait
+   bloqué avec des fiches invendables, sans aucun moyen de le réparer. */
+importsRouter.patch(
+  '/:id',
+  asyncRoute(async (req, res) => {
+    const { purchasePrice, currency, title, rawDescription } = req.body || {};
+
+    const imp = await dbGet('SELECT id FROM imports WHERE id = ?', [req.params.id]);
     if (!imp) throw new Error('Import introuvable.');
-    const listings = await dbAll(
-      'SELECT * FROM import_listings WHERE import_id = ? ORDER BY marketplace',
-      [req.params.id],
-    );
-    res.json({ ...imp, imageUrls: JSON.parse(imp.image_urls || '[]'), listings });
+
+    const fields = [];
+    const values = [];
+
+    if (purchasePrice !== undefined) {
+      // 0 est refusé volontairement : c'est précisément le symptôme à corriger,
+      // pas une valeur acceptable (elle produit des fiches que les canaux
+      // rejettent). On exige un vrai nombre, pas une chaîne numérique.
+      if (!Number.isFinite(purchasePrice) || purchasePrice <= 0) {
+        throw new Error(
+          "Prix d'achat invalide : il doit être un nombre strictement supérieur à 0 (0 € signale une extraction manquée).",
+        );
+      }
+      fields.push('purchase_price = ?');
+      values.push(purchasePrice);
+    }
+
+    if (currency !== undefined) {
+      if (typeof currency !== 'string' || !/^[A-Za-z]{3}$/.test(currency.trim())) {
+        throw new Error('Devise invalide : un code de 3 lettres est attendu (ex. EUR, USD).');
+      }
+      fields.push('currency = ?');
+      values.push(currency.trim().toUpperCase());
+    }
+
+    if (title !== undefined) {
+      if (typeof title !== 'string' || !title.trim()) {
+        throw new Error('Titre invalide : une chaîne non vide est attendue.');
+      }
+      fields.push('title = ?');
+      values.push(title.trim());
+    }
+
+    if (rawDescription !== undefined) {
+      if (typeof rawDescription !== 'string' || !rawDescription.trim()) {
+        throw new Error('Description brute invalide : une chaîne non vide est attendue.');
+      }
+      fields.push('raw_description = ?');
+      values.push(rawDescription.trim());
+    }
+
+    // Aucun champ exploitable : on refuse plutôt que de répondre « ok » sur une
+    // requête qui n'a rien changé (même règle que la fiche d'une marketplace).
+    if (!fields.length) throw new Error('Aucune modification fournie.');
+
+    await dbRun(`UPDATE imports SET ${fields.join(', ')} WHERE id = ?`, [...values, req.params.id]);
+    res.json(await readImportDetail(req.params.id));
   }),
 );
 

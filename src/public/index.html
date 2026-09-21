@@ -87,6 +87,14 @@
       border: 1px solid #6b552a; border-radius: 8px; padding: 9px 11px;
     }
 
+    /* Prix d'achat manquant : c'est la raison pour laquelle les fiches générées
+       valent 0 € et seront refusées par les canaux. Rouge, donc impossible à
+       confondre avec une simple note d'information. */
+    .price-warning {
+      margin: 12px 0 0; font-size: .84rem; color: #ffd9d5; background: #2f1a18;
+      border: 1px solid #6b2f2c; border-radius: 8px; padding: 10px 12px;
+    }
+
     #status { min-height: 20px; font-size: .86rem; padding: 10px 13px; border-radius: 10px; display: none; }
     #status.show { display: block; }
     #status.info { background: #1b2740; border: 1px solid #35507d; }
@@ -149,6 +157,28 @@
         <button class="ghost" id="btnGenerate" disabled>2. Générer les fiches IA</button>
       </div>
       <p class="ai-note" data-ai-note hidden>Génération IA désactivée : aucun fournisseur IA n'est configuré (voir le bandeau ci-dessus). L'extraction, elle, reste disponible.</p>
+
+      <!-- Prix d'achat : c'est LA donnée qui rend le prix conseillé exploitable.
+           S'il vaut 0, le scraper n'a rien lu et les fiches générées sont
+           invendables — on l'affiche en clair et on permet de le corriger sans
+           recréer l'import. -->
+      <div id="importPriceBlock" style="display:none">
+        <div id="importPriceWarning" class="price-warning" role="alert" hidden></div>
+        <div class="row">
+          <div style="flex:1 1 150px">
+            <label for="importPrice">Prix d'achat</label>
+            <input type="number" id="importPrice" step="0.01" min="0.01" placeholder="4.90">
+          </div>
+          <div style="flex:0 1 120px">
+            <label for="importCurrency">Devise</label>
+            <input type="text" id="importCurrency" maxlength="3" placeholder="USD" autocomplete="off">
+          </div>
+        </div>
+        <div class="row">
+          <button class="tiny" id="btnSavePurchasePrice">Enregistrer le prix d'achat</button>
+        </div>
+      </div>
+
       <details id="importDetail" style="display:none">
         <summary>Détail de l'import</summary>
         <div id="importBody" class="pre" style="margin-top:8px"></div>
@@ -595,8 +625,10 @@ async function loadImports() {
     const saved = await api('/api/imports/' + encodeURIComponent(b.dataset.regen) + '/generate', { method: 'POST' });
     await showImport(Number(b.dataset.regen));
     await loadImports();
+    if (saved && saved.warning) say(saved.warning, 'err');
+    else say('Fiches régénérées.', 'good');
     return saved;
-  }, 'Fiches régénérées.')));
+  })));
 }
 
 async function loadActivity() {
@@ -615,6 +647,54 @@ async function loadActivity() {
 }
 
 /* ===================== IMPORT : EXTRACTION ===================== */
+
+/* Mots EXACTEMENT identiques à l'avertissement renvoyé par /generate (voir
+   MISSING_PURCHASE_PRICE_WARNING dans src/importer/listingGenerator.js) : la
+   cause, la conséquence et la correction, pour que l'utilisateur ne découvre pas
+   des fiches à 0 € sans explication. */
+const MISSING_PURCHASE_PRICE_WARNING = "Prix d'achat fournisseur introuvable : la page source n'exposait aucun prix lisible, le prix conseillé a donc été calculé à 0 €. Les fiches texte restent utilisables, mais renseigne le prix d'achat réel via PATCH /api/imports/:id avant de publier — les canaux refusent une fiche à 0 €.";
+
+/* Affiche le prix d'achat et la devise de l'import courant, et prévient quand le
+   prix est nul ou illisible. `data` peut venir de POST /api/imports (champs
+   camelCase) ou de GET /api/imports/:id (colonnes SQL) : on accepte les deux. */
+function renderImportPrice(data) {
+  const raw = data.purchasePrice != null ? data.purchasePrice : data.purchase_price;
+  const price = Number(raw);
+  const usable = Number.isFinite(price) && price > 0;
+  const currency = String(data.currency || '');
+
+  $('importPriceBlock').style.display = 'block';
+  $('importPrice').value = usable ? String(price) : '';
+  $('importCurrency').value = currency;
+
+  const warning = $('importPriceWarning');
+  warning.hidden = usable;
+  // Même texte que l'API ; `esc` reste appliqué par principe, comme partout.
+  warning.innerHTML = usable ? '' : esc(MISSING_PURCHASE_PRICE_WARNING);
+}
+
+/* Enregistre la correction via PATCH /api/imports/:id, puis rafraîchit le
+   détail : les fiches déjà générées gardent leur ancien prix (c'est voulu, le
+   prix conseillé est un choix), mais l'import n'est plus bloqué. */
+$('btnSavePurchasePrice').addEventListener('click', (event) => action(event.currentTarget, async () => {
+  if (state.importId == null) throw new Error('Extrais ou ouvre d\'abord un import.');
+  const price = Number($('importPrice').value);
+  if (!Number.isFinite(price) || price <= 0) throw new Error('Prix d\'achat invalide : saisis un nombre strictement supérieur à 0.');
+  const currency = $('importCurrency').value.trim();
+  if (currency && !/^[A-Za-z]{3}$/.test(currency)) throw new Error('Devise invalide : un code de 3 lettres est attendu (ex. EUR, USD).');
+
+  const body = { purchasePrice: price };
+  if (currency) body.currency = currency;
+  const updated = await api('/api/imports/' + encodeURIComponent(state.importId), {
+    method: 'PATCH', body: JSON.stringify(body),
+  });
+  renderImportPrice(updated);
+  // Si les fiches sont déjà ouvertes, on les rafraîchit ; sinon on n'ouvre pas
+  // la carte de force — corriger le prix avant de générer reste possible.
+  if ($('listingsCard').style.display === 'block') await showImport(state.importId);
+  await loadImports();
+}, 'Prix d\'achat enregistré.'));
+
 $('btnExtract').addEventListener('click', (event) => action(event.currentTarget, async () => {
   const url = $('importUrl').value.trim();
   if (!url) throw new Error('Colle d\'abord une URL fournisseur.');
@@ -628,6 +708,7 @@ $('btnExtract').addEventListener('click', (event) => action(event.currentTarget,
     ['Photos trouvées', (data.imageUrls || []).length],
     ['Description brute', esc((data.rawDescription || '(aucune)').slice(0, 400))],
   ].map(([k, v]) => `<div class="kv"><span>${k}</span><span>${v}</span></div>`).join('');
+  renderImportPrice(data);
   await loadImports();
   updateGenerateButton();
   return data;
@@ -635,16 +716,25 @@ $('btnExtract').addEventListener('click', (event) => action(event.currentTarget,
 
 $('btnGenerate').addEventListener('click', (event) => action(event.currentTarget, async () => {
   if (state.importId == null) throw new Error('Extrais d\'abord une fiche.');
-  await api('/api/imports/' + encodeURIComponent(state.importId) + '/generate', { method: 'POST' });
+  const result = await api('/api/imports/' + encodeURIComponent(state.importId) + '/generate', { method: 'POST' });
   await showImport(state.importId);
   await loadImports();
-}, 'Fiches générées par l\'IA.'));
+  // Le serveur signale un prix d'achat illisible : son avertissement est affiché
+  // tel quel (cause + correction), sinon l'utilisateur ne comprendrait pas
+  // pourquoi toutes ses fiches sont à 0 €.
+  if (result && result.warning) say(result.warning, 'err');
+  else say('Fiches générées par l\'IA.', 'good');
+  return result;
+}));
 
 /* ===================== IMPORT : FICHES ===================== */
 async function showImport(id) {
   const data = await api('/api/imports/' + encodeURIComponent(id));
   state.importId = id;
   updateGenerateButton();
+  // Le prix d'achat est visible avant les fiches : c'est lui qui explique
+  // pourquoi elles valent 0 €, et il se corrige ici même.
+  renderImportPrice(data);
   $('listingsCard').style.display = 'block';
   const listings = data.listings || [];
   const box = $('listings');
