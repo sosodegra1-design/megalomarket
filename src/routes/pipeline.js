@@ -6,6 +6,7 @@ import { inspectImages } from '../ai/visionInspector.js';
 import { editorialCheck, categorize } from '../ai/qualityInspector.js';
 import { computeSellPrice, computeNetMargin, MIN_MARGIN_COEFFICIENT } from '../services/pricing.js';
 import { cheapestCarrier } from '../services/shipping.js';
+import { processProductImages, isImageStudioConfigured } from '../services/imageStudio.js';
 
 /*
  * Chaîne de PRÉPARATION Dénicheur -> Rédacteur -> Tarification/logistique
@@ -88,6 +89,31 @@ pipelineRouter.post(
     const taxonomy = await connector.getTaxonomy();
     const report = { steps: [] };
 
+    // --- Agent 2 (studio photo) : détourage + fond uniformisé sur Cloudinary ---
+    // Les images utilisées PAR LA SUITE (contrôle visuel, brouillon proposé à
+    // la reprise) sont celles-ci si le traitement réussit — jamais les brutes
+    // en même temps que les traitées, pour ne jamais laisser deux versions
+    // incohérentes coexister dans le même brouillon.
+    let processedImages = imageUrls;
+    if (imageUrls.length && isImageStudioConfigured()) {
+      const results = await processProductImages(imageUrls);
+      processedImages = results.map((r) => r.studioUrl);
+      const allOk = results.every((r) => r.ok);
+      report.steps.push({
+        agent: 'studio_photo',
+        label: 'Studio photo (détourage & fond uniforme)',
+        ok: allOk,
+        detail: { images: results },
+      });
+    } else if (imageUrls.length) {
+      report.steps.push({
+        agent: 'studio_photo',
+        label: 'Studio photo (détourage & fond uniforme)',
+        ok: false,
+        error: "Cloudinary non configuré (CLOUDINARY_CLOUD_NAME/API_KEY/API_SECRET) — photos utilisées telles quelles, sans traitement.",
+      });
+    }
+
     // --- Tarification & logistique : prix x3 minimum SUGGÉRÉ + transporteur le moins cher SUGGÉRÉ ---
     // Purement informatif désormais : rien ici ne bloque ni n'autorise quoi que
     // ce soit, puisque plus rien ne se publie automatiquement.
@@ -126,7 +152,7 @@ pipelineRouter.post(
     // réussie, il n'y a rien de fiable à analyser — on le dit plutôt que de
     // deviner sur le titre brut.
     if (listing) {
-      const imageVerdict = await inspectImages({ title: listing.seoTitle, imageUrls });
+      const imageVerdict = await inspectImages({ title: listing.seoTitle, imageUrls: processedImages });
       report.steps.push({ agent: 'inspecteur_images', label: 'Contrôle visuel des images', ok: imageVerdict.overallOk, detail: imageVerdict });
 
       const editorial = await editorialCheck({ title: listing.seoTitle, description: listing.description });
@@ -143,7 +169,7 @@ pipelineRouter.post(
     }
 
     const id = await saveRun({
-      title, sourceUrl, imageUrls, purchasePrice, sellPrice,
+      title, sourceUrl, imageUrls: processedImages, purchasePrice, sellPrice,
       shippingCarrier: carrier?.name, shippingCost, netMargin,
       category, seoTitle: listing?.seoTitle, description: listing?.description, report,
     });

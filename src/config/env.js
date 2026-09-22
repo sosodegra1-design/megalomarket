@@ -148,6 +148,17 @@ export const config = {
     },
   },
 
+  /* Studio photo (Agent 2 — traitement visuel, voir services/imageStudio.js) :
+     héberge et détoure/uniformise le fond des photos produit via Cloudinary. */
+  cloudinary: {
+    cloudName: process.env.CLOUDINARY_CLOUD_NAME || null,
+    apiKey: process.env.CLOUDINARY_API_KEY || null,
+    apiSecret: process.env.CLOUDINARY_API_SECRET || null,
+    get ready() {
+      return has('CLOUDINARY_CLOUD_NAME', 'CLOUDINARY_API_KEY', 'CLOUDINARY_API_SECRET');
+    },
+  },
+
   amazon: {
     refreshToken: process.env.AMAZON_REFRESH_TOKEN || null,
     clientId: process.env.AMAZON_CLIENT_ID || null,

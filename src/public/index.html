@@ -2073,7 +2073,7 @@ https://…/photo2.jpg"></textarea>
           <div class="card-head card-head-line">
             <div class="card-head-text">
               <h2>Pipeline IA — préparation de fiche</h2>
-              <p>Rédaction, prix et transporteur suggérés, contrôle qualité (images, éditorial, catégorisation). Le résultat est TOUJOURS un brouillon : le coût réel, les photos définitives, le prix final et la publication restent ta décision.</p>
+              <p>Studio photo (détourage &amp; fond uniforme), rédaction, prix et transporteur suggérés, contrôle qualité (images, éditorial, catégorisation). Le résultat est TOUJOURS un brouillon : le coût réel, les photos définitives, le prix final et la publication restent ta décision.</p>
             </div>
           </div>
           <p class="section-links">
@@ -2099,9 +2099,10 @@ https://…/photo2.jpg"></textarea>
                 <input type="text" id="pipeSourceUrl" placeholder="https://..." autocomplete="off">
               </div>
               <div class="field field-wide field-required">
-                <label for="pipeImages">Adresses des photos (une par ligne)</label>
+                <label for="pipeImages">Adresses des photos brutes (une par ligne)</label>
                 <textarea class="input textarea mono" id="pipeImages" rows="3" placeholder="https://…/photo1.jpg
 https://…/photo2.jpg"></textarea>
+                <p class="field-help">Si le studio photo est configuré, chaque image est détourée et posée sur un fond uni avant tout contrôle qualité — ce sont ces versions traitées qui atterrissent dans le brouillon.</p>
               </div>
               <div class="field field-wide">
                 <label for="pipeNotes">Notes pour le rédacteur (optionnel)</label>
@@ -5246,6 +5247,19 @@ function renderStepDetail(step) {
   if (!step.ok && step.error) return '<p class="hint hint-tight">' + esc(step.error) + '</p>';
   const d = step.detail;
   if (!d) return '';
+  if (step.agent === 'studio_photo') {
+    const images = d.images || [];
+    const thumbs = images.map((i) => (
+      '<div style="width:72px;height:72px;border-radius:10px;overflow:hidden;border:1px solid ' + (i.ok ? 'rgba(255,255,255,.14)' : 'var(--danger, #e5484d)') + '">'
+      + '<img src="' + esc(i.studioUrl) + '" alt="" loading="lazy" style="width:100%;height:100%;object-fit:cover;display:block" onerror="this.style.opacity=\'0.15\'">'
+      + '</div>'
+    )).join('');
+    const failed = images.filter((i) => !i.ok);
+    return '<div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:6px;">' + thumbs + '</div>'
+      + (failed.length
+        ? '<ul class="hint hint-tight">' + failed.map((i) => '<li>' + esc(i.sourceUrl) + ' : ' + esc(i.error) + '</li>').join('') + '</ul>'
+        : '<p class="hint hint-tight">Fond détouré et uniformisé sur toutes les images.</p>');
+  }
   if (step.agent === 'tarification_logistique') {
     const parts = [
       'Coût d\'achat : ' + money(d.purchasePrice),

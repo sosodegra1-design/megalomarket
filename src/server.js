@@ -113,6 +113,7 @@ function logConfigurationSummary() {
       ? `${config.ai.provider} (${config.ai.model})`
       : 'AUCUN — import, prix, descriptions et support resteront inertes'],
     ['site propre', state(config.ownSite.ready)],
+    ['studio photo', state(config.cloudinary.ready)],
     ['eBay', state(config.ebay.ready)],
   ];
 
