@@ -4316,7 +4316,9 @@ const importsTable = createTable({
       ? '<span class="cell-muted">…</span>'
       : (count ? '<span class="pill ok">' + count + '</span>' : '<span class="pill off">0</span>');
     return '<tr class="row-in">'
-      + '<td data-label="Titre"><span class="cell-strong">' + esc(i.title) + '</span></td>'
+      + '<td data-label="Titre"><span class="cell-strong">' + esc(i.title) + '</span>'
+      + (i.source_url ? '<div style="font-size:.75rem"><a href="' + esc(i.source_url) + '" target="_blank" rel="noopener">Voir l\'article original ↗</a></div>' : '')
+      + '</td>'
       + '<td data-label="Site" class="cell-muted">' + esc(i.source_site)
       + (i.supplier_name ? '<div style="font-size:.75rem">via ' + esc(i.supplier_name) + '</div>' : '') + '</td>'
       + '<td data-label="Statut"><span class="pill ' + (i.status === 'pret' ? 'ok' : 'off') + '">' + esc(i.status) + '</span></td>'
