@@ -2022,10 +2022,11 @@ https://…/photo2.jpg"></textarea>
                   <th>Pourquoi</th>
                   <th>Cible</th>
                   <th>Prix indicatif</th>
+                  <th>Fournisseur</th>
                   <th></th>
                 </tr>
               </thead>
-              <tbody id="denicheurRows"><tr class="table-empty"><td colspan="7">Aucune chasse lancée pour le moment.</td></tr></tbody>
+              <tbody id="denicheurRows"><tr class="table-empty"><td colspan="8">Aucune chasse lancée pour le moment.</td></tr></tbody>
             </table>
           </div>
         </div>
@@ -4989,12 +4990,13 @@ function renderDenicheur() {
         + '<td>' + (f.rationale ? esc(f.rationale) : '<span class="muted">—</span>') + '</td>'
         + '<td>' + (f.targetAudience ? esc(f.targetAudience) : '<span class="muted">—</span>') + '</td>'
         + '<td>' + (f.priceRange ? esc(f.priceRange) : '<span class="muted">—</span>') + '</td>'
+        + '<td><a class="btn ghost btn-sm" href="' + esc(nicheSupplierSearchUrl(f.title)) + '" target="_blank" rel="noopener">Chercher chez un fournisseur ↗</a></td>'
         + '<td>' + (f.publishedUrl
             ? '<a class="btn ghost btn-sm" href="' + esc(f.publishedUrl) + '" target="_blank" rel="noopener">Voir l\'article ↗</a>'
             : '<button class="btn ghost btn-sm" type="button" data-niche-publish="' + i + '">Publier →</button>') + '</td>'
         + '</tr>'
       )).join('')
-      : '<tr class="table-empty"><td colspan="7">Aucune chasse lancée pour le moment.</td></tr>';
+      : '<tr class="table-empty"><td colspan="8">Aucune chasse lancée pour le moment.</td></tr>';
     stagger(tbody);
   }
   const count = $('denicheurCount');
@@ -5003,6 +5005,18 @@ function renderDenicheur() {
       ? rows.length + ' pépite' + (rows.length > 1 ? 's' : '') + ' suggérée' + (rows.length > 1 ? 's' : '') + ' par l\'IA — à vérifier avant tout achat.'
       : 'Aucune chasse lancée pour le moment.';
   }
+}
+
+/* Le Dénicheur n'a RIEN scrapé de réel : c'est une suggestion du modèle de
+   langage, sans accès à un fournisseur précis ni à une page produit
+   existante (voir l'avertissement dans src/ai/nicheHunter.js). Il ne peut
+   donc pas fournir « le lien de l'article d'origine » — il n'y en a pas.
+   Ce qu'on peut honnêtement offrir : une recherche pré-remplie chez un vrai
+   fournisseur (Alibaba, pour du sourcing en gros), pour que l'utilisateur
+   retrouve et vérifie LUI-MÊME un produit correspondant. */
+function nicheSupplierSearchUrl(title) {
+  const query = encodeURIComponent(String(title || '').trim());
+  return 'https://www.alibaba.com/trade/search?SearchText=' + query;
 }
 
 /* Rapproche le texte de catégorie libre renvoyé par l'IA (« Jouets électroniques »…)
