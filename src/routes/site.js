@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { connectors } from '../connectors/index.js';
 import { logActivity } from '../db/database.js';
+import { config } from '../config/env.js';
 
 /*
  * Catalogue du site propre (BBVOLTEX), indépendamment de Megalomarket.
@@ -20,6 +21,23 @@ function asyncRoute(handler) {
       res.status(400).json({ error: error.message });
     });
   };
+}
+
+/* Lien direct vers la fiche produit sur le site (page de catégorie + deep
+   link `?product=<id>` géré côté site, voir js/script.js de BBhappy) — le
+   site n'a pas de page dédiée par produit, seulement des modales ouvertes
+   par ce paramètre, donc c'est le lien le plus direct qu'on puisse donner. */
+function siteBaseUrl() {
+  return config.ownSite.apiUrl ? String(config.ownSite.apiUrl).replace(/\/+$/, '') : null;
+}
+
+function withProductUrl(product) {
+  if (!product || typeof product !== 'object') return product;
+  const base = siteBaseUrl();
+  const url = base && product.category && product.id
+    ? `${base}/${product.category}.html?product=${encodeURIComponent(product.id)}`
+    : null;
+  return { ...product, url };
 }
 
 function requireOwnSite() {
@@ -87,7 +105,8 @@ siteRouter.get(
   '/products',
   asyncRoute(async (req, res) => {
     const connector = requireOwnSite();
-    res.json(await connector.listProducts());
+    const products = await connector.listProducts();
+    res.json(Array.isArray(products) ? products.map(withProductUrl) : products);
   }),
 );
 
@@ -105,7 +124,7 @@ siteRouter.get(
   '/products/:id',
   asyncRoute(async (req, res) => {
     const connector = requireOwnSite();
-    res.json(await connector.getProduct(req.params.id));
+    res.json(withProductUrl(await connector.getProduct(req.params.id)));
   }),
 );
 

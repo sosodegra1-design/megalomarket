@@ -5108,6 +5108,9 @@ const siteProductsTable = createTable({
     + '<td data-label="Identifiant"><span class="pill off">' + esc(p.id) + '</span></td>'
     + '<td data-label="Prix">' + (p.price != null ? money(p.price) : '<span class="muted">—</span>') + '</td>'
     + '<td class="table-actions">'
+    + (p.url
+        ? '<a class="btn btn-ghost btn-xs" href="' + esc(p.url) + '" target="_blank" rel="noopener">Voir l\'article ↗</a>'
+        : '<span class="hint hint-tight" title="Site propre non configuré ou catégorie manquante">Lien indisponible</span>')
     + '<button class="btn btn-ghost btn-xs" type="button" data-action="edit-site-product" data-id="' + esc(p.id) + '">Modifier</button>'
     + '<button class="btn btn-ghost btn-xs" type="button" data-action="delete-site-product" data-id="' + esc(p.id) + '" data-name="' + esc(p.name || p.id) + '">Supprimer</button>'
     + '</td>'
