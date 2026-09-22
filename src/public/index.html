@@ -1806,8 +1806,12 @@
                   <input type="text" id="artName" placeholder="Puzzle 3D en bois Tour Eiffel" autocomplete="off">
                 </div>
                 <div class="field field-wide">
-                  <label for="artDescription">Description (optionnel)</label>
+                  <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;">
+                    <label for="artDescription">Description (optionnel)</label>
+                    <button class="btn btn-ghost btn-xs" type="button" id="btnGenerateArticleDescription" data-needs-ai>✨ Écrire une description vendeur</button>
+                  </div>
                   <textarea class="input textarea" id="artDescription" rows="3" placeholder="Un joli puzzle en bois, pour les curieux dès 6 ans."></textarea>
+                  <p class="hint hint-tight" id="artDescriptionAiNote" data-ai-note hidden>IA non configurée : voir le bandeau de configuration en haut de page.</p>
                 </div>
               </div>
               <p class="field-help">La version anglaise du site reprend automatiquement ce texte si tu ne la remplis pas — utile si tu ne traduis pas toi-même.</p>
@@ -5221,6 +5225,29 @@ function renderArticleImagesPreview() {
   )).join('');
 }
 $('artImages').addEventListener('input', renderArticleImagesPreview);
+
+/* Agent marketing : écrit une description vendeur à partir de ce qui est déjà
+   rempli dans le formulaire (nom obligatoire ; catégorie, univers, âge et prix
+   si présents), pour que l'utilisateur n'ait pas à rédiger lui-même. Le texte
+   généré REMPLACE le contenu actuel du champ — jamais publié seul, l'utilisateur
+   reste libre de le corriger avant de cliquer « Publier l'article ». */
+$('btnGenerateArticleDescription').addEventListener('click', (event) => action(event.currentTarget, async () => {
+  const name = $('artName').value.trim();
+  if (!name) throw new Error('Renseigne d\'abord le nom du produit.');
+
+  const description = await api('/api/site/products/describe', {
+    method: 'POST',
+    body: JSON.stringify({
+      name,
+      category: $('artCategory').value || null,
+      universe: $('artUniverse').value || null,
+      ageLabel: $('artAgeLabel').value.trim() || null,
+      price: $('artPrice').value ? Number($('artPrice').value) : null,
+    }),
+  });
+  $('artDescription').value = description.description;
+  confirmFlash($('artDescription'));
+}, 'Description générée.'));
 
 function resetArticleForm() {
   state.editingSiteProductId = null;

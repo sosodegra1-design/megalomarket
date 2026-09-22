@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { connectors } from '../connectors/index.js';
 import { logActivity } from '../db/database.js';
 import { config } from '../config/env.js';
+import { generateSiteArticleDescription } from '../ai/descriptionWriter.js';
 
 /*
  * Catalogue du site propre (BBVOLTEX), indépendamment de Megalomarket.
@@ -125,6 +126,25 @@ siteRouter.get(
   asyncRoute(async (req, res) => {
     const connector = requireOwnSite();
     res.json(withProductUrl(await connector.getProduct(req.params.id)));
+  }),
+);
+
+// --- Agent marketing : écrit une description vendeur pour le formulaire
+//     « Ajouter un article », à partir de ce qui y est déjà saisi. N'exige
+//     pas le connecteur site propre (juste l'IA) : l'article n'existe pas
+//     encore, rien à publier ni à valider contre la taxonomie du site ici. ---
+siteRouter.post(
+  '/products/describe',
+  asyncRoute(async (req, res) => {
+    const body = req.body || {};
+    const description = await generateSiteArticleDescription({
+      name: body.name,
+      category: body.category,
+      universe: body.universe,
+      ageLabel: body.ageLabel,
+      price: body.price,
+    });
+    res.json({ description });
   }),
 );
 
