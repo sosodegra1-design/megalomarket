@@ -135,3 +135,31 @@ CREATE TABLE IF NOT EXISTS import_listings (
   updated_at INTEGER NOT NULL,
   UNIQUE (import_id, marketplace)
 );
+
+-- Traçabilité de la chaîne Dénicheur -> Rédacteur -> Tarification/Logistique
+-- -> Inspecteur qualité (voir src/routes/pipeline.js). Chaque ligne est UNE
+-- exécution : soit publiée automatiquement (tous les contrôles ont passé),
+-- soit mise en brouillon avec le rapport détaillé de ce qui a échoué —
+-- jamais publiée à moitié. report est un JSON {steps:[{agent, ok, detail/error}, ...]}.
+-- purchase_price est le coût d'achat fournisseur ; sell_price le prix de
+-- vente calculé automatiquement (coût x3 minimum, voir src/services/pricing.js) ;
+-- net_margin = sell_price - purchase_price - shipping_cost.
+CREATE TABLE IF NOT EXISTS pipeline_runs (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  title TEXT NOT NULL,
+  source_url TEXT,
+  image_urls TEXT NOT NULL DEFAULT '[]',
+  purchase_price REAL,
+  sell_price REAL,
+  shipping_carrier TEXT,
+  shipping_cost REAL,
+  net_margin REAL,
+  category TEXT,
+  seo_title TEXT,
+  description TEXT,
+  status TEXT NOT NULL DEFAULT 'brouillon' CHECK (status IN ('publie', 'brouillon')),
+  report TEXT NOT NULL DEFAULT '{}',
+  published_product_id TEXT,
+  published_url TEXT,
+  created_at INTEGER NOT NULL
+);

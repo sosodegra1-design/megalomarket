@@ -37,6 +37,35 @@ async function askAnthropic({ system, prompt, maxTokens }) {
 }
 
 /**
+ * Analyse d'images (contrôle qualité visuel, Agent 3). Volontairement à part
+ * d'askModel : seul Claude (Anthropic) sait lire des images dans ce projet —
+ * les fournisseurs « compatibles OpenAI » configurables ici (AI_PROVIDER=openai)
+ * sont tous du texte seul (Groq, Cerebras, OpenRouter…). Un site sans
+ * ANTHROPIC_API_KEY n'a donc PAS de contrôle visuel réel, et doit échouer
+ * clairement plutôt que de laisser croire qu'une vérification a eu lieu.
+ */
+export async function askVision({ system, prompt, images, maxTokens = 1024 }) {
+  if (!config.anthropicApiKey) {
+    throw new Error(
+      "Analyse visuelle indisponible : ANTHROPIC_API_KEY n'est pas configurée. Seul Claude (Anthropic) sait analyser des images ici — un autre fournisseur IA (AI_PROVIDER=openai) ne suffit pas pour ce contrôle.",
+    );
+  }
+  const anthropic = getAnthropicClient();
+  const content = [
+    ...images.map((image) => ({ type: 'image', source: image.source })),
+    { type: 'text', text: prompt },
+  ];
+  const response = await anthropic.messages.create({
+    model: config.anthropicModel,
+    max_tokens: maxTokens,
+    system,
+    messages: [{ role: 'user', content }],
+  });
+  const textBlock = response.content.find((block) => block.type === 'text');
+  return textBlock ? textBlock.text : '';
+}
+
+/**
  * Chemin « compatible OpenAI » : une seule implémentation couvre Groq,
  * Cerebras, OpenRouter, Gemini, Mistral et Ollama local, car tous exposent
  * POST /chat/completions avec le même format de requête et de réponse. Le SDK

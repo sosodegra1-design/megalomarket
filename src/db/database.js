@@ -209,6 +209,19 @@ async function migrateImportsSupplier() {
   return added;
 }
 
+/* Coût et délai d'expédition d'un transporteur, saisis à la main (aucune API
+   de cotation en temps réel n'est branchée ici — voir src/services/shipping.js).
+   NULL tant que non renseigné : un transporteur sans coût connu est ignoré par
+   la comparaison automatique plutôt que traité comme gratuit ou instantané. */
+async function migrateSuppliersShipping() {
+  const addedCost = await addColumnIfMissing('suppliers', 'shipping_cost', 'REAL');
+  const addedDays = await addColumnIfMissing('suppliers', 'shipping_days', 'INTEGER');
+  if (addedCost || addedDays) {
+    await logActivity('MIGRATION', 'Colonnes suppliers.shipping_cost / shipping_days ajoutées : comparaison automatique des transporteurs.');
+  }
+  return addedCost || addedDays;
+}
+
 /* Le troisième type de partenaire — `transporteur` (transporteurs
    internationaux, transitaires, agents d'achat) — doit entrer dans la contrainte
    CHECK de `suppliers`. SQLite ne modifie pas un CHECK en place : il faut
@@ -322,6 +335,7 @@ export async function initDatabase() {
   // les liens imports.supplier_id, colonne que cette migration vient d'ajouter.
   await migrateImportsSupplier();
   await migrateSuppliersKinds();
+  await migrateSuppliersShipping();
 }
 
 export async function logActivity(kind, message) {

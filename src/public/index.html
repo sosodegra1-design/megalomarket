@@ -1114,6 +1114,10 @@
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="m20 20-4.35-4.35"/></svg>
         Dénicheur
       </a>
+      <a class="nav-item" href="#/pipeline" data-view="pipeline">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="6" cy="6" r="2.3"/><circle cx="18" cy="6" r="2.3"/><circle cx="12" cy="18" r="2.3"/><path d="M8 7.2 11 16M16 7.2 13 16"/></svg>
+        Pipeline IA
+      </a>
       <a class="nav-item" href="#/journal" data-view="journal">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 5.5h16M4 12h16M4 18.5h10"/></svg>
         Journal
@@ -1683,6 +1687,21 @@
               </div>
             </section>
 
+            <section class="panel-section">
+              <h3 class="panel-section-title">Tarif de référence (optionnel)</h3>
+              <p class="field-help">Renseigné ici, ce transporteur entre dans la comparaison automatique du <a href="#/pipeline">Pipeline IA</a>, qui retient toujours le moins cher parmi ceux qui respectent le délai demandé. Non renseigné, il est ignoré par cette comparaison (jamais traité comme gratuit).</p>
+              <div class="field-grid">
+                <div class="field">
+                  <label for="carShippingCost">Coût de livraison (€)</label>
+                  <input type="number" id="carShippingCost" step="0.01" min="0" placeholder="4.90">
+                </div>
+                <div class="field">
+                  <label for="carShippingDays">Délai (jours)</label>
+                  <input type="number" id="carShippingDays" step="1" min="1" placeholder="7">
+                </div>
+              </div>
+            </section>
+
             <div class="panel-foot">
               <button class="btn" id="btnCreateCarrier" type="button">Enregistrer le transporteur</button>
               <button class="btn btn-ghost" id="btnResetCarrier" type="button">Vider le formulaire</button>
@@ -1727,6 +1746,7 @@
                   <th data-sort="family" tabindex="0">Famille</th>
                   <th data-sort="site_url" tabindex="0">Site</th>
                   <th data-sort="notes" tabindex="0">Notes</th>
+                  <th data-sort="shipping_cost" tabindex="0">Livraison</th>
                   <th data-sort="status" tabindex="0">Statut</th>
                   <th>Actions</th>
                 </tr>
@@ -2035,6 +2055,96 @@ https://…/photo2.jpg"></textarea>
                 </tr>
               </thead>
               <tbody id="denicheurRows"><tr class="table-empty"><td colspan="8">Aucune chasse lancée pour le moment.</td></tr></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- ==================== VUE : PIPELINE IA ====================
+           Chaîne autonome Dénicheur -> Rédacteur -> Inspecteur qualité ->
+           Publication (voir src/routes/pipeline.js). L'entrée reste manuelle
+           (titre, prix, photos) car le Dénicheur ne fournit aucune vraie
+           fiche fournisseur — ce que cette vue automatise, c'est tout ce qui
+           suit : rédaction, contrôle qualité, décision publier/brouillon,
+           SANS clic humain si tous les contrôles passent. -->
+      <section class="view" id="view-pipeline" data-view="pipeline" hidden>
+        <div class="card reveal-in">
+          <div class="card-head card-head-line">
+            <div class="card-head-text">
+              <h2>Pipeline IA — chaîne autonome</h2>
+              <p>Rédaction, contrôle qualité (images, éditorial, catégorisation) puis publication automatique si tout passe — sinon mise en brouillon avec le rapport détaillé. Aucun clic humain requis quand les contrôles sont validés.</p>
+            </div>
+          </div>
+          <p class="section-links">
+            <span class="pill warn">Publication automatique</span>
+            <span class="hint">Si l'Agent 3 valide images, éditorial et catégorisation, le produit part en ligne directement. Un seul contrôle en échec bascule tout en brouillon, jamais de publication partielle.</span>
+          </p>
+          <div class="panel">
+            <div class="field-grid">
+              <div class="field field-wide field-required">
+                <label for="pipeTitle">Titre du produit (brut, tel que trouvé)</label>
+                <input type="text" id="pipeTitle" placeholder="Halloween Décoration Lumières Led Citrouille..." autocomplete="off">
+              </div>
+              <div class="field field-required">
+                <label for="pipePurchasePrice">Coût d'achat fournisseur (€)</label>
+                <input type="number" id="pipePurchasePrice" step="0.01" min="0.01" placeholder="2.00">
+              </div>
+              <div class="field">
+                <label for="pipeMaxShippingDays">Délai de livraison max (jours, optionnel)</label>
+                <input type="number" id="pipeMaxShippingDays" step="1" min="1" placeholder="15">
+              </div>
+              <div class="field">
+                <label for="pipeSourceUrl">URL fournisseur (optionnel)</label>
+                <input type="text" id="pipeSourceUrl" placeholder="https://..." autocomplete="off">
+              </div>
+              <div class="field field-wide field-required">
+                <label for="pipeImages">Adresses des photos (une par ligne)</label>
+                <textarea class="input textarea mono" id="pipeImages" rows="3" placeholder="https://…/photo1.jpg
+https://…/photo2.jpg"></textarea>
+              </div>
+              <div class="field field-wide">
+                <label for="pipeNotes">Notes pour le rédacteur (optionnel)</label>
+                <textarea class="input textarea" id="pipeNotes" rows="2" placeholder="Détails à mentionner, ce que le fournisseur précise..."></textarea>
+              </div>
+            </div>
+            <p class="field-help">Le prix de vente n'est pas saisi ici : il est calculé automatiquement (coût x3 minimum, arrondi au .99 supérieur — voir <a href="#/transporteurs">Transporteurs</a> pour renseigner les coûts de livraison comparés).</p>
+            <div class="panel-foot">
+              <button class="btn" id="btnRunPipeline" type="button" data-needs-ai>Lancer le pipeline autonome</button>
+              <p class="hint hint-tight" id="pipelineAiNote" data-ai-note hidden>IA non configurée : voir le bandeau de configuration en haut de page.</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="card reveal-in" id="pipelineResultCard" hidden>
+          <div class="card-head card-head-line">
+            <div class="card-head-text">
+              <h2 id="pipelineResultTitle">Résultat</h2>
+              <p id="pipelineResultSummary"></p>
+            </div>
+          </div>
+          <div id="pipelineResultSteps"></div>
+        </div>
+
+        <div class="card table-card reveal-in" id="pipelineRunsCard">
+          <div class="table-tools">
+            <div class="table-tools-text">
+              <h2>Historique des exécutions</h2>
+              <p id="pipelineRunsCount">Aucune exécution pour le moment.</p>
+            </div>
+          </div>
+          <div class="table-scroll">
+            <table class="table">
+              <thead>
+                <tr>
+                  <th>Date</th>
+                  <th>Titre</th>
+                  <th>Statut</th>
+                  <th>Prix de vente</th>
+                  <th>Marge nette</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody id="pipelineRuns"><tr class="table-empty"><td colspan="6">Aucune exécution pour le moment.</td></tr></tbody>
             </table>
           </div>
         </div>
@@ -3209,7 +3319,12 @@ function supplierEditRow(supplier, withMargin = true) {
       ? '<div class="field"><label for="sup-edit-margin-' + id + '">Coefficient de marge (vide = défaut global)</label>'
         + '<input class="input" type="number" step="0.01" min="1.01" id="sup-edit-margin-' + id + '" value="'
         + (supplier.margin_coefficient == null ? '' : esc(supplier.margin_coefficient)) + '"></div>'
-      : '')
+      : '<div class="field"><label for="sup-edit-shipcost-' + id + '">Coût de livraison (€, optionnel)</label>'
+        + '<input class="input" type="number" step="0.01" min="0" id="sup-edit-shipcost-' + id + '" value="'
+        + (supplier.shipping_cost == null ? '' : esc(supplier.shipping_cost)) + '"></div>'
+        + '<div class="field"><label for="sup-edit-shipdays-' + id + '">Délai (jours, optionnel)</label>'
+        + '<input class="input" type="number" step="1" min="1" id="sup-edit-shipdays-' + id + '" value="'
+        + (supplier.shipping_days == null ? '' : esc(supplier.shipping_days)) + '"></div>')
     + '<div class="field"><label for="sup-edit-status-' + id + '">Statut</label>'
     + '<select class="input" id="sup-edit-status-' + id + '">' + selectOptions(SUPPLIER_STATUS_LABELS, supplier.status) + '</select></div>'
     + '<div class="field field-wide"><label for="sup-edit-notes-' + id + '">Notes</label>'
@@ -3941,6 +4056,7 @@ const carriersTable = createTable({
     { key: 'family', value: (c) => carrierFamilyDef(carrierFamily(c)).label },
     { key: 'site_url', value: (c) => c.site_url },
     { key: 'notes', value: (c) => c.notes },
+    { key: 'shipping_cost', value: (c) => c.shipping_cost != null ? Number(c.shipping_cost) : -1 },
     { key: 'status', value: (c) => c.status },
   ],
   search: (c) => [c.name, c.notes, c.site_url, carrierFamilyDef(carrierFamily(c)).label].join(' '),
@@ -3963,6 +4079,9 @@ const carriersTable = createTable({
       // Aucune pastille « service » n'est écrite ici : l'absence de la colonne
       // Marge dit déjà, sans ambiguïté, qu'aucune marge ne s'applique.
       + '</td>'
+      + '<td data-label="Livraison" class="cell-muted">' + (c.shipping_cost != null
+        ? money(c.shipping_cost) + (c.shipping_days != null ? ' · ' + formatInt(c.shipping_days) + ' j' : '')
+        : '<span class="muted">non renseigné</span>') + '</td>'
       + '<td data-label="Statut">' + supplierStatusBadge(c.status) + '</td>'
       + '<td data-label="Actions" class="cell-actions"><div class="actions">'
       + '<button class="btn btn-ghost btn-xs" type="button" data-action="edit" data-id="' + id + '" aria-label="Modifier ' + esc(c.name) + '">Modifier</button>'
@@ -4034,7 +4153,7 @@ function setCarrierKindFilter(status) {
    « Adresse acceptée. » après un enregistrement réussi ferait douter de ce qui
    vient de se passer. */
 function resetCarrierForm() {
-  for (const id of ['carName', 'carSite', 'carNotes']) {
+  for (const id of ['carName', 'carSite', 'carNotes', 'carShippingCost', 'carShippingDays']) {
     const el = $(id);
     if (el) el.value = '';
   }
@@ -4061,6 +4180,11 @@ function partnerPatchBody(id, { withMargin }) {
     body.kind = $('sup-edit-kind-' + id).value;
     // Champ vidé = retour explicite au coefficient global (null), jamais 0.
     body.marginCoefficient = marginRaw === '' ? null : Number(marginRaw);
+  } else {
+    const costRaw = $('sup-edit-shipcost-' + id).value.trim();
+    const daysRaw = $('sup-edit-shipdays-' + id).value.trim();
+    body.shippingCost = costRaw === '' ? null : Number(costRaw);
+    body.shippingDays = daysRaw === '' ? null : Number(daysRaw);
   }
   return body;
 }
@@ -4170,6 +4294,8 @@ $('btnCreateCarrier').addEventListener('click', (event) => action(event.currentT
   const body = { kind: CARRIER_KIND, name, status: $('carStatus').value };
   if (siteUrl) body.siteUrl = siteUrl;
   if (notes) body.notes = notes;
+  if ($('carShippingCost').value) body.shippingCost = Number($('carShippingCost').value);
+  if ($('carShippingDays').value) body.shippingDays = Number($('carShippingDays').value);
 
   await api('/api/suppliers', { method: 'POST', body: JSON.stringify(body) });
   resetCarrierForm();
@@ -5107,6 +5233,125 @@ $('btnHuntNiches').addEventListener('click', (event) => action(event.currentTarg
   confirmFlash($('denicheurTableCard'));
 }, 'Nouvelle chasse aux pépites terminée.'));
 
+/* ===================== PIPELINE IA (CHAÎNE AUTONOME) =====================
+   Dénicheur -> Rédacteur -> Inspecteur qualité -> Publication, voir
+   src/routes/pipeline.js. Publication SANS clic humain si tous les contrôles
+   passent (demande explicite) ; un seul contrôle en échec bascule tout en
+   brouillon avec le rapport détaillé, jamais de publication partielle. */
+state.pipelineRuns = [];
+
+function renderStepDetail(step) {
+  if (!step.ok && step.error) return '<p class="hint hint-tight">' + esc(step.error) + '</p>';
+  const d = step.detail;
+  if (!d) return '';
+  if (step.agent === 'tarification_logistique') {
+    const parts = [
+      'Coût d\'achat : ' + money(d.purchasePrice),
+      'Prix de vente (x' + d.minCoefficient + ' min.) : ' + money(d.sellPrice),
+      'Transporteur : ' + (d.carrier ? d.carrier + ' (' + money(d.shippingCost) + (d.shippingDays != null ? ', ' + d.shippingDays + ' j' : '') + ')' : 'aucun disponible'),
+      'Marge nette : ' + (d.netMargin != null ? money(d.netMargin) : '—'),
+    ];
+    return '<p class="hint hint-tight">' + esc(parts.join(' · ')) + '</p>' + (d.reason ? '<p class="hint hint-tight">' + esc(d.reason) + '</p>' : '');
+  }
+  if (step.agent === 'inspecteur_images') {
+    if (d.overallOk) return '<p class="hint hint-tight">' + esc(d.summary || 'Toutes les images sont conformes.') + '</p>';
+    const issues = (d.images || []).filter((i) => !i.relevant || i.quality !== 'ok')
+      .map((i) => 'Image ' + (i.index + 1) + ' : ' + (i.issue || (i.relevant ? esc(i.quality) : 'ne correspond pas au produit')));
+    return '<ul class="hint hint-tight">' + (issues.length ? issues : [d.summary || 'Problème non détaillé.']).map((t) => '<li>' + esc(t) + '</li>').join('') + '</ul>';
+  }
+  if (step.agent === 'inspecteur_editorial') {
+    if (d.ok) return '<p class="hint hint-tight">Aucun problème éditorial détecté.</p>';
+    return '<ul class="hint hint-tight">' + (d.issues || []).map((t) => '<li>' + esc(t) + '</li>').join('') + '</ul>';
+  }
+  if (step.agent === 'categorisation') {
+    if (d.error) return '<p class="hint hint-tight">' + esc(d.error) + '</p>';
+    const parts = [
+      'Catégorie : ' + (d.category || '—'),
+      'Univers : ' + (d.universe || 'aucun'),
+      'Icône : ' + (d.iconKey || '—'),
+      'Confiance : ' + (d.confident ? 'suffisante' : 'insuffisante'),
+    ];
+    return '<p class="hint hint-tight">' + esc(parts.join(' · ')) + '</p>';
+  }
+  return '';
+}
+
+function renderPipelineResult(result) {
+  const card = $('pipelineResultCard');
+  card.hidden = false;
+  const published = result.status === 'publie';
+  $('pipelineResultTitle').textContent = published ? '✅ Publié automatiquement' : '📝 Mis en brouillon';
+  $('pipelineResultSummary').textContent = published
+    ? 'Tous les contrôles ont passé — le produit est en ligne.' + (result.url ? '' : '')
+    : 'Au moins un contrôle a échoué — rien n\'a été publié.';
+  const steps = (result.report && result.report.steps) || [];
+  $('pipelineResultSteps').innerHTML = steps.map((s) => (
+    '<div class="panel-section">'
+    + '<h3 class="panel-section-title">' + (s.ok ? '✅ ' : '❌ ') + esc(s.label || s.agent) + '</h3>'
+    + renderStepDetail(s)
+    + '</div>'
+  )).join('') + (published && result.url
+    ? '<div class="panel-section"><a class="btn btn-sm" href="' + esc(result.url) + '" target="_blank" rel="noopener">Voir l\'article ↗</a></div>'
+    : '');
+  card.scrollIntoView({ behavior: motionOK() ? 'smooth' : 'auto', block: 'start' });
+}
+
+function renderPipelineRuns() {
+  const rows = state.pipelineRuns || [];
+  const tbody = $('pipelineRuns');
+  tbody.innerHTML = rows.length
+    ? rows.map((r) => (
+      '<tr class="row-in">'
+      + '<td>' + esc(when(r.createdAt)) + '</td>'
+      + '<td>' + esc(r.seoTitle || r.title) + '</td>'
+      + '<td><span class="pill ' + (r.status === 'publie' ? 'ok' : 'off') + '">' + (r.status === 'publie' ? 'Publié' : 'Brouillon') + '</span></td>'
+      + '<td>' + (r.sellPrice != null ? money(r.sellPrice) : '<span class="muted">—</span>') + '</td>'
+      + '<td>' + (r.netMargin != null ? money(r.netMargin) : '<span class="muted">—</span>') + '</td>'
+      + '<td>' + (r.publishedUrl ? '<a class="btn ghost btn-sm" href="' + esc(r.publishedUrl) + '" target="_blank" rel="noopener">Voir l\'article ↗</a>' : '<span class="muted">—</span>') + '</td>'
+      + '</tr>'
+    )).join('')
+    : '<tr class="table-empty"><td colspan="6">Aucune exécution pour le moment.</td></tr>';
+  stagger(tbody);
+  $('pipelineRunsCount').textContent = rows.length
+    ? rows.length + ' exécution' + (rows.length > 1 ? 's' : '')
+    : 'Aucune exécution pour le moment.';
+}
+
+async function loadPipelineRuns() {
+  try {
+    state.pipelineRuns = await api('/api/pipeline/runs');
+  } catch {
+    state.pipelineRuns = [];
+  }
+  renderPipelineRuns();
+  return state.pipelineRuns;
+}
+
+$('btnRunPipeline').addEventListener('click', (event) => action(event.currentTarget, async () => {
+  const title = $('pipeTitle').value.trim();
+  if (!title) throw new Error('Le titre du produit est obligatoire.');
+  const purchasePrice = Number($('pipePurchasePrice').value);
+  if (!Number.isFinite(purchasePrice) || purchasePrice <= 0) throw new Error('Renseigne un coût d\'achat valide.');
+  const images = ($('pipeImages').value || '').split('\n').map((u) => u.trim()).filter(Boolean);
+  if (!images.length) throw new Error('Colle au moins une adresse de photo.');
+  const maxShippingDaysRaw = $('pipeMaxShippingDays').value.trim();
+
+  const result = await api('/api/pipeline/run', {
+    method: 'POST',
+    body: JSON.stringify({
+      title,
+      purchasePrice,
+      images,
+      maxShippingDays: maxShippingDaysRaw ? Number(maxShippingDaysRaw) : null,
+      sourceUrl: $('pipeSourceUrl').value.trim() || null,
+      notes: $('pipeNotes').value.trim() || null,
+    }),
+  });
+  renderPipelineResult(result);
+  await loadPipelineRuns();
+  return result;
+}, null));
+
 /* ===================== CATALOGUE DU SITE =====================
    Indépendant des imports Megalomarket : un produit déjà en ligne avant
    l'import (ou ajouté directement sur le site) n'a pas de fiche
@@ -5372,6 +5617,7 @@ const VIEWS = {
   canaux: { el: 'view-canaux', title: 'Canaux' },
   distributeurs: { el: 'view-distributeurs', title: 'Distributeurs' },
   denicheur: { el: 'view-denicheur', title: 'Dénicheur' },
+  pipeline: { el: 'view-pipeline', title: 'Pipeline IA' },
   journal: { el: 'view-journal', title: 'Journal' },
   support: { el: 'view-support', title: 'Support' },
 };
@@ -5385,6 +5631,7 @@ const ROUTES = {
   '#/canaux': 'canaux',
   '#/distributeurs': 'distributeurs',
   '#/denicheur': 'denicheur',
+  '#/pipeline': 'pipeline',
   '#/journal': 'journal',
   '#/support': 'support',
 };
@@ -5530,7 +5777,7 @@ async function loadAll() {
   await loadConfig();
   // Chaque bloc est indépendant : une section en erreur ne doit pas vider les autres.
   const loadImportsAndDetails = async () => { await loadImports(); await hydrateImportDetails(); };
-  const blocks = [loadChannels, loadProducts, loadRecommendations, loadSuppliers, loadImportsAndDetails, loadActivity, loadDistributors, loadDenicheur, loadSiteProducts, loadSiteTaxonomy];
+  const blocks = [loadChannels, loadProducts, loadRecommendations, loadSuppliers, loadImportsAndDetails, loadActivity, loadDistributors, loadDenicheur, loadPipelineRuns, loadSiteProducts, loadSiteTaxonomy];
   const errors = [];
   await Promise.all(blocks.map((fn) => fn().catch((error) => { errors.push(fn.name + ' : ' + error.message); })));
   renderDashboard();

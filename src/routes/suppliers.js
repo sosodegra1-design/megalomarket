@@ -114,6 +114,27 @@ function parseMargin(value) {
   return value;
 }
 
+/* Coût et délai d'expédition, saisis à la main pour un transporteur — c'est
+   sur ces deux colonnes que la comparaison automatique du pipeline choisit
+   le moins cher (voir src/services/shipping.js). null = non renseigné, un
+   transporteur sans coût connu est alors ignoré par la comparaison plutôt
+   que traité comme gratuit. */
+function parseShippingCost(value) {
+  if (value === null || value === undefined || value === '') return null;
+  if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) {
+    throw new Error('Coût de livraison invalide : un nombre positif ou nul est attendu, ou null pour ne pas le renseigner.');
+  }
+  return value;
+}
+
+function parseShippingDays(value) {
+  if (value === null || value === undefined || value === '') return null;
+  if (!Number.isInteger(value) || value <= 0) {
+    throw new Error('Délai de livraison invalide : un nombre entier de jours strictement positif est attendu, ou null pour ne pas le renseigner.');
+  }
+  return value;
+}
+
 function parseStatus(value) {
   if (!SUPPLIER_STATUSES.includes(value)) {
     throw new Error(`Statut invalide : valeurs acceptées ${SUPPLIER_STATUSES.join(', ')} (reçu : ${JSON.stringify(value)}).`);
@@ -151,12 +172,12 @@ suppliersRouter.get(
 suppliersRouter.post(
   '/',
   asyncRoute(async (req, res) => {
-    const { kind, name, siteUrl, marginCoefficient, status, notes } = req.body || {};
+    const { kind, name, siteUrl, marginCoefficient, status, notes, shippingCost, shippingDays } = req.body || {};
 
     const now = new Date().toISOString();
     const info = await dbRun(
-      `INSERT INTO suppliers (kind, name, site_url, margin_coefficient, status, notes, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO suppliers (kind, name, site_url, margin_coefficient, status, notes, shipping_cost, shipping_days, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         parseKind(kind),
         parseName(name),
@@ -164,6 +185,8 @@ suppliersRouter.post(
         parseMargin(marginCoefficient),
         status === undefined ? 'actif' : parseStatus(status),
         parseNotes(notes),
+        parseShippingCost(shippingCost),
+        parseShippingDays(shippingDays),
         now,
         now,
       ],
@@ -198,6 +221,8 @@ suppliersRouter.patch(
     }
     if (body.status !== undefined) { fields.push('status = ?'); values.push(parseStatus(body.status)); }
     if (body.notes !== undefined) { fields.push('notes = ?'); values.push(parseNotes(body.notes)); }
+    if (body.shippingCost !== undefined) { fields.push('shipping_cost = ?'); values.push(parseShippingCost(body.shippingCost)); }
+    if (body.shippingDays !== undefined) { fields.push('shipping_days = ?'); values.push(parseShippingDays(body.shippingDays)); }
 
     // Aucun champ exploitable : on refuse plutôt que de répondre « ok » sur une
     // requête qui n'a rien changé.
