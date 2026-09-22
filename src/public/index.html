@@ -2022,9 +2022,10 @@ https://…/photo2.jpg"></textarea>
                   <th>Pourquoi</th>
                   <th>Cible</th>
                   <th>Prix indicatif</th>
+                  <th></th>
                 </tr>
               </thead>
-              <tbody id="denicheurRows"><tr class="table-empty"><td colspan="6">Aucune chasse lancée pour le moment.</td></tr></tbody>
+              <tbody id="denicheurRows"><tr class="table-empty"><td colspan="7">Aucune chasse lancée pour le moment.</td></tr></tbody>
             </table>
           </div>
         </div>
@@ -4978,7 +4979,7 @@ function renderDenicheur() {
   const tbody = $('denicheurRows');
   if (tbody) {
     tbody.innerHTML = rows.length
-      ? rows.map((f) => (
+      ? rows.map((f, i) => (
         '<tr class="row-in">'
         + '<td>' + esc(f.rank) + '</td>'
         + '<td>' + esc(f.title) + '</td>'
@@ -4986,9 +4987,10 @@ function renderDenicheur() {
         + '<td>' + (f.rationale ? esc(f.rationale) : '<span class="muted">—</span>') + '</td>'
         + '<td>' + (f.targetAudience ? esc(f.targetAudience) : '<span class="muted">—</span>') + '</td>'
         + '<td>' + (f.priceRange ? esc(f.priceRange) : '<span class="muted">—</span>') + '</td>'
+        + '<td><button class="btn ghost btn-sm" type="button" data-niche-publish="' + i + '">Publier →</button></td>'
         + '</tr>'
       )).join('')
-      : '<tr class="table-empty"><td colspan="6">Aucune chasse lancée pour le moment.</td></tr>';
+      : '<tr class="table-empty"><td colspan="7">Aucune chasse lancée pour le moment.</td></tr>';
     stagger(tbody);
   }
   const count = $('denicheurCount');
@@ -4998,6 +5000,70 @@ function renderDenicheur() {
       : 'Aucune chasse lancée pour le moment.';
   }
 }
+
+/* Rapproche le texte de catégorie libre renvoyé par l'IA (« Jouets électroniques »…)
+   d'une valeur exacte de la taxonomie du site (chargée dynamiquement, jamais
+   codée en dur ici — voir loadSiteTaxonomy). Best-effort : aucune correspondance
+   claire, on laisse le champ vide plutôt que de deviner. */
+function matchNicheCategory(text) {
+  const categories = state.siteTaxonomy.categories || [];
+  if (!text || !categories.length) return '';
+  const norm = (s) => String(s).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+  const needle = norm(text);
+  const words = needle.split(/[^a-z0-9]+/).filter(Boolean);
+  return categories.find((c) => {
+    const cn = norm(c);
+    return needle.includes(cn) || cn.includes(needle) || words.some((w) => w.length > 2 && cn.includes(w));
+  }) || '';
+}
+
+/* Extrait un prix de départ exploitable d'une fourchette texte (« 70-120 € »).
+   Simple moyenne des deux premiers nombres trouvés, sinon le seul trouvé. */
+function parseNichePrice(text) {
+  if (!text) return null;
+  const nums = (String(text).match(/\d+(?:[.,]\d+)?/g) || []).map((n) => Number(n.replace(',', '.')));
+  if (!nums.length) return null;
+  const value = nums.length > 1 ? (nums[0] + nums[1]) / 2 : nums[0];
+  return Math.round(value * 100) / 100;
+}
+
+/* Pré-remplit le formulaire « Ajouter un article » (vue Canaux) avec une piste
+   du Dénicheur, puis y amène l'utilisateur. On ne devine jamais l'icône ni
+   l'âge cible — ce sont des choix éditoriaux, pas des champs déductibles du
+   texte IA — donc l'article n'est publiable qu'après que l'utilisateur les
+   complète lui-même : un clic prépare, il ne publie jamais seul. */
+function publishNicheFind(f) {
+  if (!f) return;
+  resetArticleForm();
+  $('artName').value = f.title || '';
+  $('artDescription').value = f.rationale || '';
+  const category = matchNicheCategory(f.category);
+  if (category) $('artCategory').value = category;
+  const price = parseNichePrice(f.priceRange);
+  if (price != null) $('artPrice').value = String(price);
+  renderArticleImagesPreview();
+
+  location.hash = '#/canaux';
+  showView('canaux');
+  requestAnimationFrame(() => {
+    const card = $('siteArticleFormCard');
+    if (card && typeof card.scrollIntoView === 'function') {
+      card.scrollIntoView({ behavior: motionOK() ? 'smooth' : 'auto', block: 'start' });
+    }
+    confirmFlash(card);
+    const nameField = $('artName');
+    if (nameField && typeof nameField.focus === 'function') nameField.focus();
+  });
+  say('Pré-rempli depuis le Dénicheur — choisis l\'icône, l\'âge cible et ajoute au moins une photo, puis clique « Publier l\'article ».', 'info');
+}
+
+$('denicheurRows').addEventListener('click', (event) => {
+  const btn = event.target.closest('[data-niche-publish]');
+  if (!btn) return;
+  const index = Number(btn.getAttribute('data-niche-publish'));
+  const find = (state.denicheur.finds || [])[index];
+  publishNicheFind(find);
+});
 
 async function loadDenicheur() {
   const result = await api('/api/niches/latest');
