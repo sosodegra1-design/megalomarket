@@ -1845,6 +1845,10 @@
                   <input type="number" id="artPrice" step="0.01" min="0.01" placeholder="19.90">
                 </div>
               </div>
+              <p class="field-help">
+                Le site exige toujours une tranche d'âge, même pour un article qui ne cible pas un âge précis (déco, maison…) —
+                <button class="btn btn-ghost btn-xs" type="button" id="btnNoAgeRange" style="margin-left:4px;">utiliser « Tous âges »</button>
+              </p>
             </section>
 
             <section class="panel-section">
@@ -5248,6 +5252,17 @@ $('btnGenerateArticleDescription').addEventListener('click', (event) => action(e
   $('artDescription').value = description.description;
   confirmFlash($('artDescription'));
 }, 'Description générée.'));
+
+/* Le site exige toujours age + ageLabel (colonnes NOT NULL côté BBVOLTEX,
+   voir server/products-repo.js), même pour un article qui ne cible pas une
+   tranche d'âge précise (déco, maison…). "all" / "Tous âges" est la
+   convention déjà utilisée par plusieurs dizaines de produits existants du
+   catalogue pour ce cas — on ne l'invente pas, on la réutilise. */
+$('btnNoAgeRange').addEventListener('click', (event) => {
+  event.preventDefault();
+  $('artAge').value = 'all';
+  $('artAgeLabel').value = 'Tous âges';
+});
 
 function resetArticleForm() {
   state.editingSiteProductId = null;
