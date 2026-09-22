@@ -222,6 +222,17 @@ async function migrateSuppliersShipping() {
   return addedCost || addedDays;
 }
 
+/* Piste de sourcing suggérée par le Dénicheur (type de fournisseur + région,
+   priorité Europe) : colonne ajoutée après coup, les lots déjà générés
+   avant cette évolution gardent une valeur vide plutôt que d'échouer. */
+async function migrateTrendFindsSourcing() {
+  const added = await addColumnIfMissing('trend_finds', 'sourcing_hint', "TEXT NOT NULL DEFAULT ''");
+  if (added) {
+    await logActivity('MIGRATION', 'Colonne trend_finds.sourcing_hint ajoutée : piste de sourcing (type de fournisseur, région) par suggestion.');
+  }
+  return added;
+}
+
 /* Le troisième type de partenaire — `transporteur` (transporteurs
    internationaux, transitaires, agents d'achat) — doit entrer dans la contrainte
    CHECK de `suppliers`. SQLite ne modifie pas un CHECK en place : il faut
@@ -336,6 +347,7 @@ export async function initDatabase() {
   await migrateImportsSupplier();
   await migrateSuppliersKinds();
   await migrateSuppliersShipping();
+  await migrateTrendFindsSourcing();
 }
 
 export async function logActivity(kind, message) {

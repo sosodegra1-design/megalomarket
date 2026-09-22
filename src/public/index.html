@@ -2050,11 +2050,12 @@ https://…/photo2.jpg"></textarea>
                   <th>Pourquoi</th>
                   <th>Cible</th>
                   <th>Prix indicatif</th>
+                  <th>Piste de sourcing</th>
                   <th>Fournisseur</th>
                   <th></th>
                 </tr>
               </thead>
-              <tbody id="denicheurRows"><tr class="table-empty"><td colspan="8">Aucune chasse lancée pour le moment.</td></tr></tbody>
+              <tbody id="denicheurRows"><tr class="table-empty"><td colspan="9">Aucune chasse lancée pour le moment.</td></tr></tbody>
             </table>
           </div>
         </div>
@@ -2071,13 +2072,13 @@ https://…/photo2.jpg"></textarea>
         <div class="card reveal-in">
           <div class="card-head card-head-line">
             <div class="card-head-text">
-              <h2>Pipeline IA — chaîne autonome</h2>
-              <p>Rédaction, contrôle qualité (images, éditorial, catégorisation) puis publication automatique si tout passe — sinon mise en brouillon avec le rapport détaillé. Aucun clic humain requis quand les contrôles sont validés.</p>
+              <h2>Pipeline IA — préparation de fiche</h2>
+              <p>Rédaction, prix et transporteur suggérés, contrôle qualité (images, éditorial, catégorisation). Le résultat est TOUJOURS un brouillon : le coût réel, les photos définitives, le prix final et la publication restent ta décision.</p>
             </div>
           </div>
           <p class="section-links">
-            <span class="pill warn">Publication automatique</span>
-            <span class="hint">Si l'Agent 3 valide images, éditorial et catégorisation, le produit part en ligne directement. Un seul contrôle en échec bascule tout en brouillon, jamais de publication partielle.</span>
+            <span class="pill warn">Toujours en brouillon</span>
+            <span class="hint">Rien n'est jamais publié automatiquement ici. Le rapport indique ce que l'IA a préparé et validé (ou non) ; tu reprends ensuite le brouillon dans le formulaire « Ajouter un article » pour ajuster et publier toi-même.</span>
           </p>
           <div class="panel">
             <div class="field-grid">
@@ -5124,13 +5125,14 @@ function renderDenicheur() {
         + '<td>' + (f.rationale ? esc(f.rationale) : '<span class="muted">—</span>') + '</td>'
         + '<td>' + (f.targetAudience ? esc(f.targetAudience) : '<span class="muted">—</span>') + '</td>'
         + '<td>' + (f.priceRange ? esc(f.priceRange) : '<span class="muted">—</span>') + '</td>'
+        + '<td>' + (f.sourcingHint ? esc(f.sourcingHint) : '<span class="muted">—</span>') + '</td>'
         + '<td><a class="btn ghost btn-sm" href="' + esc(nicheSupplierSearchUrl(f.title)) + '" target="_blank" rel="noopener">Chercher chez un fournisseur ↗</a></td>'
         + '<td>' + (f.publishedUrl
             ? '<a class="btn ghost btn-sm" href="' + esc(f.publishedUrl) + '" target="_blank" rel="noopener">Voir l\'article ↗</a>'
             : '<button class="btn ghost btn-sm" type="button" data-niche-publish="' + i + '">Publier →</button>') + '</td>'
         + '</tr>'
       )).join('')
-      : '<tr class="table-empty"><td colspan="8">Aucune chasse lancée pour le moment.</td></tr>';
+      : '<tr class="table-empty"><td colspan="9">Aucune chasse lancée pour le moment.</td></tr>';
     stagger(tbody);
   }
   const count = $('denicheurCount');
@@ -5279,19 +5281,19 @@ function renderStepDetail(step) {
 function renderPipelineResult(result) {
   const card = $('pipelineResultCard');
   card.hidden = false;
-  const published = result.status === 'publie';
-  $('pipelineResultTitle').textContent = published ? '✅ Publié automatiquement' : '📝 Mis en brouillon';
-  $('pipelineResultSummary').textContent = published
-    ? 'Tous les contrôles ont passé — le produit est en ligne.' + (result.url ? '' : '')
-    : 'Au moins un contrôle a échoué — rien n\'a été publié.';
+  $('pipelineResultTitle').textContent = '📝 Brouillon en attente de validation humaine';
   const steps = (result.report && result.report.steps) || [];
+  const failed = steps.filter((s) => !s.ok).length;
+  $('pipelineResultSummary').textContent = failed
+    ? failed + ' contrôle' + (failed > 1 ? 's' : '') + ' à revoir avant publication — voir le détail ci-dessous.'
+    : 'Tous les contrôles automatiques sont favorables — vérifie le coût réel et les photos avant de publier.';
   $('pipelineResultSteps').innerHTML = steps.map((s) => (
     '<div class="panel-section">'
     + '<h3 class="panel-section-title">' + (s.ok ? '✅ ' : '❌ ') + esc(s.label || s.agent) + '</h3>'
     + renderStepDetail(s)
     + '</div>'
-  )).join('') + (published && result.url
-    ? '<div class="panel-section"><a class="btn btn-sm" href="' + esc(result.url) + '" target="_blank" rel="noopener">Voir l\'article ↗</a></div>'
+  )).join('') + (result.id != null
+    ? '<div class="panel-section"><button class="btn btn-sm" type="button" data-resume-pipeline="' + esc(result.id) + '">Reprendre dans le formulaire →</button></div>'
     : '');
   card.scrollIntoView({ behavior: motionOK() ? 'smooth' : 'auto', block: 'start' });
 }
@@ -5304,10 +5306,10 @@ function renderPipelineRuns() {
       '<tr class="row-in">'
       + '<td>' + esc(when(r.createdAt)) + '</td>'
       + '<td>' + esc(r.seoTitle || r.title) + '</td>'
-      + '<td><span class="pill ' + (r.status === 'publie' ? 'ok' : 'off') + '">' + (r.status === 'publie' ? 'Publié' : 'Brouillon') + '</span></td>'
+      + '<td><span class="pill off">Brouillon</span></td>'
       + '<td>' + (r.sellPrice != null ? money(r.sellPrice) : '<span class="muted">—</span>') + '</td>'
       + '<td>' + (r.netMargin != null ? money(r.netMargin) : '<span class="muted">—</span>') + '</td>'
-      + '<td>' + (r.publishedUrl ? '<a class="btn ghost btn-sm" href="' + esc(r.publishedUrl) + '" target="_blank" rel="noopener">Voir l\'article ↗</a>' : '<span class="muted">—</span>') + '</td>'
+      + '<td><button class="btn ghost btn-sm" type="button" data-resume-pipeline="' + esc(r.id) + '">Reprendre dans le formulaire →</button></td>'
       + '</tr>'
     )).join('')
     : '<tr class="table-empty"><td colspan="6">Aucune exécution pour le moment.</td></tr>';
@@ -5326,6 +5328,41 @@ async function loadPipelineRuns() {
   renderPipelineRuns();
   return state.pipelineRuns;
 }
+
+/* Reprend un brouillon du Pipeline dans le formulaire « Ajouter un article »
+   (vue Canaux), exactement comme « Publier → » depuis le Dénicheur : le prix
+   suggéré (x3) et les photos brutes sont pré-remplis, mais rien ne se publie
+   sans que l'utilisateur vérifie le coût réel, les photos, et clique
+   lui-même « Publier l'article ». */
+function resumePipelineDraft(run) {
+  if (!run) return;
+  resetArticleForm();
+  $('artName').value = run.seoTitle || run.title || '';
+  $('artDescription').value = run.description || '';
+  if (run.category) $('artCategory').value = run.category;
+  if (run.sellPrice != null) $('artPrice').value = String(run.sellPrice);
+  $('artImages').value = (run.images || []).join('\n');
+  renderArticleImagesPreview();
+
+  location.hash = '#/canaux';
+  showView('canaux');
+  requestAnimationFrame(() => {
+    const card = $('siteArticleFormCard');
+    if (card && typeof card.scrollIntoView === 'function') {
+      card.scrollIntoView({ behavior: motionOK() ? 'smooth' : 'auto', block: 'start' });
+    }
+    confirmFlash(card);
+  });
+  say('Brouillon repris dans le formulaire — vérifie le prix, les photos, choisis l\'icône et l\'âge, puis publie toi-même.', 'info');
+}
+
+document.addEventListener('click', (event) => {
+  const btn = event.target.closest('[data-resume-pipeline]');
+  if (!btn) return;
+  const id = Number(btn.getAttribute('data-resume-pipeline'));
+  const run = (state.pipelineRuns || []).find((r) => r.id === id);
+  resumePipelineDraft(run);
+});
 
 $('btnRunPipeline').addEventListener('click', (event) => action(event.currentTarget, async () => {
   const title = $('pipeTitle').value.trim();
@@ -5347,8 +5384,11 @@ $('btnRunPipeline').addEventListener('click', (event) => action(event.currentTar
       notes: $('pipeNotes').value.trim() || null,
     }),
   });
-  renderPipelineResult(result);
+  // On recharge l'historique AVANT d'afficher le résultat : le bouton
+  // « Reprendre dans le formulaire » du résultat cherche ce brouillon dans
+  // state.pipelineRuns, qui doit donc déjà le contenir au moment du clic.
   await loadPipelineRuns();
+  renderPipelineResult(result);
   return result;
 }, null));
 

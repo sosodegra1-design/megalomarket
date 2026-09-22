@@ -1,6 +1,7 @@
 import cron from 'node-cron';
 import { syncStockFromAllChannels } from './stockSync.js';
 import { syncOrdersFromAllChannels } from './orderSync.js';
+import { huntNiches } from '../ai/nicheHunter.js';
 import { logActivity } from '../db/database.js';
 
 /**
@@ -48,6 +49,7 @@ export async function startScheduler({
   schedule = cron.schedule,
   stockJob = syncStockFromAllChannels,
   ordersJob = syncOrdersFromAllChannels,
+  nicheJob = huntNiches,
   logger = logActivity,
 } = {}) {
   /*
@@ -68,6 +70,18 @@ export async function startScheduler({
   schedule('*/5 * * * *', () => runSafely('commandes', ordersJob, logger), { noOverlap: true });
 
   /*
+   * Dénicheur : tous les 2 jours à 3h du matin (heure serveur). `*\/2` sur le
+   * jour du mois n'est qu'une approximation de « tous les 2 jours » — il
+   * repart à 1 au début de chaque mois (donc parfois un jour d'écart en fin
+   * de mois) — sans conséquence réelle pour une simple actualisation de
+   * suggestions. `nicheJob()` sans argument : pas d'axe de recherche imposé,
+   * la tâche planifiée part sur un lot généraliste comme le bouton manuel.
+   * Si l'IA n'est pas configurée, huntNiches() lève une erreur que
+   * runSafely() journalise sans jamais faire tomber le processus.
+   */
+  schedule('0 3 */2 * *', () => runSafely('denicheur', () => nicheJob(), logger), { noOverlap: true });
+
+  /*
    * Pas de tâche périodique de PUSH.
    *
    * Le stock est la seule valeur qui dérive toute seule, mais aucun canal ne
@@ -82,5 +96,5 @@ export async function startScheduler({
    * À rebrancher le jour où un connecteur exposera updateStock.
    */
 
-  await logSafely('DEMARRAGE', 'Planificateur de synchronisation démarré (stock: 15 min, commandes: 5 min).', logger);
+  await logSafely('DEMARRAGE', 'Planificateur de synchronisation démarré (stock: 15 min, commandes: 5 min, Dénicheur: tous les 2 jours).', logger);
 }

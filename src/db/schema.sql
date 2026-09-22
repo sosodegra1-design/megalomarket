@@ -97,6 +97,7 @@ CREATE TABLE IF NOT EXISTS trend_finds (
   rationale TEXT NOT NULL DEFAULT '',
   target_audience TEXT NOT NULL DEFAULT '',
   price_range TEXT NOT NULL DEFAULT '',
+  sourcing_hint TEXT NOT NULL DEFAULT '',
   created_at INTEGER NOT NULL
 );
 

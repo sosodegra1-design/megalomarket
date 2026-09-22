@@ -19,18 +19,19 @@ const RANK_COUNT = 20;
 
 const SYSTEM_PROMPT = `Tu es un chasseur de tendances e-commerce pour Megalomarket, spécialisé dans la recherche de produits à fort potentiel pour l'import et la revente multicanale (eBay, Amazon, TikTok Shop, Allegro, site propre).
 Réponds UNIQUEMENT avec un objet JSON valide, sans texte autour, au format exact :
-{"finds": [{"rank": 1, "title": "...", "category": "...", "rationale": "...", "targetAudience": "...", "priceRange": "..."}]}
+{"finds": [{"rank": 1, "title": "...", "category": "...", "rationale": "...", "targetAudience": "...", "priceRange": "...", "sourcingHint": "..."}]}
 Règles :
 - Exactement 20 entrées, classées de 1 (le plus prometteur) à 20.
 - "title" : nom de produit concret et vendable, pas une catégorie vague.
 - "rationale" : pourquoi ce produit est intéressant en ce moment (tendance, usage, saisonnalité) — deux phrases maximum, en français.
 - "targetAudience" : à qui ce produit s'adresse.
 - "priceRange" : fourchette de prix de vente indicative au détail, en euros (ex. "15-25 €").
+- "sourcingHint" : type de fournisseur et région d'où le sourcer EN PRIORITÉ (ex. "fabricant textile au Portugal", "grossiste déco en Pologne"). Privilégie des pistes européennes plutôt qu'asiatiques quand c'est plausible pour ce type de produit — délais et logistique plus courts — sans l'inventer si le produit n'a manifestement pas de filière européenne crédible (dis-le alors franchement).
 - Diversité : ne propose pas 20 variantes du même produit.
-- N'invente pas de chiffre de vente précis ni de source : ce sont des suggestions, pas des statistiques vérifiées.`;
+- N'invente pas de chiffre de vente précis ni de source : ce sont des suggestions, pas des statistiques vérifiées. Ceci vaut aussi pour "sourcingHint" : un type de fournisseur plausible, jamais un nom d'entreprise réel inventé.`;
 
 function buildPrompt({ focus }) {
-  const base = 'Propose 20 idées de produits à fort potentiel pour un e-commerce généraliste qui importe et revend sur plusieurs canaux.';
+  const base = 'Propose 20 idées de produits à fort potentiel pour un e-commerce généraliste qui importe et revend sur plusieurs canaux, en privilégiant des pistes de sourcing européennes quand c\'est crédible pour optimiser les délais de livraison.';
   return focus && focus.trim()
     ? `${base}\n\nAxe de recherche demandé : ${focus.trim()}`
     : base;
@@ -74,11 +75,12 @@ export async function huntNiches({ focus } = {}) {
       rationale: typeof find.rationale === 'string' ? find.rationale.trim() : '',
       targetAudience: typeof find.targetAudience === 'string' ? find.targetAudience.trim() : '',
       priceRange: typeof find.priceRange === 'string' ? find.priceRange.trim() : '',
+      sourcingHint: typeof find.sourcingHint === 'string' ? find.sourcingHint.trim() : '',
     };
     await dbRun(
-      `INSERT INTO trend_finds (batch_id, rank, title, category, rationale, target_audience, price_range, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-      [row.batchId, row.rank, row.title, row.category, row.rationale, row.targetAudience, row.priceRange, now],
+      `INSERT INTO trend_finds (batch_id, rank, title, category, rationale, target_audience, price_range, sourcing_hint, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [row.batchId, row.rank, row.title, row.category, row.rationale, row.targetAudience, row.priceRange, row.sourcingHint, now],
     );
     saved.push(row);
   }
@@ -94,7 +96,7 @@ export async function latestFinds() {
   if (!latest.length) return { batchId: null, finds: [] };
   const batchId = latest[0].batch_id;
   const finds = await dbAll(
-    'SELECT rank, title, category, rationale, target_audience AS targetAudience, price_range AS priceRange, created_at FROM trend_finds WHERE batch_id = ? ORDER BY rank ASC',
+    'SELECT rank, title, category, rationale, target_audience AS targetAudience, price_range AS priceRange, sourcing_hint AS sourcingHint, created_at FROM trend_finds WHERE batch_id = ? ORDER BY rank ASC',
     [batchId],
   );
   return { batchId, finds };
