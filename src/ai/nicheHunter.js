@@ -47,10 +47,17 @@ export async function huntNiches({ focus } = {}) {
     throw new Error(`Réponse IA non exploitable (JSON invalide) : ${raw.slice(0, 200)}`);
   }
 
-  const finds = Array.isArray(parsed.finds) ? parsed.finds : [];
+  // Certains modèles (gpt-oss-120b via Groq, observé en production) n'enveloppent
+  // pas toujours la liste dans {"finds": [...]} comme demandé et renvoient un
+  // tableau JSON directement — on accepte les deux formes plutôt que de perdre
+  // toute la génération pour un détail de mise en forme.
+  const finds = Array.isArray(parsed) ? parsed : (Array.isArray(parsed?.finds) ? parsed.finds : []);
   const valid = finds.filter((f) => f && typeof f.title === 'string' && f.title.trim());
   if (!valid.length) {
-    throw new Error("L'IA n'a renvoyé aucune suggestion exploitable.");
+    // Le snippet de la réponse brute est indispensable ici : sans lui, une
+    // vraie cause différente (mauvaise clé, prose au lieu de JSON…) resterait
+    // invisible et chaque échec redeviendrait une devinette.
+    throw new Error(`L'IA n'a renvoyé aucune suggestion exploitable. Réponse reçue : ${raw.slice(0, 300)}`);
   }
 
   const batchId = randomUUID();
