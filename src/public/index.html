@@ -4987,7 +4987,9 @@ function renderDenicheur() {
         + '<td>' + (f.rationale ? esc(f.rationale) : '<span class="muted">—</span>') + '</td>'
         + '<td>' + (f.targetAudience ? esc(f.targetAudience) : '<span class="muted">—</span>') + '</td>'
         + '<td>' + (f.priceRange ? esc(f.priceRange) : '<span class="muted">—</span>') + '</td>'
-        + '<td><button class="btn ghost btn-sm" type="button" data-niche-publish="' + i + '">Publier →</button></td>'
+        + '<td>' + (f.publishedUrl
+            ? '<a class="btn ghost btn-sm" href="' + esc(f.publishedUrl) + '" target="_blank" rel="noopener">Voir l\'article ↗</a>'
+            : '<button class="btn ghost btn-sm" type="button" data-niche-publish="' + i + '">Publier →</button>') + '</td>'
         + '</tr>'
       )).join('')
       : '<tr class="table-empty"><td colspan="7">Aucune chasse lancée pour le moment.</td></tr>';
@@ -5032,9 +5034,10 @@ function parseNichePrice(text) {
    l'âge cible — ce sont des choix éditoriaux, pas des champs déductibles du
    texte IA — donc l'article n'est publiable qu'après que l'utilisateur les
    complète lui-même : un clic prépare, il ne publie jamais seul. */
-function publishNicheFind(f) {
+function publishNicheFind(f, index) {
   if (!f) return;
   resetArticleForm();
+  state.editingNicheIndex = index;
   $('artName').value = f.title || '';
   $('artDescription').value = f.rationale || '';
   const category = matchNicheCategory(f.category);
@@ -5062,7 +5065,7 @@ $('denicheurRows').addEventListener('click', (event) => {
   if (!btn) return;
   const index = Number(btn.getAttribute('data-niche-publish'));
   const find = (state.denicheur.finds || [])[index];
-  publishNicheFind(find);
+  publishNicheFind(find, index);
 });
 
 async function loadDenicheur() {
@@ -5166,6 +5169,7 @@ onAction($('siteProducts'), {
    écran à apprendre pour quelqu'un qui gère son site seul au quotidien. */
 state.siteTaxonomy = { categories: [], universes: [], iconKeys: [] };
 state.editingSiteProductId = null;
+state.editingNicheIndex = null;
 
 function fillSelect(id, values, { placeholder } = {}) {
   const select = $(id);
@@ -5204,6 +5208,7 @@ $('artImages').addEventListener('input', renderArticleImagesPreview);
 
 function resetArticleForm() {
   state.editingSiteProductId = null;
+  state.editingNicheIndex = null;
   for (const id of ['artName', 'artDescription', 'artAge', 'artAgeLabel', 'artPrice', 'artImages']) {
     const el = $(id);
     if (el) el.value = '';
@@ -5223,6 +5228,7 @@ function resetArticleForm() {
    restent en secours automatique tant que l'utilisateur ne les touche pas. */
 function fillArticleForm(id, product) {
   state.editingSiteProductId = String(id);
+  state.editingNicheIndex = null;
   $('artName').value = product.name || '';
   $('artDescription').value = product.description || '';
   $('artCategory').value = product.category || '';
@@ -5258,17 +5264,26 @@ $('btnPublishArticle').addEventListener('click', (event) => action(event.current
     images: readArticleImages(),
   };
 
+  let saved;
   if (state.editingSiteProductId) {
-    await api('/api/site/products/' + encodeURIComponent(state.editingSiteProductId), {
+    saved = await api('/api/site/products/' + encodeURIComponent(state.editingSiteProductId), {
       method: 'PATCH', body: JSON.stringify(body),
     });
   } else {
     if (!body.category || !body.iconKey) throw new Error('Choisis une catégorie et une icône avant de publier.');
     if (!body.age || !body.ageLabel) throw new Error('Renseigne l\'âge (code court et libellé) avant de publier.');
-    await api('/api/site/products', { method: 'POST', body: JSON.stringify(body) });
+    saved = await api('/api/site/products', { method: 'POST', body: JSON.stringify(body) });
   }
 
   const wasEditing = Boolean(state.editingSiteProductId);
+  // La piste du Dénicheur à l'origine de cet article (s'il y en a une) passe
+  // de « Publier → » à un lien direct vers l'article vraiment mis en ligne —
+  // même option que la table « Produits en ligne sur le site ».
+  const nicheIndex = state.editingNicheIndex;
+  if (nicheIndex != null && saved?.url && state.denicheur.finds[nicheIndex]) {
+    state.denicheur.finds[nicheIndex].publishedUrl = saved.url;
+    renderDenicheur();
+  }
   resetArticleForm();
   await loadSiteProducts();
   confirmFlash($('siteProductsCard'));

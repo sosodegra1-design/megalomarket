@@ -160,8 +160,10 @@ siteRouter.post(
     };
 
     const created = await connector.createListing(payload);
+    const base = siteBaseUrl();
+    const url = base && created?.offerId ? `${base}/${category}.html?product=${encodeURIComponent(created.offerId)}` : null;
     await logActivity('SITE_PRODUIT_CREE', `Article ajouté sur le site : ${name}${created?.offerId ? ` (${created.offerId})` : ''}.`);
-    res.status(201).json(created);
+    res.status(201).json({ ...created, url });
   }),
 );
 
@@ -196,7 +198,7 @@ siteRouter.patch(
 
     const updated = await connector.updateProduct(req.params.id, fields);
     await logActivity('SITE_PRODUIT_MODIFIE', `Article modifié sur le site : ${req.params.id}.`);
-    res.json(updated);
+    res.json(withProductUrl(updated));
   }),
 );
 
