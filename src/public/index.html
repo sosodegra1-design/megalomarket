@@ -4562,6 +4562,7 @@ const importsTable = createTable({
       + '<td data-label="Actions" class="cell-actions"><div class="actions">'
       + '<button class="btn btn-ghost btn-xs" type="button" data-action="open" data-id="' + id + '">Ouvrir les fiches</button>'
       + '<button class="btn btn-ghost btn-xs" type="button" data-action="regen" data-id="' + id + '" data-needs-ai' + aiDisabled + '>Régénérer</button>'
+      + '<button class="btn btn-danger-ghost btn-xs" type="button" data-action="delete" data-id="' + id + '" data-name="' + esc(i.title) + '" aria-label="Supprimer ' + esc(i.title) + '">Supprimer</button>'
       + '</div></td>'
       + '</tr>';
   },
@@ -4969,6 +4970,26 @@ onAction($('imports'), {
       throw error;
     }
   }),
+
+  /* Supprime la fiche de travail locale (import + ses fiches par canal),
+     jamais un article déjà en ligne : le serveur refuse si une fiche est
+     encore publiée quelque part, pour ne pas perdre le seul lien permettant
+     de la dépublier depuis cet écran. */
+  delete: (button) => action(button, async () => {
+    const name = button.dataset.name || 'cet import';
+    if (!window.confirm('Supprimer « ' + name + ' » ?\n\nSeule la fiche de travail locale est effacée : un article déjà publié sur un canal reste en ligne tel quel.')) return null;
+    const id = button.dataset.id;
+    const result = await api('/api/imports/' + encodeURIComponent(id), { method: 'DELETE' });
+    state.importDetails.delete(String(id));
+    if (String(state.importId) === String(id)) {
+      state.importId = null;
+      state.listingsOpen = false;
+      $('listingsCard').style.display = 'none';
+    }
+    await loadImports();
+    renderDashboard();
+    return result;
+  }, 'Import supprimé.'),
 });
 
 /* ===================== FICHES : ENREGISTRER / PUBLIER ===================== */

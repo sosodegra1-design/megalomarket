@@ -131,11 +131,27 @@ const NON_TEXT_TAGS = ['script', 'style', 'noscript', 'template'];
  */
 const BLOCK_LEVEL_TAGS = /<\/?(?:p|div|br|li|ul|ol|tr|td|th|table|h[1-6]|section|article|header|footer|blockquote|figure|figcaption|hr|dd|dt|dl|pre)\b[^>]*>/gi;
 
-/** Fragments d'URL qui trahissent une vignette décorative plutôt qu'une photo produit. */
-const ICON_URL_PATTERN = /(sprite|logo|icon|favicon|placeholder|pixel|spacer|badge|flag)/i;
+/**
+ * Fragments d'URL qui trahissent une vignette décorative plutôt qu'une photo
+ * produit — logos, pictogrammes d'interface, ET (ajouté après un import réel
+ * dont la galerie s'est retrouvée polluée) les badges de paiement et de
+ * confiance qu'on trouve dans le pied de page de presque toutes les
+ * boutiques : Visa, Mastercard, Amex, PayPal, Klarna, Afterpay, Apple/Google
+ * Pay, Trustpilot, SSL/sécurité… Ces vignettes ne portent jamais « logo » ou
+ * « icon » dans leur nom de fichier, d'où leur passage inaperçu jusqu'ici.
+ */
+const ICON_URL_PATTERN = /(sprite|logo|icon|favicon|placeholder|pixel|spacer|badge|flag|avatar|payment|paiement|visa|mastercard|maestro|amex|american[-_]?express|paypal|klarna|afterpay|affirm|clearpay|apple[-_]?pay|google[-_]?pay|samsung[-_]?pay|sofort|ideal|bancontact|przelewy|giropay|sepa|stripe-badge|trustpilot|trusted|verified|mcafee|norton|secure|ssl|ge-trusted|bbb-|social|facebook|twitter|instagram|pinterest|youtube|tiktok-icon|whatsapp|linkedin|wechat|chevron|arrow-icon|star-rating|rating-star|cart-icon|wishlist-icon|search-icon|hamburger|spinner|loader)/i;
 
 /** Formats qu'on ne veut jamais dans les photos produit (vectoriel ou animé). */
 const NON_PHOTO_EXTENSION = /\.(svg|gif)(\?|#|$)/i;
+
+/** Nombre maximal de photos remontées par l'extraction générique <img> : une
+ * fiche produit correctement scrapée en a rarement plus d'une quinzaine — au-
+ * delà, c'est le signe qu'on a aussi ramassé la mise en page (bannières,
+ * pied de page, barre latérale). Les images des sources fiables (JSON-LD,
+ * Open Graph, microdata) ne sont JAMAIS comptées dans ce plafond : elles sont
+ * ajoutées avant le scan générique et priment toujours sur lui. */
+const MAX_GENERIC_IMAGES = 16;
 
 /**
  * Résolution DNS par défaut. Elle est isolée derrière l'option `lookupHost`
@@ -702,51 +718,88 @@ function extractPrice(jsonLdProduct, $) {
  * sont résolues contre l'URL FINALE (après redirections), sinon une boutique qui
  * renvoie vers un sous-domaine d'images produirait des liens cassés.
  */
+/**
+ * Vrai si une dimension déclarée (attribut `width`/`height`, ou `40px` dans un
+ * `style` inline) est manifestement une icône plutôt qu'une photo produit. Une
+ * dimension absente ou illisible n'est PAS un motif de rejet : beaucoup de
+ * vraies photos n'annoncent leur taille qu'en CSS externe, invisible ici.
+ */
+const TINY_ICON_SIZE_PX = 48;
+function hasTinyDeclaredSize($el) {
+  const parse = (value) => {
+    const n = Number.parseInt(String(value ?? '').replace(/[^\d.]/g, ''), 10);
+    return Number.isFinite(n) ? n : null;
+  };
+  const width = parse($el.attr('width'));
+  const height = parse($el.attr('height'));
+  if (width !== null && width > 0 && width <= TINY_ICON_SIZE_PX) return true;
+  if (height !== null && height > 0 && height <= TINY_ICON_SIZE_PX) return true;
+  return false;
+}
+
 function extractImages($, baseUrl, jsonLdProduct) {
-  const urls = new Set();
+  const structuredUrls = new Set();
 
   const jsonLdImages = Array.isArray(jsonLdProduct?.image) ? jsonLdProduct.image : [jsonLdProduct?.image].filter(Boolean);
   for (const image of jsonLdImages) {
     const candidate = typeof image === 'string' ? image : image?.url || image?.contentUrl;
     const resolved = resolveUrl(candidate, baseUrl);
-    if (resolved) urls.add(resolved);
+    if (resolved) structuredUrls.add(resolved);
   }
 
   for (const property of ['og:image', 'og:image:secure_url']) {
     $(`meta[property="${property}"]`).each((_, el) => {
       const resolved = resolveUrl($(el).attr('content'), baseUrl);
-      if (resolved) urls.add(resolved);
+      if (resolved) structuredUrls.add(resolved);
     });
   }
 
   $('[itemprop="image"]').each((_, el) => {
     const candidate = $(el).attr('content') || $(el).attr('src') || $(el).attr('href');
     const resolved = resolveUrl(candidate, baseUrl);
-    if (resolved) urls.add(resolved);
+    if (resolved) structuredUrls.add(resolved);
   });
 
+  // Le scan générique de <img> est le chemin le moins fiable : sans le cadre
+  // d'une donnée structurée, on ne distingue pas une photo produit d'un
+  // logo de partenaire ou d'un badge de paiement au pied de la page. Trois
+  // filtres, cumulés : hors de l'en-tête/pied de page/navigation/barre
+  // latérale (leur contenu n'est jamais la fiche produit elle-même), taille
+  // déclarée non minuscule, et nom de fichier non reconnu comme pictogramme.
+  const genericUrls = new Set();
   $('img').each((_, el) => {
+    const $el = $(el);
+    if ($el.closest('header, footer, nav, aside').length) return;
+    if (hasTinyDeclaredSize($el)) return;
+
     const attributes = ['src', 'data-src', 'data-original', 'data-lazy-src', 'data-old-hires'];
     let src = null;
     for (const attribute of attributes) {
-      if ($(el).attr(attribute)) {
-        src = $(el).attr(attribute);
+      if ($el.attr(attribute)) {
+        src = $el.attr(attribute);
         break;
       }
     }
     if (!src) {
       // `srcset="a.jpg 1x, b.jpg 2x"` : la première URL est la plus petite, mais
       // c'est la seule dont on soit sûr qu'elle appartienne à la fiche.
-      const srcset = $(el).attr('srcset') || $(el).attr('data-srcset');
+      const srcset = $el.attr('srcset') || $el.attr('data-srcset');
       if (srcset) src = String(srcset).split(',')[0].trim().split(/\s+/)[0];
     }
     if (!src || src.startsWith('data:')) return;
     if (NON_PHOTO_EXTENSION.test(src) || ICON_URL_PATTERN.test(src)) return;
+    if (structuredUrls.has(src)) return;
     const resolved = resolveUrl(src, baseUrl);
-    if (resolved) urls.add(resolved);
+    if (resolved && !structuredUrls.has(resolved)) genericUrls.add(resolved);
   });
 
-  return [...urls];
+  // Les sources structurées priment toujours et ne sont jamais plafonnées :
+  // elles viennent du marchand lui-même (JSON-LD, Open Graph, microdata), pas
+  // d'une supposition sur ce qu'est un <img> de mise en page. Le scan
+  // générique, lui, est tronqué : au-delà d'une quinzaine d'images encore
+  // présentes après les trois filtres ci-dessus, la suite est presque
+  // toujours de la mise en page qui leur a échappé plutôt que la fiche.
+  return [...structuredUrls, ...[...genericUrls].slice(0, MAX_GENERIC_IMAGES)];
 }
 
 /**

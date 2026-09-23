@@ -103,6 +103,62 @@ test('extracts title, price and images from JSON-LD product data', async () => {
   }
 });
 
+test('le scan générique <img> ignore les logos, badges de paiement et vignettes du pied de page', async () => {
+  // Reproduit un bug réel : une fiche produit sans JSON-LD complet a vu sa
+  // galerie polluée par des dizaines de logos de moyens de paiement et de
+  // pictogrammes de navigation, ramassés par le scan <img> générique faute de
+  // filtre suffisant. Cette page imite la structure typique d'une boutique
+  // (en-tête avec logo, contenu produit, pied de page avec badges de
+  // confiance) pour vérifier que seules les vraies photos survivent.
+  const html = `
+    <html><body>
+      <header>
+        <img src="/assets/brand-logo.png" alt="Boutique">
+        <img src="/assets/search-icon.png" width="20" height="20">
+        <img src="/assets/globe-lang.png" width="18" height="18">
+      </header>
+      <main>
+        <h1>Puzzle 3D en bois - Tour Eiffel</h1>
+        <img src="/produits/eiffel-1.jpg">
+        <img src="/produits/eiffel-2.jpg">
+        <img src="/produits/eiffel-3.jpg">
+      </main>
+      <footer>
+        <img src="/assets/visa.png">
+        <img src="/assets/mastercard.png">
+        <img src="/assets/paypal.png">
+        <img src="/assets/applepay.png">
+        <img src="/assets/klarna.png">
+        <img src="/assets/trustpilot-badge.png">
+        <img src="/assets/ssl-secure.png">
+      </footer>
+    </body></html>
+  `;
+  const restore = mockFetchOnce(html);
+  try {
+    const result = await scrapeProductFromUrl('https://boutique.example.com/produit/puzzle-eiffel', { lookupHost: publicLookup });
+    assert.deepEqual(result.imageUrls, [
+      'https://boutique.example.com/produits/eiffel-1.jpg',
+      'https://boutique.example.com/produits/eiffel-2.jpg',
+      'https://boutique.example.com/produits/eiffel-3.jpg',
+    ]);
+  } finally {
+    restore();
+  }
+});
+
+test('le scan générique <img> plafonne à 16 images même sans indice de mise en page', async () => {
+  const photos = Array.from({ length: 25 }, (_, i) => `<img src="/photos/produit-${i}.jpg">`).join('\n');
+  const html = `<html><body><h1>Grand lot de photos</h1>${photos}</body></html>`;
+  const restore = mockFetchOnce(html);
+  try {
+    const result = await scrapeProductFromUrl('https://boutique.example.com/produit/lot', { lookupHost: publicLookup });
+    assert.equal(result.imageUrls.length, 16);
+  } finally {
+    restore();
+  }
+});
+
 test('falls back to og:title/meta description when no JSON-LD is present', async () => {
   const html = `
     <html><head>

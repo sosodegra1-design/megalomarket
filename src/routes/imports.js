@@ -89,6 +89,13 @@ importsRouter.post(
     // choisi n'existe pas — l'erreur doit tomber tout de suite.
     const resolvedSupplierId = await resolveSupplierId(supplierId);
     const data = await scrapeProductFromUrl(url);
+    // Filet de sécurité : le scraper limite déjà son propre scan générique,
+    // mais une fiche avec beaucoup de vraies variantes structurées (JSON-LD)
+    // pourrait théoriquement dépasser la limite que /:id PATCH impose plus
+    // tard (MAX_IMAGES). On tronque ici pour ne jamais enregistrer un import
+    // que la suite du flux ne pourrait plus modifier sans d'abord retirer des
+    // photos à la main.
+    const imageUrls = data.imageUrls.slice(0, MAX_IMAGES);
     const info = await dbRun(
       `INSERT INTO imports (source_url, source_site, title, raw_description, purchase_price, currency, image_urls, status, supplier_id, created_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, 'brouillon', ?, ?)`,
@@ -99,7 +106,7 @@ importsRouter.post(
         data.rawDescription,
         data.purchasePrice,
         data.currency,
-        JSON.stringify(data.imageUrls),
+        JSON.stringify(imageUrls),
         resolvedSupplierId,
         Date.now(),
       ],
@@ -111,7 +118,7 @@ importsRouter.post(
       'IMPORT_CREE',
       `Produit importé depuis ${data.sourceSite} : ${data.title}${supplier ? ` (partenaire : ${supplier.name})` : ''}`,
     );
-    res.status(201).json({ id: info.lastInsertRowid, ...data, supplier });
+    res.status(201).json({ id: info.lastInsertRowid, ...data, imageUrls, supplier });
   }),
 );
 
@@ -138,6 +145,48 @@ importsRouter.get(
   '/:id',
   asyncRoute(async (req, res) => {
     res.json(await readImportDetail(req.params.id));
+  }),
+);
+
+// --- Suppression d'un import et de ses fiches (nettoyage d'un import raté) ---
+/* Ne retire RIEN d'un canal : ceci n'efface que la fiche de travail locale
+   (imports + import_listings), jamais un article déjà en ligne. Un article
+   publié via ce module se gère ensuite indépendamment (ex. le catalogue du
+   site propre, géré depuis Canaux, avec sa propre suppression).
+
+   Un import dont une fiche est encore au statut « publie » est refusé par
+   défaut : le supprimer ferait perdre published_external_id, le seul moyen
+   dont dispose cette route pour dépublier plus tard. `force=true` passe
+   outre en connaissance de cause — l'article reste en ligne, seule la trace
+   locale disparaît. */
+importsRouter.delete(
+  '/:id',
+  asyncRoute(async (req, res) => {
+    const imp = await dbGet('SELECT id, title FROM imports WHERE id = ?', [req.params.id]);
+    if (!imp) throw new Error('Import introuvable.');
+
+    const force = req.query.force === 'true' || req.body?.force === true;
+    if (!force) {
+      const published = await dbAll(
+        "SELECT marketplace FROM import_listings WHERE import_id = ? AND status = 'publie'",
+        [req.params.id],
+      );
+      if (published.length) {
+        const channels = published.map((p) => p.marketplace).join(', ');
+        throw new Error(
+          `Cet import a une fiche publiée sur ${channels} — la supprimer ferait perdre le seul lien pour la dépublier depuis ici. `
+          + `Dépublie-la d'abord (bouton « Dépublier »), ou relance la suppression avec ?force=true si l'article publié n'est pas concerné.`,
+        );
+      }
+    }
+
+    // Effacé explicitement plutôt que de s'en remettre uniquement à ON DELETE
+    // CASCADE : le client libSQL distant peut exécuter chaque requête sur une
+    // connexion différente, où PRAGMA foreign_keys ne serait pas garanti actif.
+    await dbRun('DELETE FROM import_listings WHERE import_id = ?', [req.params.id]);
+    await dbRun('DELETE FROM imports WHERE id = ?', [req.params.id]);
+    await logActivity('IMPORT_SUPPRIME', `Import supprimé : ${imp.title} (id=${imp.id}).`);
+    res.json({ ok: true });
   }),
 );
 
