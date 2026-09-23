@@ -1,3 +1,4 @@
+import crypto from 'node:crypto';
 import { config } from '../config/env.js';
 
 /*
@@ -168,4 +169,174 @@ export async function listSendcloudMethods({ toCountry = 'FR', fromCountry = 'FR
 
   list.sort((a, b) => a.price - b.price);
   return list;
+}
+
+/**
+ * Requête générique vers l'API Parcels, factorisant l'auth/le timeout/la
+ * gestion d'erreur partagés par createParcel et createReturnParcel.
+ */
+async function sendcloudPost(path, body) {
+  if (!isSendcloudConfigured()) {
+    throw new Error('Sendcloud non configuré (SENDCLOUD_PUBLIC_KEY / SENDCLOUD_SECRET_KEY manquantes).');
+  }
+  let response;
+  try {
+    response = await fetch(`${API_BASE}${path}`, {
+      method: 'POST',
+      headers: { Authorization: authHeader(), 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+    });
+  } catch (error) {
+    if (error?.name === 'TimeoutError' || error?.name === 'AbortError') {
+      throw new Error('Sendcloud injoignable (délai dépassé).');
+    }
+    throw new Error(`Impossible de contacter Sendcloud : ${error?.message ?? error}`);
+  }
+
+  const raw = await response.text();
+  if (!response.ok) {
+    throw new Error(`Sendcloud a refusé la requête (HTTP ${response.status}) : ${raw.slice(0, 500)}`);
+  }
+  let data;
+  try {
+    data = JSON.parse(raw);
+  } catch {
+    throw new Error(`Réponse Sendcloud illisible (pas du JSON) : ${raw.slice(0, 300)}`);
+  }
+  return data;
+}
+
+/** Transforme la fiche colis brute de Sendcloud en forme exploitable par le reste de l'app. */
+function normalizeParcel(parcel) {
+  if (!parcel || typeof parcel !== 'object') {
+    throw new Error("Réponse Sendcloud inattendue : pas d'objet « parcel » reconnaissable.");
+  }
+  const label = parcel.label || {};
+  const labelUrl =
+    (Array.isArray(label.label_printer) && label.label_printer[0]) ||
+    (Array.isArray(label.normal_printer) && label.normal_printer[0]) ||
+    null;
+  return {
+    id: parcel.id,
+    carrier: parcel.carrier?.name || parcel.shipment?.name || null,
+    trackingNumber: parcel.tracking_number || null,
+    trackingUrl: parcel.tracking_url || null,
+    labelUrl,
+    status: parcel.status?.message || null,
+  };
+}
+
+/**
+ * Crée un vrai colis (et demande son étiquette dans le même appel) pour
+ * l'expédition d'une commande — c'est CE qui rend l'e-mail « Expédition »
+ * honnête : le transporteur et le lien de suivi renvoyés viennent de cet
+ * appel, jamais inventés.
+ *
+ * AVERTISSEMENT — non vérifié en conditions réelles (même limite que
+ * cheapestSendcloudMethod : ce bac à sable ne peut pas atteindre
+ * panel.sendcloud.sc). Le payload suit la documentation publique de
+ * l'endpoint POST /parcels (paramètre request_label pour obtenir l'étiquette
+ * immédiatement) ; si la forme réelle diffère, l'erreur contient un extrait
+ * de la réponse brute pour corriger précisément.
+ */
+export async function createParcel({
+  toName, toCompany, toAddress, toCity, toPostalCode, toCountry = 'FR', toEmail, toPhone,
+  shippingMethodId, weightKg, orderNumber,
+}) {
+  if (!toName || !toAddress || !toCity || !toPostalCode) {
+    throw new Error('Adresse du destinataire incomplète (nom, adresse, ville, code postal requis).');
+  }
+  if (!Number.isFinite(weightKg) || weightKg <= 0) {
+    throw new Error('Poids du colis invalide : un nombre de kilogrammes strictement supérieur à 0 est attendu.');
+  }
+  if (!shippingMethodId) {
+    throw new Error('Méthode d\'expédition manquante (shippingMethodId) — choisis un tarif Sendcloud avant de créer le colis.');
+  }
+
+  const parcel = {
+    name: toName,
+    company_name: toCompany || null,
+    address: toAddress,
+    city: toCity,
+    postal_code: toPostalCode,
+    country: toCountry,
+    email: toEmail || null,
+    telephone: toPhone || null,
+    weight: weightKg.toFixed(3),
+    order_number: orderNumber || null,
+    shipment: { id: shippingMethodId },
+    request_label: true,
+  };
+  if (config.sendcloud.senderAddressId) {
+    parcel.sender_address = Number(config.sendcloud.senderAddressId);
+  }
+
+  const data = await sendcloudPost('/parcels', { parcel });
+  return normalizeParcel(data.parcel);
+}
+
+/**
+ * Crée un colis retour (client -> entrepôt) pour la marche à suivre envoyée
+ * dans l'e-mail SAV. C'est le point le MOINS vérifiable de toute
+ * l'intégration Sendcloud : la doc publique décrit `is_return: true` sur le
+ * même endpoint /parcels, adresse du CLIENT en champs `name`/`address`/...,
+ * mais sans compte réel pour l'essayer, la forme exacte attendue par
+ * Sendcloud pour un retour reste une hypothèse. Un échec ici ne doit jamais
+ * bloquer l'envoi de l'e-mail SAV lui-même — voir l'appelant (job de retours)
+ * qui traite cette fonction comme « best effort ».
+ */
+export async function createReturnParcel({
+  fromName, fromAddress, fromCity, fromPostalCode, fromCountry = 'FR', fromEmail, fromPhone,
+  shippingMethodId, weightKg, orderNumber,
+}) {
+  if (!fromName || !fromAddress || !fromCity || !fromPostalCode) {
+    throw new Error('Adresse du client incomplète (nom, adresse, ville, code postal requis) pour créer un retour.');
+  }
+  if (!Number.isFinite(weightKg) || weightKg <= 0) {
+    throw new Error('Poids du colis invalide : un nombre de kilogrammes strictement supérieur à 0 est attendu.');
+  }
+  if (!shippingMethodId) {
+    throw new Error('Méthode d\'expédition manquante (shippingMethodId) pour le retour.');
+  }
+
+  const parcel = {
+    name: fromName,
+    address: fromAddress,
+    city: fromCity,
+    postal_code: fromPostalCode,
+    country: fromCountry,
+    email: fromEmail || null,
+    telephone: fromPhone || null,
+    weight: weightKg.toFixed(3),
+    order_number: orderNumber || null,
+    shipment: { id: shippingMethodId },
+    request_label: true,
+    is_return: true,
+  };
+  if (config.sendcloud.senderAddressId) {
+    parcel.sender_address = Number(config.sendcloud.senderAddressId);
+  }
+
+  const data = await sendcloudPost('/parcels', { parcel });
+  return normalizeParcel(data.parcel);
+}
+
+/**
+ * Vérifie la signature d'un webhook Sendcloud : HMAC-SHA256 du corps brut
+ * avec la clé secrète du compte, comparée en hexadécimal (en-tête
+ * `Sendcloud-Signature`) — c'est la convention documentée par Sendcloud pour
+ * prouver qu'un appel entrant vient bien d'eux plutôt que d'un tiers qui
+ * devinerait l'URL du webhook. AVERTISSEMENT — non vérifié en conditions
+ * réelles, même limite réseau que le reste de ce module ; si Sendcloud
+ * rejette systématiquement, comparer avec la documentation à jour de leur
+ * compte (le format a pu changer).
+ */
+export function verifyWebhookSignature(rawBody, signatureHeader) {
+  if (!isSendcloudConfigured() || !signatureHeader) return false;
+  const expected = crypto.createHmac('sha256', config.sendcloud.secretKey).update(rawBody, 'utf8').digest('hex');
+  const expectedBuf = Buffer.from(expected, 'hex');
+  const gotBuf = Buffer.from(String(signatureHeader).trim(), 'hex');
+  if (expectedBuf.length !== gotBuf.length) return false;
+  return crypto.timingSafeEqual(expectedBuf, gotBuf);
 }

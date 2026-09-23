@@ -2,6 +2,7 @@ import cron from 'node-cron';
 import { syncStockFromAllChannels } from './stockSync.js';
 import { syncOrdersFromAllChannels } from './orderSync.js';
 import { huntNiches } from '../ai/nicheHunter.js';
+import { processPendingReturns } from './returnFulfillment.js';
 import { logActivity } from '../db/database.js';
 
 /**
@@ -50,6 +51,7 @@ export async function startScheduler({
   stockJob = syncStockFromAllChannels,
   ordersJob = syncOrdersFromAllChannels,
   nicheJob = huntNiches,
+  returnsJob = processPendingReturns,
   logger = logActivity,
 } = {}) {
   /*
@@ -82,6 +84,14 @@ export async function startScheduler({
   schedule('0 3 */2 * *', () => runSafely('denicheur', () => nicheJob(), logger), { noOverlap: true });
 
   /*
+   * Retours (e-mail SAV) : toutes les 10 minutes. Idempotent — chaque retour
+   * traité avance son statut ('requested' -> 'label_sent'/'instructions_sent'),
+   * donc un cycle qui tomberait sur une demande déjà traitée au tour précédent
+   * ne la retraite pas et n'envoie pas un second e-mail.
+   */
+  schedule('*/10 * * * *', () => runSafely('retours', returnsJob, logger), { noOverlap: true });
+
+  /*
    * Pas de tâche périodique de PUSH.
    *
    * Le stock est la seule valeur qui dérive toute seule, mais aucun canal ne
@@ -96,5 +106,5 @@ export async function startScheduler({
    * À rebrancher le jour où un connecteur exposera updateStock.
    */
 
-  await logSafely('DEMARRAGE', 'Planificateur de synchronisation démarré (stock: 15 min, commandes: 5 min, Dénicheur: tous les 2 jours).', logger);
+  await logSafely('DEMARRAGE', 'Planificateur de synchronisation démarré (stock: 15 min, commandes: 5 min, Dénicheur: tous les 2 jours, retours: 10 min).', logger);
 }

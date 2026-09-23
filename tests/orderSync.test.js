@@ -109,3 +109,29 @@ test('a channel without listOrders is skipped without blocking the cursor', asyn
   assert.deepEqual(result.errors, []);
   assert.equal(state.lastSuccessfulSyncStartedAt, t0);
 });
+
+test('own_site is always skipped by name, even though it now implements listOrders', async () => {
+  // Regression guard: ownSite.js gained a real listOrders() (routes/orders.js,
+  // services/returnFulfillment.js use it directly), but its shape — real
+  // status, address, items — does not match what this generic sync expects
+  // ({ externalOrderId, lineItems, amount... }). If this loop ever stopped
+  // excluding own_site by name, it would silently insert malformed rows into
+  // the generic `orders` table instead of throwing.
+  const t0 = Date.parse('2024-06-01T12:00:00.000Z');
+  let ownSiteCalled = false;
+  const registry = {
+    own_site: { listOrders: async () => { ownSiteCalled = true; return []; } },
+  };
+  const result = await syncOrdersFromAllChannels({
+    channels: ['own_site'],
+    registry,
+    db: { get: async () => null, run: async () => ({ changes: 0 }) },
+    log: async () => {},
+    now: () => t0,
+    state: {},
+  });
+
+  assert.equal(ownSiteCalled, false, 'own_site.listOrders must never be called from the generic marketplace sync');
+  assert.deepEqual(result.errors, []);
+  assert.equal(result.created, 0);
+});

@@ -56,7 +56,11 @@ function presentedSecret(req) {
   return null;
 }
 
-const PUBLIC_PATHS = new Set(['/api/health']);
+/* Le webhook Sendcloud ne peut évidemment pas présenter ADMIN_API_KEY — il
+   est protégé autrement (signature HMAC vérifiée dans routes/orders.js,
+   voir services/sendcloud.js:verifyWebhookSignature), pas par ce
+   middleware. */
+const PUBLIC_PATHS = new Set(['/api/health', '/api/orders/sendcloud/webhook']);
 
 export function requireAdmin(req, res, next) {
   if (PUBLIC_PATHS.has(req.path)) return next();

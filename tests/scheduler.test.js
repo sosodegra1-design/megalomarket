@@ -80,21 +80,23 @@ test('throwing a non-Error value is contained the same way', async () => {
   assert.equal(logs.length, 1);
 });
 
-test('startScheduler registers both sync jobs with the exact pre-v4 expressions', async () => {
+test('startScheduler registers all 4 jobs with the exact expressions', async () => {
   const { registered, schedule } = captureSchedules();
   const logs = [];
   const logger = async (kind, message) => { logs.push({ kind, message }); };
 
-  await startScheduler({ schedule, stockJob: async () => {}, ordersJob: async () => {}, logger });
+  await startScheduler({
+    schedule, stockJob: async () => {}, ordersJob: async () => {}, nicheJob: async () => {}, returnsJob: async () => {}, logger,
+  });
 
-  // Les deux cadences historiques ne doivent pas bouger avec le passage en v4.
+  // Les cadences ne doivent pas bouger sans qu'on le décide explicitement.
   assert.deepEqual(
     registered.map((entry) => entry.expression),
-    ['*/15 * * * *', '*/5 * * * *'],
+    ['*/15 * * * *', '*/5 * * * *', '0 3 */2 * *', '*/10 * * * *'],
   );
   assert.deepEqual(
     registered.map((entry) => entry.options?.noOverlap),
-    [true, true],
+    [true, true, true, true],
   );
   // Les expressions sont bien comprises par le node-cron réellement installé.
   for (const { expression } of registered) {
@@ -113,6 +115,8 @@ test('the callbacks registered by startScheduler contain a failing job instead o
     schedule,
     stockJob: async () => { throw new Error('eBay injoignable'); },
     ordersJob: async () => { throw new Error('eBay injoignable'); },
+    nicheJob: async () => { throw new Error('IA indisponible'); },
+    returnsJob: async () => { throw new Error('site indisponible'); },
     logger,
   });
 
@@ -131,7 +135,9 @@ test('the callbacks registered by startScheduler contain a failing job instead o
   }
 
   const errors = logs.filter((entry) => entry.kind === 'ERREUR_SYNC');
-  assert.equal(errors.length, 2, 'chaque tick en échec doit être journalisé, sans fuite');
+  assert.equal(errors.length, 4, 'chaque tick en échec doit être journalisé, sans fuite');
   assert.match(errors[0].message, /synchronisation stock planifiée/);
   assert.match(errors[1].message, /synchronisation commandes planifiée/);
+  assert.match(errors[2].message, /synchronisation denicheur planifiée/);
+  assert.match(errors[3].message, /synchronisation retours planifiée/);
 });

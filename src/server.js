@@ -10,6 +10,7 @@ import { distributorsRouter } from './routes/distributors.js';
 import { nichesRouter } from './routes/niches.js';
 import { siteRouter } from './routes/site.js';
 import { pipelineRouter } from './routes/pipeline.js';
+import { ordersRouter } from './routes/orders.js';
 import { requireAdmin } from './middleware/auth.js';
 import { startScheduler } from './services/scheduler.js';
 import { initDatabase, logActivity } from './db/database.js';
@@ -26,7 +27,15 @@ export const app = express();
    (donc le tableau de bord), à la seule exception de /api/health. */
 app.use(requireAdmin);
 
-app.use(express.json());
+/* `verify` conserve le corps brut de la requête (req.rawBody) avant qu'il ne
+   soit parsé en JSON — indispensable pour vérifier la signature HMAC du
+   webhook Sendcloud (routes/orders.js), qui porte sur les octets exacts
+   envoyés, pas sur une reconstruction JSON.stringify(req.body) qui pourrait
+   différer par un espace ou un ordre de clé. Coût nul pour toutes les autres
+   routes : le buffer est juste retenu, jamais recalculé. */
+app.use(express.json({
+  verify: (req, res, buf) => { req.rawBody = buf; },
+}));
 app.use('/api', api);
 app.use('/api/imports', importsRouter);
 app.use('/api/suppliers', suppliersRouter);
@@ -34,6 +43,7 @@ app.use('/api/distributors', distributorsRouter);
 app.use('/api/niches', nichesRouter);
 app.use('/api/site', siteRouter);
 app.use('/api/pipeline', pipelineRouter);
+app.use('/api/orders', ordersRouter);
 app.use(express.static(join(__dirname, 'public')));
 
 /* Décrit la base visée sans jamais exposer le jeton : l'hôte suffit à voir d'un
@@ -115,6 +125,7 @@ function logConfigurationSummary() {
     ['site propre', state(config.ownSite.ready)],
     ['studio photo', state(config.cloudinary.ready)],
     ['tarifs Sendcloud', state(config.sendcloud.ready)],
+    ['e-mails post-achat (Brevo)', state(config.brevo.ready)],
     ['eBay', state(config.ebay.ready)],
   ];
 

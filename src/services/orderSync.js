@@ -60,10 +60,19 @@ export async function syncOrdersFromAllChannels({
   ).toISOString();
 
   for (const channel of channels) {
-    // Un canal n'a pas forcément de commandes à lire : le site propre, par
-    // exemple, n'expose aucune route de commandes. Sans ce garde-fou, chaque
-    // cycle enregistrait un échec « listOrders is not a function » qui masquait
-    // les vraies erreurs dans le journal.
+    // own_site EXPOSE listOrders (voir connectors/ownSite.js et
+    // routes/orders.js) mais sa forme — statut réel, adresse, retours — n'a
+    // rien à voir avec { externalOrderId, lineItems, amount... } attendu
+    // ci-dessous : le confondre insérerait des lignes incohérentes dans la
+    // table générique. Le site propre a son propre cycle de vie dédié
+    // (routes/orders.js + services/returnFulfillment.js), exclu ici
+    // explicitement plutôt que par l'absence fortuite d'une méthode.
+    if (channel === 'own_site') continue;
+
+    // Un canal n'a pas forcément de commandes à lire (ex. un futur connecteur
+    // minimal sans route commandes). Sans ce garde-fou, chaque cycle
+    // enregistrait un échec « listOrders is not a function » qui masquait les
+    // vraies erreurs dans le journal.
     if (typeof registry[channel]?.listOrders !== 'function') continue;
 
     try {

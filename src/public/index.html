@@ -1102,6 +1102,15 @@
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="6" cy="12" r="2.6"/><circle cx="18" cy="5.5" r="2.6"/><circle cx="18" cy="18.5" r="2.6"/><path d="m8.3 10.8 7.4-3.9m0 10.2-7.4-3.9"/></svg>
         Canaux
       </a>
+      <!-- Cycle de vie post-achat des commandes du site propre : expédition
+           réelle (colis + étiquette Sendcloud), livraison, retours — et les
+           3 e-mails automatiques qui en découlent (voir routes/orders.js et
+           services/returnFulfillment.js). -->
+      <a class="nav-item" href="#/commandes" data-view="commandes">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7.5 12 3l9 4.5-9 4.5-9-4.5Z"/><path d="M3 7.5v9L12 21l9-4.5v-9"/><path d="M12 12v9"/></svg>
+        Commandes
+        <span class="nav-count" id="navCountCommandes" hidden></span>
+      </a>
       <!-- Un distributeur (client B2B en aval, à qui on vend en gros) est
            l'inverse du fournisseur/distributeur de sourcing : sa rubrique vit
            donc côté Exploitation (vente), pas côté Pilotage (achat). -->
@@ -1948,6 +1957,47 @@ https://…/photo2.jpg"></textarea>
             </table>
           </div>
           <div class="table-pager" id="siteProductsPager"></div>
+        </div>
+      </section>
+
+      <!-- ==================== VUE : COMMANDES ====================
+           Cycle de vie post-achat des commandes du site propre : statut RÉEL
+           (jamais simulé, voir server/orders-repo.js côté BBhappy), expédition
+           (vrai colis + vraie étiquette Sendcloud), livraison, retours — et
+           les 3 e-mails automatiques qui en découlent (routes/orders.js,
+           services/returnFulfillment.js). -->
+      <section class="view" id="view-commandes" data-view="commandes" hidden>
+        <div class="card reveal-in" id="commandesConfigNotice" hidden>
+          <p class="hint hint-tight">Les e-mails post-achat (expédition, retour, remerciement) ne partiront pas tant que Brevo n'est pas configuré (<code>BREVO_API_KEY</code> + <code>BREVO_SENDER_EMAIL</code>). L'expédition réelle (colis + étiquette) exige en plus Sendcloud (<code>SENDCLOUD_PUBLIC_KEY</code> + <code>SENDCLOUD_SECRET_KEY</code>).</p>
+        </div>
+
+        <div class="card table-card reveal-in">
+          <div class="table-tools">
+            <div class="table-tools-text">
+              <h2>Commandes du site <span class="heading-count" id="commandesHeadingCount"></span></h2>
+              <p>Marquer expédié crée un vrai colis Sendcloud (transporteur + étiquette réels) et envoie l'e-mail d'expédition. La livraison se confirme normalement toute seule (webhook transporteur) ; « Marquer livré » n'est qu'un repli manuel.</p>
+            </div>
+            <button class="btn btn-ghost btn-sm" id="btnRefreshCommandes" type="button">Actualiser</button>
+          </div>
+          <div class="table-scroll">
+            <table class="table">
+              <thead>
+                <tr>
+                  <th>Commande</th>
+                  <th>Client</th>
+                  <th>Statut</th>
+                  <th>Transporteur / suivi</th>
+                  <th>Retour</th>
+                  <th>Créé le</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="commandes">
+                <tr class="skel-row"><td colspan="7"><span class="skel skel-bar" style="width:55%"></span></td></tr>
+                <tr class="skel-row"><td colspan="7"><span class="skel skel-bar" style="width:72%"></span></td></tr>
+              </tbody>
+            </table>
+          </div>
         </div>
       </section>
 
@@ -3139,6 +3189,10 @@ function renderNavCounts() {
   put('navCountFournisseurs', state.suppliers.filter((s) => SOURCING_KINDS.includes(s.kind)).length);
   put('navCountTransporteurs', state.suppliers.filter((s) => s.kind === CARRIER_KIND).length);
   put('navCountDistributeurs', state.distributors.length);
+  // Le compteur n'affiche que ce qui attend une action réelle : une commande
+  // encore à expédier, ou un retour demandé pas encore traité — jamais le
+  // total des commandes, qui ne dirait rien de ce qu'il reste à faire.
+  put('navCountCommandes', (state.commandes || []).filter((o) => o.status === 'confirmed' || o.returnStatus === 'requested').length);
 }
 
 function renderDashboardLists() {
@@ -5781,6 +5835,184 @@ $('btnResetArticle').addEventListener('click', (event) => {
   if (name && typeof name.focus === 'function') name.focus();
 });
 
+/* ===================== COMMANDES (site propre) =====================
+   Cycle de vie post-achat : statut RÉEL (jamais une horloge simulée, voir
+   server/orders-repo.js côté BBhappy), expédition (vrai colis + vraie
+   étiquette Sendcloud), livraison, retours. Les 3 e-mails automatiques
+   partent côté serveur (routes/orders.js, services/returnFulfillment.js) —
+   cette vue ne fait qu'agir sur le statut réel et afficher ce qui en résulte. */
+state.commandes = [];
+state.shippingOrderId = null;
+
+function commandeStatusPill(status) {
+  const label = { confirmed: 'Confirmée', shipped: 'Expédiée', delivered: 'Livrée' }[status] || status;
+  const cls = status === 'delivered' ? 'ok' : status === 'shipped' ? 'accent' : 'warn';
+  return '<span class="pill ' + cls + '">' + esc(label) + '</span>';
+}
+
+function returnStatusLabel(status) {
+  return {
+    requested: 'Demandé — en attente de traitement',
+    label_sent: 'Étiquette envoyée',
+    instructions_sent: 'Instructions envoyées (pas d\'étiquette)',
+  }[status] || status;
+}
+
+/* Les dates des commandes viennent de BBhappy en ISO 8601 (pas un timestamp
+   numérique comme le reste de cette base) — when() ne les lirait pas. */
+function isoWhen(iso) {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? '—' : d.toLocaleString('fr-FR');
+}
+
+function renderShipFormRow(order) {
+  return '<tr class="row-in" id="shipFormRow">'
+    + '<td colspan="7">'
+    + '<div class="field-grid" style="align-items:end">'
+    + '<div class="field"><label for="shipWeight">Poids du colis (kg)</label><input type="number" id="shipWeight" step="0.01" min="0.01" placeholder="0.50"></div>'
+    + '<div class="field"><label for="shipCountry">Pays de destination</label><input type="text" id="shipCountry" value="FR" maxlength="2" style="text-transform:uppercase"></div>'
+    + '<div class="field"><button class="btn btn-ghost btn-sm" type="button" id="btnLoadShipRates">Charger les tarifs Sendcloud</button></div>'
+    + '</div>'
+    + '<div class="field" id="shipMethodField" hidden style="margin-top:10px"><label for="shipMethod">Méthode d\'expédition</label><select class="input" id="shipMethod"></select></div>'
+    + '<p class="hint hint-tight" id="shipRatesHint"></p>'
+    + '<div class="row-actions" style="margin-top:10px">'
+    + '<button class="btn btn-sm" type="button" id="btnConfirmShip" data-id="' + esc(order.id) + '" disabled>Confirmer l\'expédition</button>'
+    + '<button class="btn btn-ghost btn-sm" type="button" id="btnCancelShip">Annuler</button>'
+    + '</div>'
+    + '</td></tr>';
+}
+
+function renderCommandes() {
+  const tbody = $('commandes');
+  if (!tbody) return;
+  const rows = state.commandes;
+  const heading = $('commandesHeadingCount');
+  if (heading) heading.textContent = rows.length ? '(' + rows.length + ')' : '';
+
+  const notice = $('commandesConfigNotice');
+  if (notice) {
+    const cfg = state.config || {};
+    notice.hidden = Boolean(cfg.brevo?.configured && cfg.sendcloud?.configured);
+  }
+
+  if (!rows.length) {
+    tbody.innerHTML = '<tr class="table-empty"><td colspan="7">Aucune commande.</td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = rows.map((o) => {
+    const trackingCell = o.carrier
+      ? esc(o.carrier) + (o.trackingUrl
+        ? ' — <a href="' + esc(o.trackingUrl) + '" target="_blank" rel="noopener">' + esc(o.trackingNumber || 'suivi') + '</a>'
+        : (o.trackingNumber ? ' — ' + esc(o.trackingNumber) : ''))
+      : '—';
+    const returnCell = o.returnStatus
+      ? '<span class="pill warn">' + esc(returnStatusLabel(o.returnStatus)) + '</span>'
+      : '—';
+    const actions = o.status === 'confirmed'
+      ? '<button class="btn btn-sm" type="button" data-action="ship-open" data-id="' + esc(o.id) + '">Marquer expédié</button>'
+      : (o.status === 'shipped'
+        ? '<button class="btn btn-ghost btn-sm" type="button" data-action="deliver" data-id="' + esc(o.id) + '">Marquer livré</button>'
+        : '<span class="cell-muted">—</span>');
+
+    return '<tr class="row-in">'
+      + '<td data-label="Commande"><span class="cell-strong">' + esc(o.id) + '</span></td>'
+      + '<td data-label="Client">' + esc(o.name) + '<div style="font-size:.75rem" class="cell-muted">' + esc(o.email) + '</div></td>'
+      + '<td data-label="Statut">' + commandeStatusPill(o.status) + '</td>'
+      + '<td data-label="Transporteur / suivi">' + trackingCell + '</td>'
+      + '<td data-label="Retour">' + returnCell + '</td>'
+      + '<td data-label="Créé le" class="cell-muted">' + isoWhen(o.createdAt) + '</td>'
+      + '<td data-label="Actions" class="cell-actions">' + actions + '</td>'
+      + '</tr>'
+      + (state.shippingOrderId === o.id ? renderShipFormRow(o) : '');
+  }).join('');
+  stagger(tbody);
+}
+
+async function loadCommandes() {
+  try {
+    state.commandes = await api('/api/orders/own-site');
+  } catch {
+    state.commandes = [];
+  }
+  renderCommandes();
+}
+
+onAction($('commandes'), {
+  'ship-open': (button) => {
+    state.shippingOrderId = button.dataset.id;
+    renderCommandes();
+  },
+
+  deliver: (button) => action(button, async () => {
+    if (!confirmChannelWrite('Marquer la commande ' + button.dataset.id + ' comme livrée ? À utiliser seulement si le webhook transporteur n\'a pas déjà confirmé la livraison.')) return null;
+    const result = await api('/api/orders/own-site/' + encodeURIComponent(button.dataset.id) + '/deliver', { method: 'POST' });
+    await loadCommandes();
+    return result;
+  }, 'Commande marquée livrée.'),
+});
+
+/* Le formulaire d'expédition (poids -> tarifs Sendcloud -> confirmation)
+   vit dans une ligne insérée dynamiquement (voir renderShipFormRow) : ses
+   propres boutons sont donc rattachés ici, sur le tbody parent, plutôt que
+   sur des éléments qui n'existent pas encore au chargement de la page. */
+$('commandes').addEventListener('click', (event) => {
+  const loadBtn = event.target.closest('#btnLoadShipRates');
+  if (loadBtn) {
+    action(loadBtn, async () => {
+      const weightKg = Number($('shipWeight').value);
+      if (!Number.isFinite(weightKg) || weightKg <= 0) throw new Error('Renseigne un poids valide.');
+      const toCountry = ($('shipCountry').value || 'FR').trim().toUpperCase() || 'FR';
+      const result = await api('/api/pipeline/sendcloud/methods?' + new URLSearchParams({ toCountry, weightKg }).toString());
+      const select = $('shipMethod');
+      const methods = result.methods || [];
+      select.innerHTML = methods.map((m) => (
+        '<option value="' + esc(m.id) + '" data-name="' + esc(m.carrier ? m.name + ' (' + m.carrier + ')' : m.name) + '">'
+        + esc(m.name) + (m.carrier ? ' — ' + esc(m.carrier) : '') + ' — ' + money(m.price)
+        + '</option>'
+      )).join('');
+      $('shipMethodField').hidden = !methods.length;
+      $('btnConfirmShip').disabled = !methods.length;
+      $('shipRatesHint').textContent = methods.length
+        ? methods.length + ' méthode(s) disponible(s) pour ' + weightKg + ' kg.'
+        : 'Aucune méthode Sendcloud disponible pour ce poids/cette destination.';
+      return result;
+    }, null);
+    return;
+  }
+
+  const cancelBtn = event.target.closest('#btnCancelShip');
+  if (cancelBtn) {
+    state.shippingOrderId = null;
+    renderCommandes();
+    return;
+  }
+
+  const confirmBtn = event.target.closest('#btnConfirmShip');
+  if (confirmBtn) {
+    action(confirmBtn, async () => {
+      const select = $('shipMethod');
+      const option = select?.selectedOptions?.[0];
+      if (!option) throw new Error('Choisis une méthode d\'expédition.');
+      if (!confirmChannelWrite('Créer un vrai colis Sendcloud et expédier la commande ' + confirmBtn.dataset.id + ' ?')) return null;
+      const result = await api('/api/orders/own-site/' + encodeURIComponent(confirmBtn.dataset.id) + '/ship', {
+        method: 'POST',
+        body: JSON.stringify({
+          shippingMethodId: Number(option.value),
+          carrierName: option.dataset.name,
+          weightKg: Number($('shipWeight').value),
+        }),
+      });
+      state.shippingOrderId = null;
+      await loadCommandes();
+      return result;
+    }, 'Commande expédiée — e-mail envoyé au client.');
+  }
+});
+
+$('btnRefreshCommandes').addEventListener('click', (event) => action(event.currentTarget, loadCommandes, 'Commandes actualisées.'));
+
 /* ===================== ROUTAGE PAR ANCRE =====================
    Chaque vue a une ancre (#/imports, #/produits…) : elle est partageable et
    survit à un rafraîchissement, sans dépendre d'un serveur qui ne connaît que
@@ -5796,6 +6028,7 @@ const VIEWS = {
   fournisseurs: { el: 'view-fournisseurs', title: 'Fournisseurs' },
   transporteurs: { el: 'view-transporteurs', title: 'Transporteurs' },
   canaux: { el: 'view-canaux', title: 'Canaux' },
+  commandes: { el: 'view-commandes', title: 'Commandes' },
   distributeurs: { el: 'view-distributeurs', title: 'Distributeurs' },
   denicheur: { el: 'view-denicheur', title: 'Dénicheur' },
   pipeline: { el: 'view-pipeline', title: 'Pipeline IA' },
@@ -5810,6 +6043,7 @@ const ROUTES = {
   '#/fournisseurs': 'fournisseurs',
   '#/transporteurs': 'transporteurs',
   '#/canaux': 'canaux',
+  '#/commandes': 'commandes',
   '#/distributeurs': 'distributeurs',
   '#/denicheur': 'denicheur',
   '#/pipeline': 'pipeline',
@@ -5958,7 +6192,7 @@ async function loadAll() {
   await loadConfig();
   // Chaque bloc est indépendant : une section en erreur ne doit pas vider les autres.
   const loadImportsAndDetails = async () => { await loadImports(); await hydrateImportDetails(); };
-  const blocks = [loadChannels, loadProducts, loadRecommendations, loadSuppliers, loadImportsAndDetails, loadActivity, loadDistributors, loadDenicheur, loadPipelineRuns, loadSiteProducts, loadSiteTaxonomy];
+  const blocks = [loadChannels, loadProducts, loadRecommendations, loadSuppliers, loadImportsAndDetails, loadActivity, loadDistributors, loadDenicheur, loadPipelineRuns, loadSiteProducts, loadSiteTaxonomy, loadCommandes];
   const errors = [];
   await Promise.all(blocks.map((fn) => fn().catch((error) => { errors.push(fn.name + ' : ' + error.message); })));
   renderDashboard();

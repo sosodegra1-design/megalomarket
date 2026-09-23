@@ -159,14 +159,33 @@ export const config = {
     },
   },
 
-  /* Tarifs transporteurs réels (voir services/sendcloud.js). Paire clé
-     publique/secrète Sendcloud (Integrations -> API dans leur dashboard),
-     pas une seule clé. */
+  /* Tarifs transporteurs réels + création réelle de colis/étiquettes (voir
+     services/sendcloud.js). Paire clé publique/secrète Sendcloud
+     (Integrations -> API dans leur dashboard), pas une seule clé.
+     senderAddressId est OPTIONNEL : un colis créé sans lui utilise l'adresse
+     d'expéditeur par défaut déjà configurée dans le panneau Sendcloud
+     (Réglages -> Adresses d'expédition) — le renseigner ne sert qu'à choisir
+     une adresse précise parmi plusieurs. */
   sendcloud: {
     publicKey: process.env.SENDCLOUD_PUBLIC_KEY || null,
     secretKey: process.env.SENDCLOUD_SECRET_KEY || null,
+    senderAddressId: process.env.SENDCLOUD_SENDER_ADDRESS_ID || null,
     get ready() {
       return has('SENDCLOUD_PUBLIC_KEY', 'SENDCLOUD_SECRET_KEY');
+    },
+  },
+
+  /* Envoi des e-mails transactionnels post-achat (expédition, retour,
+     remerciement — voir services/email.js). API Brevo (ex-Sendinblue) :
+     une seule clé, plus l'identité d'expéditeur qui doit être une adresse
+     vérifiée dans le compte Brevo (Réglages -> Expéditeurs), sans quoi
+     Brevo refuse l'envoi. */
+  brevo: {
+    apiKey: process.env.BREVO_API_KEY || null,
+    senderEmail: process.env.BREVO_SENDER_EMAIL || null,
+    senderName: process.env.BREVO_SENDER_NAME || 'BBVOLTEX',
+    get ready() {
+      return has('BREVO_API_KEY', 'BREVO_SENDER_EMAIL');
     },
   },
 

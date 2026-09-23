@@ -121,6 +121,7 @@ api.get('/config', (req, res) => {
       fixedFee: config.pricing.fixedFee,
     },
     sendcloud: { configured: config.sendcloud.ready },
+    brevo: { configured: config.brevo.ready },
     missing: missingConfiguration(),
   });
 });

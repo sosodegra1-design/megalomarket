@@ -16,6 +16,11 @@ import { config } from '../config/env.js';
  *   POST   /api/admin/products        clé     — publier un produit
  *   PATCH  /api/admin/products/:id    clé     — modifier prix et champs
  *   DELETE /api/admin/products/:id    clé     — retirer un produit
+ *   GET    /api/admin/orders          clé     — commandes du site (statut réel, jamais simulé)
+ *   GET    /api/admin/orders/:id      clé     — une commande
+ *   PATCH  /api/admin/orders/:id/ship clé      — marque expédiée (transporteur + suivi réels requis)
+ *   PATCH  /api/admin/orders/:id/deliver clé   — marque livrée (idempotent)
+ *   PATCH  /api/admin/orders/:id/return  clé   — fait avancer un retour déjà demandé par le client
  *
  * Authentification des routes d'administration : en-tête `X-Admin-Key`,
  * alimenté par OWN_SITE_API_KEY (doit correspondre à ADMIN_API_KEY côté site).
@@ -139,4 +144,51 @@ export async function deleteListing(id) {
 
 export function isConfigured() {
   return config.ownSite.ready;
+}
+
+/**
+ * Commandes du site propre — la donnée d'origine des 3 e-mails post-achat.
+ * `since` (ISO) permet au planificateur de ne relire que ce qui a changé
+ * depuis son dernier passage, comme les autres connecteurs (voir
+ * services/orderSync.js), même si les commandes du site propre ne
+ * transitent PAS par cette synchronisation générique : leur forme (adresse,
+ * statut réel, retours) est trop différente de celle des marketplaces pour
+ * partager la même table `orders`.
+ */
+export async function listOrders({ since, status } = {}) {
+  const params = new URLSearchParams();
+  if (since) params.set('since', since);
+  if (status) params.set('status', status);
+  const query = params.toString() ? `?${params.toString()}` : '';
+  const orders = await ownSiteFetch(`/api/admin/orders${query}`);
+  return Array.isArray(orders) ? orders : [];
+}
+
+export async function getOrder(orderId) {
+  if (!orderId) throw new Error('Identifiant de commande manquant.');
+  return ownSiteFetch(`/api/admin/orders/${encodeURIComponent(orderId)}`);
+}
+
+/** Marque une commande expédiée — exige un transporteur et un suivi réels (voir server/orders-repo.js côté site, qui refuse sinon). */
+export async function markOrderShipped(orderId, { carrier, trackingNumber, trackingUrl, labelUrl }) {
+  if (!orderId) throw new Error('Identifiant de commande manquant.');
+  return ownSiteFetch(`/api/admin/orders/${encodeURIComponent(orderId)}/ship`, {
+    method: 'PATCH',
+    body: { carrier, trackingNumber, trackingUrl, labelUrl },
+  });
+}
+
+/** Marque une commande livrée. Idempotent côté site : un second appel (webhook rejoué) ne provoque pas d'erreur. */
+export async function markOrderDelivered(orderId) {
+  if (!orderId) throw new Error('Identifiant de commande manquant.');
+  return ownSiteFetch(`/api/admin/orders/${encodeURIComponent(orderId)}/deliver`, { method: 'PATCH' });
+}
+
+/** Fait avancer un retour déjà demandé par le client (jamais l'inverse — le site seul décide qu'un retour démarre). */
+export async function markReturnHandled(orderId, { returnStatus, returnLabelUrl } = {}) {
+  if (!orderId) throw new Error('Identifiant de commande manquant.');
+  return ownSiteFetch(`/api/admin/orders/${encodeURIComponent(orderId)}/return`, {
+    method: 'PATCH',
+    body: { returnStatus, returnLabelUrl },
+  });
 }

@@ -172,8 +172,11 @@ test('the connector advertises the shared connector interface', async () => {
   assert.equal(typeof ownSite.createListing, 'function');
   assert.equal(typeof ownSite.listInventoryItems, 'function');
   assert.equal(ownSite.isConfigured(), true);
-  // No listOrders: the site exposes no orders API. The sync services skip a
-  // channel that does not implement the method rather than logging an error
-  // on every cycle.
-  assert.equal(ownSite.listOrders, undefined);
+  // listOrders() exists (routes/orders.js and services/returnFulfillment.js
+  // use it directly), but its shape — real shipping/delivery/return status,
+  // address, items — is specific to the site's own order lifecycle and does
+  // NOT match the generic { externalOrderId, lineItems, ... } shape the
+  // marketplace connectors return. orderSync.js therefore still skips this
+  // channel by name rather than calling it generically (see orderSync.js).
+  assert.equal(typeof ownSite.listOrders, 'function');
 });
