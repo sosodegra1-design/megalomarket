@@ -25,7 +25,11 @@ Consigne du canal ${channel} : ${guidance}
 
 Rédige une description adaptée à ce canal.`;
 
-  const raw = await askModel({ system: SYSTEM_PROMPT, prompt, maxTokens: 600 });
+  // 1000 (pas 600) : un modèle "raisonneur" comme gpt-oss-120b consomme une
+  // partie du budget en réflexion interne avant d'écrire la réponse finale —
+  // une limite trop juste coupe le JSON en plein milieu (observé en
+  // production). Même marge que writeListing() dans copywriter.js.
+  const raw = await askModel({ system: SYSTEM_PROMPT, prompt, maxTokens: 1000 });
   let parsed;
   try {
     parsed = parseJsonFromModel(raw);
@@ -74,7 +78,11 @@ ${details || '(aucun autre détail renseigné pour le moment)'}
 
 Rédige une description vendeuse pour la fiche produit du site, uniquement à partir de ces informations.`;
 
-  const raw = await askModel({ system: SITE_ARTICLE_SYSTEM_PROMPT, prompt, maxTokens: 500 });
+  // 1000 (pas 500) : un modèle "raisonneur" comme gpt-oss-120b consomme une
+  // partie du budget en réflexion interne avant la réponse finale — la
+  // limite précédente coupait le JSON en plein milieu (observé en
+  // production, ex. "Sorcière à balai" tronquée avant la fermeture).
+  const raw = await askModel({ system: SITE_ARTICLE_SYSTEM_PROMPT, prompt, maxTokens: 1000 });
   let parsed;
   try {
     parsed = parseJsonFromModel(raw);

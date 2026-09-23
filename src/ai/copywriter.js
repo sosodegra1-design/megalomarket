@@ -34,7 +34,12 @@ export async function writeListing({ title, category, universe, ageLabel, price,
 
   const prompt = `Produit : ${trimmedTitle}\n${details || '(aucun autre détail fourni)'}\n\nRédige la fiche complète.`;
 
-  const raw = await askModel({ system: SYSTEM_PROMPT, prompt, maxTokens: 900 });
+  // 1400 (pas 900) : cette fiche est le contenu le plus long généré dans
+  // l'app (titre + accroche + puces + CTA + description) — un modèle
+  // "raisonneur" (gpt-oss-120b) consomme aussi une partie du budget en
+  // réflexion interne, donc une marge courte coupe le JSON en plein milieu
+  // (observé en production sur un autre générateur avec la même cause).
+  const raw = await askModel({ system: SYSTEM_PROMPT, prompt, maxTokens: 1400 });
   let parsed;
   try {
     parsed = parseJsonFromModel(raw);

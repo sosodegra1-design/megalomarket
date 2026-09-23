@@ -15,10 +15,14 @@ Liste chaque problème trouvé dans "issues" (tableau vide si "ok" est true).`;
 export async function editorialCheck({ title, description }) {
   let raw;
   try {
+    // 700 (pas 400) : un modèle "raisonneur" (gpt-oss-120b) consomme une
+    // partie du budget en réflexion interne avant la réponse finale — une
+    // limite trop juste coupe le JSON en plein milieu (observé en
+    // production sur un autre appel avec la même cause).
     raw = await askModel({
       system: EDITORIAL_SYSTEM_PROMPT,
       prompt: `Titre : ${title}\n\nDescription :\n${description}`,
-      maxTokens: 400,
+      maxTokens: 700,
     });
   } catch (error) {
     return { ok: false, issues: [error.message] };
@@ -51,7 +55,10 @@ export async function categorize({ title, description }, taxonomy) {
 
   let raw;
   try {
-    raw = await askModel({ system: CATEGORY_SYSTEM_PROMPT, prompt, maxTokens: 250 });
+    // 500 (pas 250) : même cause que editorialCheck ci-dessus — un modèle
+    // "raisonneur" a besoin de marge au-delà de la seule taille de la
+    // réponse JSON visible.
+    raw = await askModel({ system: CATEGORY_SYSTEM_PROMPT, prompt, maxTokens: 500 });
   } catch (error) {
     return { category: null, universe: null, iconKey: null, confident: false, error: error.message };
   }
