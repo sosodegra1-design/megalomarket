@@ -120,6 +120,7 @@ api.get('/config', (req, res) => {
       marginCoefficient: config.pricing.marginCoefficient,
       fixedFee: config.pricing.fixedFee,
     },
+    sendcloud: { configured: config.sendcloud.ready },
     missing: missingConfiguration(),
   });
 });

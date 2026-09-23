@@ -6,7 +6,7 @@ import { inspectImages } from '../ai/visionInspector.js';
 import { editorialCheck, categorize } from '../ai/qualityInspector.js';
 import { computeSellPrice, computeNetMargin, MIN_MARGIN_COEFFICIENT } from '../services/pricing.js';
 import { cheapestCarrier } from '../services/shipping.js';
-import { cheapestSendcloudMethod, isSendcloudConfigured } from '../services/sendcloud.js';
+import { cheapestSendcloudMethod, listSendcloudMethods, isSendcloudConfigured } from '../services/sendcloud.js';
 import { processProductImages, isImageStudioConfigured } from '../services/imageStudio.js';
 
 /*
@@ -218,6 +218,22 @@ pipelineRouter.post(
     });
     await logActivity('PIPELINE_BROUILLON', `Pipeline : "${listing?.seoTitle || title}" préparé en brouillon — validation humaine requise avant toute publication.`);
     res.status(201).json({ id, status: 'brouillon', report, listing });
+  }),
+);
+
+pipelineRouter.get(
+  '/sendcloud/methods',
+  asyncRoute(async (req, res) => {
+    if (!isSendcloudConfigured()) {
+      throw new Error('Sendcloud non configuré (SENDCLOUD_PUBLIC_KEY / SENDCLOUD_SECRET_KEY manquantes).');
+    }
+    const toCountry = typeof req.query.toCountry === 'string' && req.query.toCountry.trim()
+      ? req.query.toCountry.trim().toUpperCase() : 'FR';
+    const fromCountry = typeof req.query.fromCountry === 'string' && req.query.fromCountry.trim()
+      ? req.query.fromCountry.trim().toUpperCase() : 'FR';
+    const weightKg = req.query.weightKg != null && req.query.weightKg !== '' ? Number(req.query.weightKg) : null;
+    const methods = await listSendcloudMethods({ toCountry, fromCountry, weightKg });
+    res.json({ toCountry, fromCountry, weightKg, methods });
   }),
 );
 

@@ -1710,6 +1710,43 @@
           </div>
         </div>
 
+        <div class="card table-card reveal-in" id="sendcloudRatesCard" hidden>
+          <div class="table-tools">
+            <div class="table-tools-text">
+              <h2>Tarifs Sendcloud (réels)</h2>
+              <p id="sendcloudRatesHint">Les méthodes d'expédition activées sur ton compte Sendcloud, avec leur tarif réel pour la destination choisie — indépendant de toute exécution du <a href="#/pipeline">Pipeline IA</a>.</p>
+            </div>
+          </div>
+          <div class="field-grid" style="padding: 0 var(--card-pad, 20px) 12px;">
+            <div class="field">
+              <label for="sendcloudRatesCountry">Pays de destination</label>
+              <input type="text" id="sendcloudRatesCountry" value="FR" maxlength="2" placeholder="FR" autocomplete="off" style="text-transform:uppercase">
+            </div>
+            <div class="field">
+              <label for="sendcloudRatesWeight">Poids du colis (kg, optionnel)</label>
+              <input type="number" id="sendcloudRatesWeight" step="0.01" min="0" placeholder="laisser vide = toutes tranches">
+            </div>
+            <div class="field field-actions">
+              <button class="btn btn-sm" id="btnRefreshSendcloudRates" type="button">Actualiser les tarifs</button>
+            </div>
+          </div>
+          <div class="table-scroll">
+            <table class="table">
+              <thead>
+                <tr>
+                  <th>Méthode</th>
+                  <th>Transporteur</th>
+                  <th>Poids min–max (kg)</th>
+                  <th>Tarif</th>
+                </tr>
+              </thead>
+              <tbody id="sendcloudRates">
+                <tr class="table-empty"><td colspan="4">Clique sur « Actualiser les tarifs ».</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
         <!-- État vide qui enseigne : la question réelle n'est pas « comment
              remplir un formulaire » mais « pourquoi 1688 ne m'envoie rien ». On y
              répond dans l'ordre : agent d'achat, puis transitaire. -->
@@ -2857,6 +2894,17 @@ async function loadConfig() {
      global » sans chiffre plutôt qu'un faux ×0.00. */
   renderGlobalMargin();
   updateImportSupplierMargin();
+  applySendcloudState();
+}
+
+/* La carte de consultation des tarifs Sendcloud ne s'affiche que si le
+   compte est configuré (clés SENDCLOUD_PUBLIC_KEY/SECRET_KEY présentes) :
+   sans elles, l'API renvoie toujours la même erreur, autant ne pas montrer
+   une carte qui échouerait à coup sûr. */
+function applySendcloudState() {
+  const ready = Boolean(state.config && state.config.sendcloud && state.config.sendcloud.configured);
+  const card = $('sendcloudRatesCard');
+  if (card) card.hidden = !ready;
 }
 
 /* Active ou bloque toutes les actions qui dépendent de l'IA. Le bouton de
@@ -3635,6 +3683,47 @@ function focusCarrierForm() {
   const target = $('carName');
   if (card && typeof card.scrollIntoView === 'function') card.scrollIntoView({ behavior: motionOK() ? 'smooth' : 'auto', block: 'start' });
   if (target && typeof target.focus === 'function') target.focus();
+}
+
+/* ---------- Consultation directe des tarifs Sendcloud ----------
+   Contrairement au Pipeline IA (qui ne retient que la méthode la moins
+   chère pour un envoi donné), cette liste montre TOUTES les méthodes
+   activées sur le compte Sendcloud, pour parcourir les tarifs sans lancer
+   une préparation de fiche. */
+function renderSendcloudRates(methods) {
+  const tbody = $('sendcloudRates');
+  if (!tbody) return;
+  tbody.innerHTML = (methods && methods.length)
+    ? methods.map((m) => (
+      '<tr>'
+      + '<td>' + esc(m.name || '—') + '</td>'
+      + '<td>' + esc(m.carrier || '—') + '</td>'
+      + '<td>' + (m.minWeight != null ? m.minWeight : '—') + '–' + (m.maxWeight != null ? m.maxWeight : '—') + '</td>'
+      + '<td>' + money(m.price) + '</td>'
+      + '</tr>'
+    )).join('')
+    : '<tr class="table-empty"><td colspan="4">Aucune méthode éligible pour ces critères.</td></tr>';
+  stagger(tbody);
+}
+
+async function loadSendcloudRates() {
+  const tbody = $('sendcloudRates');
+  if (tbody) tbody.innerHTML = '<tr class="skel-row"><td colspan="4"><span class="skel skel-bar" style="width:52%"></span></td></tr>';
+  const toCountry = ($('sendcloudRatesCountry').value || 'FR').trim().toUpperCase() || 'FR';
+  const weightRaw = $('sendcloudRatesWeight').value.trim();
+  const params = new URLSearchParams({ toCountry });
+  if (weightRaw) params.set('weightKg', weightRaw);
+  try {
+    const result = await api('/api/pipeline/sendcloud/methods?' + params.toString());
+    renderSendcloudRates(result.methods);
+  } catch (error) {
+    if (tbody) tbody.innerHTML = '<tr class="table-empty"><td colspan="4">' + esc(error.message) + '</td></tr>';
+  }
+}
+
+const btnRefreshSendcloudRates = $('btnRefreshSendcloudRates');
+if (btnRefreshSendcloudRates) {
+  btnRefreshSendcloudRates.addEventListener('click', (event) => action(event.currentTarget, loadSendcloudRates, null));
 }
 
 /* ---------- Sélecteur de partenaire de l'import ----------

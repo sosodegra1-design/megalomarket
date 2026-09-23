@@ -101,3 +101,71 @@ export async function cheapestSendcloudMethod({ toCountry = 'FR', weightKg, from
   eligible.sort((a, b) => a.price - b.price);
   return eligible[0];
 }
+
+/**
+ * Retourne TOUTES les méthodes d'expédition éligibles pour une destination
+ * (pas seulement la moins chère), triées par prix croissant — pour
+ * consultation directe des tarifs plutôt que via l'intérieur d'un rapport
+ * Pipeline IA. Même logique d'extraction que cheapestSendcloudMethod : le
+ * filtrage par poids est ignoré si aucun poids n'est fourni (on veut alors
+ * voir toutes les méthodes disponibles pour la destination, quel que soit
+ * leur tranche de poids).
+ */
+export async function listSendcloudMethods({ toCountry = 'FR', fromCountry = 'FR', weightKg = null } = {}) {
+  if (!isSendcloudConfigured()) {
+    throw new Error('Sendcloud non configuré (SENDCLOUD_PUBLIC_KEY / SENDCLOUD_SECRET_KEY manquantes).');
+  }
+
+  const url = `${API_BASE}/shipping_methods?from_country=${encodeURIComponent(fromCountry)}&to_country=${encodeURIComponent(toCountry)}`;
+  let response;
+  try {
+    response = await fetch(url, {
+      headers: { Authorization: authHeader() },
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+    });
+  } catch (error) {
+    if (error?.name === 'TimeoutError' || error?.name === 'AbortError') {
+      throw new Error('Sendcloud injoignable (délai dépassé).');
+    }
+    throw new Error(`Impossible de contacter Sendcloud : ${error?.message ?? error}`);
+  }
+
+  if (!response.ok) {
+    const detail = await response.text();
+    throw new Error(`Sendcloud a refusé la requête (HTTP ${response.status}) : ${detail.slice(0, 300)}`);
+  }
+
+  const data = await response.json();
+  const methods = Array.isArray(data?.shipping_methods) ? data.shipping_methods : (Array.isArray(data) ? data : null);
+  if (!methods) {
+    throw new Error(`Réponse Sendcloud inattendue (pas de liste de méthodes reconnaissable) : ${JSON.stringify(data).slice(0, 300)}`);
+  }
+
+  const list = [];
+  for (const method of methods) {
+    const minWeight = Number(method.min_weight);
+    const maxWeight = Number(method.max_weight);
+    if (Number.isFinite(weightKg)) {
+      if (Number.isFinite(minWeight) && weightKg < minWeight) continue;
+      if (Number.isFinite(maxWeight) && weightKg > maxWeight) continue;
+    }
+
+    const countryEntry = Array.isArray(method.countries)
+      ? method.countries.find((c) => c.iso_2 === toCountry)
+      : null;
+    const price = countryEntry ? Number(countryEntry.price) : Number(method.price);
+    if (!Number.isFinite(price)) continue;
+
+    list.push({
+      id: method.id,
+      name: method.name,
+      carrier: method.carrier || null,
+      price,
+      minWeight: Number.isFinite(minWeight) ? minWeight : null,
+      maxWeight: Number.isFinite(maxWeight) ? maxWeight : null,
+    });
+  }
+
+  list.sort((a, b) => a.price - b.price);
+  return list;
+}
