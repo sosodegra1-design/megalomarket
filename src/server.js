@@ -114,6 +114,7 @@ function logConfigurationSummary() {
       : 'AUCUN — import, prix, descriptions et support resteront inertes'],
     ['site propre', state(config.ownSite.ready)],
     ['studio photo', state(config.cloudinary.ready)],
+    ['tarifs Sendcloud', state(config.sendcloud.ready)],
     ['eBay', state(config.ebay.ready)],
   ];
 

@@ -2091,7 +2091,15 @@ https://…/photo2.jpg"></textarea>
                 <input type="number" id="pipePurchasePrice" step="0.01" min="0.01" placeholder="2.00">
               </div>
               <div class="field">
-                <label for="pipeMaxShippingDays">Délai de livraison max (jours, optionnel)</label>
+                <label for="pipeWeightKg">Poids du colis (kg, pour tarifs Sendcloud réels)</label>
+                <input type="number" id="pipeWeightKg" step="0.01" min="0.01" placeholder="0.30">
+              </div>
+              <div class="field">
+                <label for="pipeShippingCountry">Pays de livraison (défaut FR)</label>
+                <input type="text" id="pipeShippingCountry" placeholder="FR" maxlength="2" style="text-transform:uppercase;">
+              </div>
+              <div class="field">
+                <label for="pipeMaxShippingDays">Délai de livraison max (jours, optionnel — comparaison manuelle seulement)</label>
                 <input type="number" id="pipeMaxShippingDays" step="1" min="1" placeholder="15">
               </div>
               <div class="field">
@@ -5261,13 +5269,18 @@ function renderStepDetail(step) {
         : '<p class="hint hint-tight">Fond détouré et uniformisé sur toutes les images.</p>');
   }
   if (step.agent === 'tarification_logistique') {
+    const sourceLabel = d.shippingSource === 'sendcloud' ? 'tarif réel Sendcloud' : (d.shippingSource === 'manuel' ? 'comparaison manuelle' : null);
     const parts = [
       'Coût d\'achat : ' + money(d.purchasePrice),
       'Prix de vente (x' + d.minCoefficient + ' min.) : ' + money(d.sellPrice),
-      'Transporteur : ' + (d.carrier ? d.carrier + ' (' + money(d.shippingCost) + (d.shippingDays != null ? ', ' + d.shippingDays + ' j' : '') + ')' : 'aucun disponible'),
+      'Transporteur : ' + (d.carrier
+        ? d.carrier + ' (' + money(d.shippingCost) + (d.shippingDays != null ? ', ' + d.shippingDays + ' j' : '') + (sourceLabel ? ' — ' + sourceLabel : '') + ')'
+        : 'aucun disponible'),
       'Marge nette : ' + (d.netMargin != null ? money(d.netMargin) : '—'),
     ];
-    return '<p class="hint hint-tight">' + esc(parts.join(' · ')) + '</p>' + (d.reason ? '<p class="hint hint-tight">' + esc(d.reason) + '</p>' : '');
+    return '<p class="hint hint-tight">' + esc(parts.join(' · ')) + '</p>'
+      + (d.sendcloudError ? '<p class="hint hint-tight">Sendcloud : ' + esc(d.sendcloudError) + ' — comparaison manuelle utilisée à la place.</p>' : '')
+      + (d.reason ? '<p class="hint hint-tight">' + esc(d.reason) + '</p>' : '');
   }
   if (step.agent === 'inspecteur_images') {
     if (d.overallOk) return '<p class="hint hint-tight">' + esc(d.summary || 'Toutes les images sont conformes.') + '</p>';
@@ -5386,6 +5399,8 @@ $('btnRunPipeline').addEventListener('click', (event) => action(event.currentTar
   const images = ($('pipeImages').value || '').split('\n').map((u) => u.trim()).filter(Boolean);
   if (!images.length) throw new Error('Colle au moins une adresse de photo.');
   const maxShippingDaysRaw = $('pipeMaxShippingDays').value.trim();
+  const weightKgRaw = $('pipeWeightKg').value.trim();
+  const shippingCountry = $('pipeShippingCountry').value.trim();
 
   const result = await api('/api/pipeline/run', {
     method: 'POST',
@@ -5394,6 +5409,8 @@ $('btnRunPipeline').addEventListener('click', (event) => action(event.currentTar
       purchasePrice,
       images,
       maxShippingDays: maxShippingDaysRaw ? Number(maxShippingDaysRaw) : null,
+      weightKg: weightKgRaw ? Number(weightKgRaw) : null,
+      shippingCountry: shippingCountry || null,
       sourceUrl: $('pipeSourceUrl').value.trim() || null,
       notes: $('pipeNotes').value.trim() || null,
     }),

@@ -159,6 +159,17 @@ export const config = {
     },
   },
 
+  /* Tarifs transporteurs réels (voir services/sendcloud.js). Paire clé
+     publique/secrète Sendcloud (Integrations -> API dans leur dashboard),
+     pas une seule clé. */
+  sendcloud: {
+    publicKey: process.env.SENDCLOUD_PUBLIC_KEY || null,
+    secretKey: process.env.SENDCLOUD_SECRET_KEY || null,
+    get ready() {
+      return has('SENDCLOUD_PUBLIC_KEY', 'SENDCLOUD_SECRET_KEY');
+    },
+  },
+
   amazon: {
     refreshToken: process.env.AMAZON_REFRESH_TOKEN || null,
     clientId: process.env.AMAZON_CLIENT_ID || null,

@@ -6,6 +6,7 @@ import { inspectImages } from '../ai/visionInspector.js';
 import { editorialCheck, categorize } from '../ai/qualityInspector.js';
 import { computeSellPrice, computeNetMargin, MIN_MARGIN_COEFFICIENT } from '../services/pricing.js';
 import { cheapestCarrier } from '../services/shipping.js';
+import { cheapestSendcloudMethod, isSendcloudConfigured } from '../services/sendcloud.js';
 import { processProductImages, isImageStudioConfigured } from '../services/imageStudio.js';
 
 /*
@@ -84,6 +85,12 @@ pipelineRouter.post(
     const notes = typeof body.notes === 'string' ? body.notes.trim() : '';
     const maxShippingDays = body.maxShippingDays != null && body.maxShippingDays !== ''
       ? Number(body.maxShippingDays) : null;
+    // Le poids ne sert QUE si Sendcloud est configuré (ses tarifs dépendent de
+    // tranches de poids réelles) — la comparaison manuelle de shipping.js n'en
+    // a jamais eu besoin, donc rien ne casse si ce champ est absent.
+    const weightKg = body.weightKg != null && body.weightKg !== '' ? Number(body.weightKg) : null;
+    const shippingCountry = typeof body.shippingCountry === 'string' && body.shippingCountry.trim()
+      ? body.shippingCountry.trim().toUpperCase() : 'FR';
 
     const connector = requireOwnSite();
     const taxonomy = await connector.getTaxonomy();
@@ -117,8 +124,38 @@ pipelineRouter.post(
     // --- Tarification & logistique : prix x3 minimum SUGGÉRÉ + transporteur le moins cher SUGGÉRÉ ---
     // Purement informatif désormais : rien ici ne bloque ni n'autorise quoi que
     // ce soit, puisque plus rien ne se publie automatiquement.
+    //
+    // Sendcloud (vrais tarifs) est essayé EN PREMIER quand il est configuré
+    // ET qu'un poids a été renseigné (ses tarifs dépendent de tranches de
+    // poids réelles). Une panne Sendcloud (clé invalide, réponse
+    // inattendue…) ne bloque jamais le reste : elle retombe sur la
+    // comparaison manuelle de l'onglet Transporteurs, avec l'erreur Sendcloud
+    // conservée dans le rapport pour être corrigée plutôt que masquée.
     const sellPrice = computeSellPrice(purchasePrice);
-    const carrier = await cheapestCarrier({ maxDays: maxShippingDays });
+    let carrier = null;
+    let shippingSource = null;
+    let sendcloudError = null;
+
+    if (isSendcloudConfigured() && weightKg != null) {
+      try {
+        const method = await cheapestSendcloudMethod({ toCountry: shippingCountry, weightKg });
+        if (method) {
+          carrier = {
+            name: method.carrier ? `${method.name} (${method.carrier})` : method.name,
+            shippingCost: method.price,
+            shippingDays: null,
+          };
+          shippingSource = 'sendcloud';
+        }
+      } catch (error) {
+        sendcloudError = error.message;
+      }
+    }
+    if (!carrier) {
+      carrier = await cheapestCarrier({ maxDays: maxShippingDays });
+      if (carrier) shippingSource = 'manuel';
+    }
+
     const shippingCost = carrier ? carrier.shippingCost : null;
     const netMargin = carrier ? computeNetMargin({ sellPrice, purchasePrice, shippingCost }) : null;
     const pricingOk = Boolean(carrier) && netMargin != null && netMargin > 0;
@@ -133,8 +170,14 @@ pipelineRouter.post(
         carrier: carrier ? carrier.name : null,
         shippingCost,
         shippingDays: carrier ? carrier.shippingDays : null,
+        shippingSource,
+        sendcloudError,
         netMargin,
-        reason: carrier ? null : 'Aucun transporteur actif avec un coût de livraison renseigné ne respecte le délai demandé.',
+        reason: carrier
+          ? null
+          : (weightKg == null && isSendcloudConfigured()
+            ? 'Renseigne un poids pour obtenir un vrai tarif Sendcloud, ou ajoute un transporteur avec coût dans l\'onglet Transporteurs.'
+            : 'Aucun transporteur actif avec un coût de livraison renseigné ne respecte le délai demandé.'),
       },
     });
 
