@@ -291,12 +291,11 @@
        elle — un back-office qu'on regarde travailler, pas un logo qu'on admire. */
     .brand-mark {
       width: 34px; height: 34px; flex: none; border-radius: 50%; display: grid; place-items: center;
-      background: conic-gradient(from -40deg, var(--cyan), var(--pink), var(--violet), var(--cyan));
-      color: #fff;
-      box-shadow: 0 8px 20px -8px var(--accent), inset 0 0 0 1px rgba(255, 255, 255, .18);
+      background: radial-gradient(circle at 32% 24%, rgba(46, 230, 245, .28), rgba(9, 11, 20, .92) 72%);
+      box-shadow: 0 8px 20px -8px var(--accent), inset 0 0 0 1px rgba(255, 255, 255, .14);
       animation: brandSway 6.5s ease-in-out infinite;
     }
-    .brand-mark svg { width: 18px; height: 18px; }
+    .brand-mark svg { width: 24px; height: 24px; }
     @keyframes brandSway {
       0%, 100% { transform: rotate(0deg) translateY(0); }
       30% { transform: rotate(-2.2deg) translateY(-1px); }
@@ -1185,7 +1184,18 @@
   <aside class="sidebar" id="sidebar">
     <div class="brand">
       <div class="brand-mark" aria-hidden="true">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="3.4" fill="currentColor" stroke="none"/><path d="M12 3.5v3M12 17.5v3M3.5 12h3M17.5 12h3"/></svg>
+        <svg viewBox="0 0 48 48" fill="none">
+          <defs>
+            <linearGradient id="mmLogoGrad" x1="6" y1="34" x2="40" y2="10" gradientUnits="userSpaceOnUse">
+              <stop offset="0" stop-color="var(--cyan)"/>
+              <stop offset=".55" stop-color="var(--pink)"/>
+              <stop offset="1" stop-color="var(--violet)"/>
+            </linearGradient>
+          </defs>
+          <circle cx="24" cy="24" r="18.5" stroke="url(#mmLogoGrad)" stroke-width="2.1"/>
+          <path d="M14 31V17l7 8 7-9v15" stroke="url(#mmLogoGrad)" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M17 30 32 12M32 12l-7.5 1M32 12l-1 7.5" stroke="url(#mmLogoGrad)" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
       </div>
       <div class="brand-text">
         <span class="brand-name">Megalomarket</span>
