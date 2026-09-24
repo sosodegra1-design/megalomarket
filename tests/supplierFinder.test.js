@@ -138,6 +138,46 @@ test('a 429 from Perplexity mentions the retry delay when the header is present'
   }
 });
 
+test('when structured citations are absent, URLs written in the text itself (Markdown or bare) are still recovered', async () => {
+  // Le champ exact des citations structurées n'a pas pu être vérifié contre
+  // la doc officielle (docs.perplexity.ai était bloquée par le proxy réseau
+  // pendant le développement) — le prompt demande donc des URL en clair, et
+  // l'extraction doit les retrouver même sans search_results ni annotations.
+  process.env.PERPLEXITY_API_KEY = 'cle-de-test-perplexity';
+  const restore = stubPerplexityFetch(async () => jsonResponse(200, {
+    output_text: 'Voici [Europages — Exemple](https://www.europages.fr/entreprises/exemple.html) '
+      + 'et aussi https://fabricant-reel.example/fiche, deux pistes sérieuses.',
+  }));
+  try {
+    const result = await findSupplierLinks({ title: 'Lampe de chevet LED' });
+    const urls = result.links.map((l) => l.url).sort();
+    assert.deepEqual(urls, [
+      'https://fabricant-reel.example/fiche',
+      'https://www.europages.fr/entreprises/exemple.html',
+    ]);
+    const markdownLink = result.links.find((l) => l.url.includes('europages'));
+    assert.equal(markdownLink.label, 'Europages — Exemple', 'le libellé Markdown doit être conservé, pas juste l\'URL brute');
+  } finally {
+    restore();
+  }
+});
+
+test('a Google or Bing search URL is never surfaced, even if the model cites one in its text', async () => {
+  process.env.PERPLEXITY_API_KEY = 'cle-de-test-perplexity';
+  const restore = stubPerplexityFetch(async () => jsonResponse(200, {
+    output_text: 'Essaie https://www.google.com/search?q=fabricant+lampe ou https://vrai-fabricant.example/fiche.',
+    search_results: [{ url: 'https://www.bing.com/search?q=lampe', title: 'Bing' }],
+  }));
+  try {
+    const result = await findSupplierLinks({ title: 'Lampe de chevet LED' });
+    const urls = result.links.map((l) => l.url);
+    assert.ok(!urls.some((u) => u.includes('google.com') || u.includes('bing.com')), 'un lien de moteur de recherche ne doit jamais passer, même cité par le modèle');
+    assert.deepEqual(urls, ['https://vrai-fabricant.example/fiche']);
+  } finally {
+    restore();
+  }
+});
+
 test('a response with no links at all comes back as an empty (not fabricated) list', async () => {
   process.env.PERPLEXITY_API_KEY = 'cle-de-test-perplexity';
   const restore = stubPerplexityFetch(async () => jsonResponse(200, {

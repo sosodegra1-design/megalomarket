@@ -601,6 +601,8 @@
     .link-quiet { color: var(--text-2); text-decoration: none; }
     .link-quiet:hover { color: var(--accent-ink); text-decoration: underline; text-underline-offset: 2px; }
     .supplier-links { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+    .btn-linklike { background: none; border: 0; padding: 0; cursor: pointer; color: var(--text-2); text-decoration: underline; text-underline-offset: 2px; font-size: inherit; }
+    .btn-linklike:hover { color: var(--accent-ink); }
     code { background: #10131a; border: 1px solid var(--line); padding: 2px 7px; border-radius: 6px; font-size: var(--fs-sm); word-break: break-word; }
     .pre { white-space: pre-wrap; word-break: break-word; font-size: var(--fs-sm); color: #d6dae3; }
     .inline-error {
@@ -5802,7 +5804,14 @@ function nicheSupplierCell(f, index) {
   const manualLink = '<div class="cell-sub"><a class="link-quiet" href="' + esc(nicheSupplierSearchUrl(f.title, f.sourcingHint)) + '" target="_blank" rel="noopener">Recherche manuelle ↗</a></div>';
   if (Array.isArray(f.supplierLinks)) {
     if (!f.supplierLinks.length) {
-      return '<span class="cell-muted">Aucun fournisseur vérifié trouvé.</span>' + manualLink;
+      // Le texte de Perplexity explique souvent POURQUOI rien n'a été trouvé
+      // (aucune filière identifiée, produit trop générique...) — plus utile
+      // qu'un message générique, et honnête sur ce que la recherche a
+      // réellement donné plutôt que de le passer sous silence.
+      return '<span class="cell-muted">Aucun fournisseur vérifié trouvé.</span>'
+        + (f.supplierOutputText ? '<div class="cell-sub">' + esc(f.supplierOutputText) + '</div>' : '')
+        + manualLink
+        + '<div class="cell-sub"><button class="btn-linklike" type="button" data-niche-retry-supplier="' + index + '">Réessayer</button></div>';
     }
     return '<ul class="supplier-links">' + f.supplierLinks.map((l) => (
       '<li><a class="link-quiet" href="' + esc(l.url) + '" target="_blank" rel="noopener">' + esc(l.label || l.url) + ' ↗</a></li>'
@@ -5819,6 +5828,7 @@ async function findRealSupplier(index, button) {
       method: 'POST',
       body: JSON.stringify({ title: find.title, sourcingHint: find.sourcingHint }),
     });
+    find.supplierOutputText = result.outputText || '';
     find.supplierLinks = result.links || [];
     renderDenicheur();
     return result;
@@ -5894,6 +5904,17 @@ $('denicheurRows').addEventListener('click', (event) => {
   if (findBtn) {
     const index = Number(findBtn.getAttribute('data-niche-find-supplier'));
     findRealSupplier(index, findBtn);
+    return;
+  }
+  const retryBtn = event.target.closest('[data-niche-retry-supplier]');
+  if (retryBtn) {
+    const index = Number(retryBtn.getAttribute('data-niche-retry-supplier'));
+    const find = (state.denicheur.finds || [])[index];
+    if (find) {
+      delete find.supplierLinks;
+      delete find.supplierOutputText;
+      renderDenicheur();
+    }
   }
 });
 

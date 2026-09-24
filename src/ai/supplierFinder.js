@@ -25,12 +25,30 @@ const REQUEST_TIMEOUT_MS = 30000;
 function buildPrompt(title, sourcingHint) {
   const hint = String(sourcingHint || '').trim();
   return (
-    `Trouve 2 à 3 fournisseurs B2B réels et vérifiables (annuaires professionnels comme Europages, `
-    + `sites officiels de fabricants ou grossistes) pour sourcer ce produit : "${String(title || '').trim()}"`
+    `Trouve 2 à 3 fournisseurs B2B réels pour sourcer ce produit : "${String(title || '').trim()}"`
     + (hint ? `, piste de sourcing suggérée : ${hint}.` : '.')
-    + ' Donne uniquement des liens directs vers de vraies fiches fournisseur ou pages d\'annuaire B2B — '
-    + 'jamais un lien de recherche Google, jamais une entreprise inventée.'
+    + ' Priorise des fournisseurs situés en Europe (délais et logistique plus courts) quand c\'est plausible pour ce type de produit, '
+    + 'sans en inventer un s\'il n\'y en a manifestement pas.'
+    + ' Une fiche d\'entreprise précise (site officiel d\'un fabricant ou grossiste) est préférable, mais si tu n\'en trouves aucune '
+    + 'avec certitude, une page de CATÉGORIE d\'un vrai annuaire B2B reconnu (Europages, Kompass, Made-in-Europe…) pour ce type de '
+    + 'produit est un résultat acceptable — mieux vaut ce repli honnête que rien du tout.'
+    + ' Écris chaque URL en clair dans ta réponse (pas seulement en citation), au format Markdown [nom](url), pour qu\'elle reste '
+    + 'lisible même si les citations structurées ne sont pas conservées.'
+    + ' Jamais un lien de recherche Google ou Bing, jamais un nom d\'entreprise inventé : si vraiment rien de vérifiable n\'existe, dis-le.'
   );
+}
+
+/* google.com/search, bing.com/search... : exactement le genre de lien que
+   cette fonctionnalité existe pour remplacer. Un filet de sécurité au cas où
+   le modèle en citerait un dans son texte malgré la consigne. */
+const SEARCH_ENGINE_HOST_RE = /(^|\.)google\.[a-z.]+$|(^|\.)bing\.com$|(^|\.)duckduckgo\.com$/i;
+
+function isSearchEngineUrl(url) {
+  try {
+    return SEARCH_ENGINE_HOST_RE.test(new URL(url).hostname);
+  } catch {
+    return false;
+  }
 }
 
 /* Le texte de réponse peut arriver sous deux formes selon la variante de
@@ -46,25 +64,53 @@ function extractOutputText(payload) {
     .join('\n');
 }
 
-/* Deux sources de liens possibles, jamais garanties présentes toutes les
-   deux : `search_results` (métadonnées de source au niveau racine) et les
-   `annotations` de citation portées par chaque bloc de texte. On fusionne
-   les deux (dédupliquées par URL) plutôt que de parier sur une seule forme. */
+const MARKDOWN_LINK_RE = /\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g;
+const BARE_URL_RE = /https?:\/\/[^\s)<>\]"']+/g;
+
+/* Filet de sécurité au cas où la forme exacte de citations/search_results
+   documentée diffère de ce qui arrive réellement (egress bloqué vers
+   docs.perplexity.ai pendant le développement — le format exact des champs
+   n'a pas pu être vérifié mot pour mot, seulement recoupé via des sources
+   tierces). Le prompt demande aussi des URL en clair au format Markdown
+   pour cette raison : une extraction par texte fonctionne quel que soit le
+   nom exact du champ structuré. */
+function extractLinksFromText(text, links) {
+  if (!text) return;
+  let match;
+  MARKDOWN_LINK_RE.lastIndex = 0;
+  while ((match = MARKDOWN_LINK_RE.exec(text))) {
+    const [, label, url] = match;
+    if (!isSearchEngineUrl(url) && !links.has(url)) links.set(url, label);
+  }
+  BARE_URL_RE.lastIndex = 0;
+  while ((match = BARE_URL_RE.exec(text))) {
+    const url = match[0].replace(/[.,;:)\]]+$/, '');
+    if (!isSearchEngineUrl(url) && !links.has(url)) links.set(url, url);
+  }
+}
+
+/* Trois sources de liens, jamais toutes garanties présentes : `search_results`
+   (métadonnées de source au niveau racine), les `annotations` de citation
+   portées par chaque bloc de texte, et les URL écrites en clair dans le
+   texte lui-même (voir extractLinksFromText). Fusionnées et dédupliquées par
+   URL, les deux premières sources (mieux labellisées) passent en premier. */
 function extractLinks(payload) {
   const links = new Map();
   if (Array.isArray(payload.search_results)) {
     for (const result of payload.search_results) {
-      if (result?.url) links.set(result.url, result.title || result.url);
+      if (result?.url && !isSearchEngineUrl(result.url)) links.set(result.url, result.title || result.url);
     }
   }
   const messages = Array.isArray(payload.output) ? payload.output : [];
   for (const message of messages) {
     for (const content of (Array.isArray(message?.content) ? message.content : [])) {
       for (const annotation of (Array.isArray(content?.annotations) ? content.annotations : [])) {
-        if (annotation?.url) links.set(annotation.url, annotation.title || annotation.url);
+        if (annotation?.url && !isSearchEngineUrl(annotation.url)) links.set(annotation.url, annotation.title || annotation.url);
       }
+      extractLinksFromText(content?.text, links);
     }
   }
+  extractLinksFromText(payload.output_text, links);
   return [...links.entries()].map(([url, label]) => ({ url, label }));
 }
 
