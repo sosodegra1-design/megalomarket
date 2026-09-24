@@ -1518,7 +1518,9 @@
               <div class="row row-actions" style="margin-top:10px">
                 <input class="input" type="text" id="importImageUrlInput" placeholder="https://… (nouvelle photo)" autocomplete="off" style="flex:1;min-width:220px">
                 <button class="btn btn-sm" id="btnAddImportImage" type="button">Ajouter la photo</button>
+                <button class="btn btn-sm btn-ghost" id="btnInspectImportImages" type="button">🔍 Vérifier les photos avec l'IA</button>
               </div>
+              <p id="importImagesVerdict" class="hint hint-tight" hidden></p>
             </section>
           </div>
 
@@ -2565,6 +2567,10 @@ const state = {
   importDetails: new Map(),
   detailsTruncated: false,
   inflight: 0,
+  // Dernier verdict de contrôle visuel IA sur les photos de l'import ouvert —
+  // par index dans imageUrls. Vidé dès que la liste change (ajout/retrait),
+  // car les index deviendraient alors faux.
+  importImagesVerdict: null,
 };
 
 /* ===================== MOUVEMENT =====================
@@ -5151,15 +5157,50 @@ function renderImportImages(data) {
   block.style.display = 'block';
   const count = $('importImagesCount');
   if (count) count.textContent = String(urls.length);
+  // Le verdict n'est valable que s'il porte sur exactement cette liste de
+  // photos (même longueur) : sinon un ajout/retrait aurait décalé les index,
+  // et afficher un ancien signalement sur la mauvaise vignette serait pire
+  // que n'en afficher aucun.
+  const verdict = state.importImagesVerdict;
+  const byIndex = verdict && Array.isArray(verdict.images) && verdict.images.length === urls.length
+    ? new Map(verdict.images.map((i) => [i.index, i]))
+    : null;
   grid.innerHTML = urls.length
-    ? urls.map((url, i) => (
-      '<div style="position:relative;width:84px;height:84px;border-radius:10px;overflow:hidden;border:1px solid rgba(255,255,255,.14)">'
-      + '<img src="' + esc(url) + '" alt="" loading="lazy" style="width:100%;height:100%;object-fit:cover;display:block" onerror="this.style.opacity=\'0.2\'">'
-      + '<button type="button" class="btn btn-ghost btn-xs" data-action="remove-image" data-index="' + i + '" title="Retirer cette photo" '
-      + 'style="position:absolute;top:2px;right:2px;padding:0 6px;background:rgba(0,0,0,.6);border-radius:6px;line-height:1.6">&times;</button>'
-      + '</div>'
-    )).join('')
+    ? urls.map((url, i) => {
+      const flag = byIndex ? byIndex.get(i) : null;
+      const flagged = flag && (flag.relevant === false || flag.quality !== 'ok');
+      const borderColor = flagged ? 'var(--danger, #e5484d)' : 'rgba(255,255,255,.14)';
+      const title = flagged ? ' title="' + esc(flag.issue || 'Photo signalée par le contrôle IA') + '"' : '';
+      return (
+        '<div style="position:relative;width:84px;height:84px;border-radius:10px;overflow:hidden;border:2px solid ' + borderColor + '"' + title + '>'
+        + '<img src="' + esc(url) + '" alt="" loading="lazy" style="width:100%;height:100%;object-fit:cover;display:block" onerror="this.style.opacity=\'0.2\'">'
+        + (flagged ? '<span aria-hidden="true" style="position:absolute;bottom:2px;left:2px;background:var(--danger, #e5484d);color:#fff;border-radius:6px;padding:0 5px;font-size:11px;line-height:1.5">⚠</span>' : '')
+        + '<button type="button" class="btn btn-ghost btn-xs" data-action="remove-image" data-index="' + i + '" title="Retirer cette photo" '
+        + 'style="position:absolute;top:2px;right:2px;padding:0 6px;background:rgba(0,0,0,.6);border-radius:6px;line-height:1.6">&times;</button>'
+        + '</div>'
+      );
+    }).join('')
     : '<p class="empty" style="margin:0">Aucune photo pour cet import.</p>';
+}
+
+function hideImportImagesVerdict() {
+  const el = $('importImagesVerdict');
+  if (el) el.hidden = true;
+}
+
+/* Affiche le résumé du contrôle visuel IA au-dessus des vignettes. Le détail
+   par photo (bordure rouge + ⚠) est déjà porté par renderImportImages via
+   state.importImagesVerdict — ce paragraphe ne répète que le verdict global. */
+function showImportImagesVerdict(verdict) {
+  const el = $('importImagesVerdict');
+  if (!el) return;
+  el.hidden = false;
+  const flaggedCount = Array.isArray(verdict.images)
+    ? verdict.images.filter((i) => i && (i.relevant === false || i.quality !== 'ok')).length
+    : 0;
+  el.style.color = verdict.overallOk ? 'var(--ok-ink)' : 'var(--danger, #e5484d)';
+  el.textContent = (verdict.overallOk ? '✅ ' : '⚠️ ')
+    + (verdict.summary || (flaggedCount ? flaggedCount + ' photo(s) signalée(s).' : 'Contrôle terminé.'));
 }
 
 /* Enregistre la liste complète (PATCH remplace, il n'y a pas d'ajout/retrait
@@ -5170,6 +5211,9 @@ async function saveImportImages(urls) {
     body: JSON.stringify({ imageUrls: urls }),
   });
   state.importDetails.set(String(state.importId), updated);
+  // La liste change : un ancien verdict par index n'a plus de sens.
+  state.importImagesVerdict = null;
+  hideImportImagesVerdict();
   renderImportImages(updated);
   return updated;
 }
@@ -5202,6 +5246,22 @@ $('btnAddImportImage').addEventListener('click', (event) => action(event.current
   await saveImportImages(urls);
   input.value = '';
 }, 'Photo ajoutée.'));
+
+/* Contrôle visuel IA à la demande : l'agent qui existait déjà pour le
+   pipeline Dénicheur (voir routes/pipeline.js) n'était jamais appelé sur ce
+   flux d'import par URL fournisseur — c'est ce qui a laissé passer une photo
+   sans rapport (câble USB) dans la galerie d'un produit publié. Ce bouton ne
+   bloque jamais la publication : il signale, la décision reste humaine. */
+$('btnInspectImportImages').addEventListener('click', (event) => action(event.currentTarget, async () => {
+  if (state.importId == null) throw new Error('Extrais ou ouvre d\'abord un import.');
+  const detail = state.importDetails.get(String(state.importId));
+  if (!detail || !(detail.imageUrls || []).length) throw new Error('Aucune photo à vérifier pour cet import.');
+  const verdict = await api('/api/imports/' + encodeURIComponent(state.importId) + '/inspect-images', { method: 'POST' });
+  state.importImagesVerdict = verdict;
+  renderImportImages(detail);
+  showImportImagesVerdict(verdict);
+  return verdict;
+}));
 
 function scrollToListings() {
   const box = $('listingsCard');
@@ -5257,6 +5317,8 @@ $('btnExtract').addEventListener('click', (event) => action(event.currentTarget,
     ].map(([k, v]) => '<div class="kv"><span>' + k + '</span><span>' + v + '</span></div>').join('');
     renderImportPrice(data);
     state.importDetails.set(String(data.id), data);
+    state.importImagesVerdict = null;
+    hideImportImagesVerdict();
     renderImportImages(data);
     await loadImports();
     updateGenerateButton();
@@ -5351,6 +5413,9 @@ async function showImport(id) {
   // Le prix d'achat est visible avant les fiches : c'est lui qui explique
   // pourquoi elles valent 0 €, et il se corrige ici même.
   renderImportPrice(data);
+  // Un import différent (ou rouvert) n'a pas encore de verdict IA à afficher.
+  state.importImagesVerdict = null;
+  hideImportImagesVerdict();
   renderImportImages(data);
   $('listingsCard').style.display = 'block';
   renderListings(data.listings || []);

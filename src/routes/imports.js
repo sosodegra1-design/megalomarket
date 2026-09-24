@@ -7,6 +7,7 @@ import { connectors } from '../connectors/index.js';
 import { computeSuggestedPrice } from '../importer/pricing.js';
 import { config } from '../config/env.js';
 import { withResolvedMargin } from './suppliers.js';
+import { inspectImages } from '../ai/visionInspector.js';
 
 export const importsRouter = Router();
 
@@ -202,6 +203,29 @@ importsRouter.get(
   '/:id',
   asyncRoute(async (req, res) => {
     res.json(await readImportDetail(req.params.id));
+  }),
+);
+
+/*
+ * Contrôle visuel IA des photos de CET import, sur demande explicite (jamais
+ * automatique ni bloquant pour la publication) — voir src/ai/visionInspector.js.
+ *
+ * Root cause du bug signalé en production (photo d'un câble USB au milieu de
+ * la galerie d'un blender) : le scraper (importer/scraper.js) fait un scan
+ * générique de la page fournisseur, qui peut ramasser une image d'un widget
+ * "produits associés" sur la même page. Avant ce correctif, la seule
+ * protection était humaine — repérer l'intrus dans une grille de vignettes de
+ * 84×84px, jusqu'à 30 photos — et l'agent de contrôle visuel qui existait déjà
+ * dans le code (inspectImages) n'était câblé que sur le pipeline Dénicheur
+ * (routes/pipeline.js), jamais sur ce flux d'import par URL fournisseur.
+ */
+importsRouter.post(
+  '/:id/inspect-images',
+  asyncRoute(async (req, res) => {
+    const imp = await dbGet('SELECT title, image_urls FROM imports WHERE id = ?', [req.params.id]);
+    if (!imp) throw new Error('Import introuvable.');
+    const imageUrls = JSON.parse(imp.image_urls || '[]');
+    res.json(await inspectImages({ title: imp.title, imageUrls }));
   }),
 );
 
