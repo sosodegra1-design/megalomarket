@@ -3,6 +3,7 @@ import { syncStockFromAllChannels } from './stockSync.js';
 import { syncOrdersFromAllChannels } from './orderSync.js';
 import { huntNiches } from '../ai/nicheHunter.js';
 import { processPendingReturns } from './returnFulfillment.js';
+import { runQualitySupervision } from './qualitySupervisor.js';
 import { logActivity } from '../db/database.js';
 
 /**
@@ -52,6 +53,7 @@ export async function startScheduler({
   ordersJob = syncOrdersFromAllChannels,
   nicheJob = huntNiches,
   returnsJob = processPendingReturns,
+  qualityJob = runQualitySupervision,
   logger = logActivity,
 } = {}) {
   /*
@@ -92,6 +94,15 @@ export async function startScheduler({
   schedule('*/10 * * * *', () => runSafely('retours', returnsJob, logger), { noOverlap: true });
 
   /*
+   * Contrôle qualité (photos des fiches publiées) : toutes les 30 minutes,
+   * par lot borné (voir BATCH_LIMIT dans qualitySupervisor.js) — chaque
+   * fiche n'est relue qu'une fois, donc un cycle qui tomberait sur un lot
+   * déjà entièrement relu ne fait rien (comportement idempotent, comme les
+   * autres tâches planifiées).
+   */
+  schedule('*/30 * * * *', () => runSafely('controle_qualite', qualityJob, logger), { noOverlap: true });
+
+  /*
    * Pas de tâche périodique de PUSH.
    *
    * Le stock est la seule valeur qui dérive toute seule, mais aucun canal ne
@@ -106,5 +117,5 @@ export async function startScheduler({
    * À rebrancher le jour où un connecteur exposera updateStock.
    */
 
-  await logSafely('DEMARRAGE', 'Planificateur de synchronisation démarré (stock: 15 min, commandes: 5 min, Dénicheur: tous les 2 jours, retours: 10 min).', logger);
+  await logSafely('DEMARRAGE', 'Planificateur de synchronisation démarré (stock: 15 min, commandes: 5 min, Dénicheur: tous les 2 jours, retours: 10 min, contrôle qualité: 30 min).', logger);
 }

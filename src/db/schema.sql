@@ -137,6 +137,11 @@ CREATE TABLE IF NOT EXISTS import_listings (
   status TEXT NOT NULL DEFAULT 'a_valider' CHECK (status IN ('a_valider', 'valide', 'publie', 'echec')),
   published_external_id TEXT,
   publish_error TEXT,
+  -- Contrôle qualité périodique des photos publiées (voir services/qualitySupervisor.js).
+  -- NULL tant que non relue par le superviseur.
+  quality_checked_at INTEGER,
+  quality_ok INTEGER,
+  quality_issue TEXT,
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL,
   UNIQUE (import_id, marketplace)

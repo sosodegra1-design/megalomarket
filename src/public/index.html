@@ -5369,6 +5369,9 @@ function renderListings(listings) {
     + '<span class="pill ' + (l.status === 'publie' ? 'ok' : l.status === 'echec' ? 'bad' : 'warn') + '">' + esc(l.status) + '</span>'
     + '</header>'
     + (l.publish_error ? '<p class="inline-error">' + esc(l.publish_error) + '</p>' : '')
+    + (l.quality_ok === 0
+      ? '<p class="inline-error" title="' + esc(l.quality_issue || '') + '">⚠️ Contrôle qualité automatique (toutes les 30 min) : photo(s) suspecte(s) — ' + esc(l.quality_issue || 'voir le journal') + '</p>'
+      : '')
     + '<div class="field-grid">'
     + '<div class="field field-wide"><label for="t-' + esc(l.id) + '">Titre</label>'
     + '<input class="input" type="text" id="t-' + esc(l.id) + '" value="' + esc(l.title) + '"></div>'

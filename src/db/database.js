@@ -245,6 +245,22 @@ async function migrateTrendFindsReview() {
   return addedOk || addedIssue;
 }
 
+/* Contrôle qualité périodique des photos des fiches déjà publiées (voir
+   services/qualitySupervisor.js, planifié toutes les 30 min) — répond au bug
+   réel d'une photo sans rapport publiée sans qu'aucun contrôle ne le
+   détecte. NULL tant qu'une fiche n'a pas encore été relue, y compris toutes
+   celles publiées avant cette évolution : le superviseur les rattrape
+   progressivement (voir BATCH_LIMIT), il n'y a rien à recalculer ici. */
+async function migrateImportListingsQuality() {
+  const addedAt = await addColumnIfMissing('import_listings', 'quality_checked_at', 'INTEGER');
+  const addedOk = await addColumnIfMissing('import_listings', 'quality_ok', 'INTEGER');
+  const addedIssue = await addColumnIfMissing('import_listings', 'quality_issue', 'TEXT');
+  if (addedAt || addedOk || addedIssue) {
+    await logActivity('MIGRATION', 'Colonnes import_listings.quality_checked_at / quality_ok / quality_issue ajoutées : contrôle qualité périodique des photos publiées.');
+  }
+  return addedAt || addedOk || addedIssue;
+}
+
 /* Le troisième type de partenaire — `transporteur` (transporteurs
    internationaux, transitaires, agents d'achat) — doit entrer dans la contrainte
    CHECK de `suppliers`. SQLite ne modifie pas un CHECK en place : il faut
@@ -361,6 +377,7 @@ export async function initDatabase() {
   await migrateSuppliersShipping();
   await migrateTrendFindsSourcing();
   await migrateTrendFindsReview();
+  await migrateImportListingsQuality();
 }
 
 export async function logActivity(kind, message) {
