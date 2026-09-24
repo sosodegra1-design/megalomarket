@@ -145,6 +145,31 @@ const ICON_URL_PATTERN = /(sprite|logo|icon|favicon|placeholder|pixel|spacer|bad
 /** Formats qu'on ne veut jamais dans les photos produit (vectoriel ou animé). */
 const NON_PHOTO_EXTENSION = /\.(svg|gif)(\?|#|$)/i;
 
+/*
+ * Sélecteur des blocs « produits associés » (bug réel : la photo d'un câble
+ * USB, vendu par ailleurs sur la même page fournisseur, s'est retrouvée dans
+ * la galerie d'un blender importé — ramassée par le scan <img> générique, qui
+ * n'excluait jusqu'ici que l'en-tête/pied de page/navigation/barre latérale,
+ * jamais un widget de ce type placé dans le contenu principal). Les noms de
+ * classe/identifiant varient d'un site à l'autre mais convergent presque
+ * toujours vers un de ces mots — liste volontairement large : mieux vaut
+ * exclure une vraie photo produit mal nommée (retrait manuel possible, voir
+ * le tableau de bord) que republier un article sans rapport par erreur.
+ */
+const RELATED_PRODUCTS_KEYWORDS = [
+  'related-product', 'relatedproduct',
+  'you-may-also-like', 'youmayalsolike',
+  'also-bought', 'alsobought',
+  'frequently-bought', 'frequentlybought',
+  'cross-sell', 'crosssell',
+  'upsell',
+  'recommend',
+  'similar-product', 'similarproduct',
+];
+const RELATED_PRODUCTS_SELECTOR = RELATED_PRODUCTS_KEYWORDS
+  .flatMap((word) => [`[class*="${word}" i]`, `[id*="${word}" i]`])
+  .join(', ');
+
 /** Nombre maximal de photos remontées par l'extraction générique <img> : une
  * fiche produit correctement scrapée en a rarement plus d'une quinzaine — au-
  * delà, c'est le signe qu'on a aussi ramassé la mise en page (bannières,
@@ -762,14 +787,16 @@ function extractImages($, baseUrl, jsonLdProduct) {
 
   // Le scan générique de <img> est le chemin le moins fiable : sans le cadre
   // d'une donnée structurée, on ne distingue pas une photo produit d'un
-  // logo de partenaire ou d'un badge de paiement au pied de la page. Trois
-  // filtres, cumulés : hors de l'en-tête/pied de page/navigation/barre
-  // latérale (leur contenu n'est jamais la fiche produit elle-même), taille
-  // déclarée non minuscule, et nom de fichier non reconnu comme pictogramme.
+  // logo de partenaire, d'un badge de paiement, ou d'un AUTRE produit vendu
+  // sur la même page. Filtres cumulés : hors de l'en-tête/pied de
+  // page/navigation/barre latérale et hors d'un widget « produits associés »
+  // (leur contenu n'est jamais la fiche produit elle-même), taille déclarée
+  // non minuscule, et nom de fichier non reconnu comme pictogramme.
   const genericUrls = new Set();
   $('img').each((_, el) => {
     const $el = $(el);
     if ($el.closest('header, footer, nav, aside').length) return;
+    if ($el.closest(RELATED_PRODUCTS_SELECTOR).length) return;
     if (hasTinyDeclaredSize($el)) return;
 
     const attributes = ['src', 'data-src', 'data-original', 'data-lazy-src', 'data-old-hires'];

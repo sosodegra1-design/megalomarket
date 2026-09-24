@@ -147,6 +147,43 @@ test('le scan générique <img> ignore les logos, badges de paiement et vignette
   }
 });
 
+test('le scan générique <img> ignore les widgets "produits associés" (bug réel : photo d\'un autre article importée par erreur)', async () => {
+  // Reproduit le bug signalé en production : la photo d'un câble USB, vendu
+  // par ailleurs sur la même page fournisseur qu'un blender, s'était
+  // retrouvée dans la galerie importée — ramassée par le scan <img>
+  // générique, qui n'excluait jusque-là que l'en-tête/pied de page/
+  // navigation/barre latérale, jamais un widget "produits associés" placé
+  // dans le contenu principal (donc jamais filtré par ce garde-fou-là).
+  const html = `
+    <html><body>
+      <main>
+        <h1>Blendeur extracteur de jus 12 lames USB</h1>
+        <img src="/produits/blender-1.jpg">
+        <img src="/produits/blender-2.jpg">
+        <div class="related-products-carousel">
+          <img src="/produits/cable-usb-sans-rapport.jpg">
+        </div>
+        <section id="you-may-also-like">
+          <img src="/produits/autre-article.jpg">
+        </section>
+        <div class="ProductRecommendations">
+          <img src="/produits/encore-un-autre.jpg">
+        </div>
+      </main>
+    </body></html>
+  `;
+  const restore = mockFetchOnce(html);
+  try {
+    const result = await scrapeProductFromUrl('https://boutique.example.com/produit/blender', { lookupHost: publicLookup });
+    assert.deepEqual(result.imageUrls, [
+      'https://boutique.example.com/produits/blender-1.jpg',
+      'https://boutique.example.com/produits/blender-2.jpg',
+    ]);
+  } finally {
+    restore();
+  }
+});
+
 test('le scan générique <img> plafonne à 16 images même sans indice de mise en page', async () => {
   const photos = Array.from({ length: 25 }, (_, i) => `<img src="/photos/produit-${i}.jpg">`).join('\n');
   const html = `<html><body><h1>Grand lot de photos</h1>${photos}</body></html>`;
