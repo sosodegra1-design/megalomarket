@@ -5,6 +5,7 @@ import { config } from '../config/env.js';
 import { createParcel, verifyWebhookSignature } from '../services/sendcloud.js';
 import { sendTransactionalEmail, isEmailConfigured } from '../services/email.js';
 import { shippingEmailTemplate, thankYouEmailTemplate } from '../emails/templates.js';
+import { categoryPageFile } from '../utils/siteCategoryPages.js';
 
 /*
  * Cycle de vie des commandes du site propre : expédition réelle (colis +
@@ -42,7 +43,7 @@ function requireOwnSite() {
 /** Lien produit sur le site, même format que routes/site.js (non exporté de là pour ne pas coupler les deux modules pour deux lignes). */
 function productUrl(product) {
   const base = config.ownSite.apiUrl ? String(config.ownSite.apiUrl).replace(/\/+$/, '') : null;
-  return base && product.category && product.id ? `${base}/${product.category}.html?product=${encodeURIComponent(product.id)}` : null;
+  return base && product.category && product.id ? `${base}/${categoryPageFile(product.category)}?product=${encodeURIComponent(product.id)}` : null;
 }
 
 /**

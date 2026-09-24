@@ -3,6 +3,7 @@ import { connectors } from '../connectors/index.js';
 import { logActivity } from '../db/database.js';
 import { config } from '../config/env.js';
 import { generateSiteArticleDescription } from '../ai/descriptionWriter.js';
+import { categoryPageFile } from '../utils/siteCategoryPages.js';
 
 /*
  * Catalogue du site propre (BBVOLTEX), indépendamment de Megalomarket.
@@ -36,7 +37,7 @@ function withProductUrl(product) {
   if (!product || typeof product !== 'object') return product;
   const base = siteBaseUrl();
   const url = base && product.category && product.id
-    ? `${base}/${product.category}.html?product=${encodeURIComponent(product.id)}`
+    ? `${base}/${categoryPageFile(product.category)}?product=${encodeURIComponent(product.id)}`
     : null;
   return { ...product, url };
 }
@@ -181,7 +182,7 @@ siteRouter.post(
 
     const created = await connector.createListing(payload);
     const base = siteBaseUrl();
-    const url = base && created?.offerId ? `${base}/${category}.html?product=${encodeURIComponent(created.offerId)}` : null;
+    const url = base && created?.offerId ? `${base}/${categoryPageFile(category)}?product=${encodeURIComponent(created.offerId)}` : null;
     await logActivity('SITE_PRODUIT_CREE', `Article ajouté sur le site : ${name}${created?.offerId ? ` (${created.offerId})` : ''}.`);
     res.status(201).json({ ...created, url });
   }),
