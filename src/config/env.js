@@ -218,6 +218,25 @@ export const config = {
     },
   },
 
+  /* Recherche fournisseur réelle et vérifiée pour le Dénicheur (voir
+     ai/supplierFinder.js). L'Agent API de Perplexity (outil web_search)
+     remplace la simple recherche Google construite côté client par de
+     vraies pages sourcées (annuaires B2B, sites de fabricants) — jamais un
+     lien de recherche générique. Fonctionnalité optionnelle : son absence
+     ne bloque rien d'autre, donc volontairement absente de la liste
+     `missingConfiguration()` (même choix que pour eBay), avec sa propre
+     note affichée localement sur la page Dénicheur. */
+  perplexity: {
+    // Getter (comme ai.apiKey/admin.apiKey), pas une valeur figée à l'import :
+    // sinon apiKey et ready pourraient se désynchroniser l'un de l'autre.
+    get apiKey() {
+      return process.env.PERPLEXITY_API_KEY || null;
+    },
+    get ready() {
+      return has('PERPLEXITY_API_KEY');
+    },
+  },
+
   // Coefficient de marge et frais fixes utilisés pour calculer le prix de vente conseillé
   // lors de l'import produit (prix suggéré = prix d'achat * coefficient + frais fixes,
   // jamais en dessous de prix d'achat + frais fixes).

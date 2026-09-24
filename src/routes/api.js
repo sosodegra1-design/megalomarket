@@ -122,6 +122,7 @@ api.get('/config', (req, res) => {
     },
     sendcloud: { configured: config.sendcloud.ready },
     brevo: { configured: config.brevo.ready },
+    perplexity: { configured: config.perplexity.ready },
     missing: missingConfiguration(),
   });
 });

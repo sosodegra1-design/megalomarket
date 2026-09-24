@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { huntNiches, latestFinds } from '../ai/nicheHunter.js';
 import { refineFocus } from '../ai/nicheCoach.js';
 import { reviewBatch } from '../ai/nicheSupervisor.js';
+import { findSupplierLinks } from '../ai/supplierFinder.js';
 
 /*
  * Rubrique « Dénicheur » (GET/POST /api/niches).
@@ -13,6 +14,10 @@ import { reviewBatch } from '../ai/nicheSupervisor.js';
  * chaque étape :
  *   - le coach (nicheCoach.js) affine l'axe de recherche AVANT une chasse ;
  *   - le superviseur (nicheSupervisor.js) relit un lot déjà généré APRÈS coup.
+ *
+ * La recherche fournisseur (supplierFinder.js, Perplexity Agent API) est un
+ * troisième appel séparé, à la demande (par ligne), pas un enchaînement
+ * automatique : elle coûte une vraie requête payante par appel.
  */
 
 export const nichesRouter = Router();
@@ -56,5 +61,14 @@ nichesRouter.post(
   '/:batchId/review',
   asyncRoute(async (req, res) => {
     res.json(await reviewBatch(req.params.batchId));
+  }),
+);
+
+// --- Recherche fournisseur réelle (Perplexity Agent API) pour une suggestion ---
+nichesRouter.post(
+  '/supplier-search',
+  asyncRoute(async (req, res) => {
+    const { title, sourcingHint } = req.body || {};
+    res.json(await findSupplierLinks({ title, sourcingHint }));
   }),
 );

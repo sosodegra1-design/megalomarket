@@ -600,6 +600,7 @@
        « Site » doit se lire comme une donnée, pas comme une invitation. */
     .link-quiet { color: var(--text-2); text-decoration: none; }
     .link-quiet:hover { color: var(--accent-ink); text-decoration: underline; text-underline-offset: 2px; }
+    .supplier-links { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
     code { background: #10131a; border: 1px solid var(--line); padding: 2px 7px; border-radius: 6px; font-size: var(--fs-sm); word-break: break-word; }
     .pre { white-space: pre-wrap; word-break: break-word; font-size: var(--fs-sm); color: #d6dae3; }
     .inline-error {
@@ -2359,6 +2360,7 @@ https://…/photo2.jpg"></textarea>
             </div>
             <button class="btn btn-soft btn-sm" id="btnReviewNiches" type="button" data-needs-ai hidden>🔎 Faire vérifier ce lot par l'IA</button>
           </div>
+          <p class="hint hint-tight">La colonne « Fournisseur » cherche réellement sur le web (Perplexity Agent API) plutôt que de deviner un lien — ça ne marche que si <code>PERPLEXITY_API_KEY</code> est configurée. Sans elle, seule la recherche manuelle reste disponible.</p>
           <div class="table-scroll">
             <table class="table">
               <thead>
@@ -5750,7 +5752,7 @@ function renderDenicheur() {
         + '<td>' + (f.priceRange ? esc(f.priceRange) : '<span class="muted">—</span>') + '</td>'
         + '<td>' + (f.sourcingHint ? esc(f.sourcingHint) : '<span class="muted">—</span>') + '</td>'
         + '<td>' + nicheReviewBadge(f) + '</td>'
-        + '<td><a class="btn ghost btn-sm" href="' + esc(nicheSupplierSearchUrl(f.title, f.sourcingHint)) + '" target="_blank" rel="noopener">Chercher chez un fournisseur ↗</a></td>'
+        + '<td>' + nicheSupplierCell(f, i) + '</td>'
         + '<td>' + (f.publishedUrl
             ? '<a class="btn ghost btn-sm" href="' + esc(f.publishedUrl) + '" target="_blank" rel="noopener">Voir l\'article ↗</a>'
             : '<button class="btn ghost btn-sm" type="button" data-niche-publish="' + i + '">Publier →</button>') + '</td>'
@@ -5786,6 +5788,41 @@ function nicheSupplierSearchUrl(title, sourcingHint) {
   parts.push(hint || 'fournisseur grossiste');
   const query = encodeURIComponent(parts.filter(Boolean).join(' '));
   return 'https://www.google.com/search?q=' + query;
+}
+
+/* Colonne « Fournisseur » : un bouton qui déclenche une VRAIE recherche web
+   (Perplexity Agent API, src/ai/supplierFinder.js) plutôt qu'un lien construit
+   à l'avance. `f.supplierLinks` est un champ client uniquement (jamais
+   renvoyé par /api/niches/latest) : une fois la recherche faite, son résultat
+   est gardé en mémoire pour survivre aux re-rendus (review, autre action)
+   sans relancer un appel payant à chaque fois. Le lien de recherche manuelle
+   reste toujours accessible en repli, y compris après une recherche réelle
+   qui n'a rien trouvé — jamais un cul-de-sac. */
+function nicheSupplierCell(f, index) {
+  const manualLink = '<div class="cell-sub"><a class="link-quiet" href="' + esc(nicheSupplierSearchUrl(f.title, f.sourcingHint)) + '" target="_blank" rel="noopener">Recherche manuelle ↗</a></div>';
+  if (Array.isArray(f.supplierLinks)) {
+    if (!f.supplierLinks.length) {
+      return '<span class="cell-muted">Aucun fournisseur vérifié trouvé.</span>' + manualLink;
+    }
+    return '<ul class="supplier-links">' + f.supplierLinks.map((l) => (
+      '<li><a class="link-quiet" href="' + esc(l.url) + '" target="_blank" rel="noopener">' + esc(l.label || l.url) + ' ↗</a></li>'
+    )).join('') + '</ul>';
+  }
+  return '<button class="btn ghost btn-sm" type="button" data-niche-find-supplier="' + index + '">🔎 Chercher un vrai fournisseur</button>' + manualLink;
+}
+
+async function findRealSupplier(index, button) {
+  const find = (state.denicheur.finds || [])[index];
+  if (!find) return;
+  await action(button, async () => {
+    const result = await api('/api/niches/supplier-search', {
+      method: 'POST',
+      body: JSON.stringify({ title: find.title, sourcingHint: find.sourcingHint }),
+    });
+    find.supplierLinks = result.links || [];
+    renderDenicheur();
+    return result;
+  });
 }
 
 /* Rapproche le texte de catégorie libre renvoyé par l'IA (« Jouets électroniques »…)
@@ -5846,11 +5883,18 @@ function publishNicheFind(f, index) {
 }
 
 $('denicheurRows').addEventListener('click', (event) => {
-  const btn = event.target.closest('[data-niche-publish]');
-  if (!btn) return;
-  const index = Number(btn.getAttribute('data-niche-publish'));
-  const find = (state.denicheur.finds || [])[index];
-  publishNicheFind(find, index);
+  const publishBtn = event.target.closest('[data-niche-publish]');
+  if (publishBtn) {
+    const index = Number(publishBtn.getAttribute('data-niche-publish'));
+    const find = (state.denicheur.finds || [])[index];
+    publishNicheFind(find, index);
+    return;
+  }
+  const findBtn = event.target.closest('[data-niche-find-supplier]');
+  if (findBtn) {
+    const index = Number(findBtn.getAttribute('data-niche-find-supplier'));
+    findRealSupplier(index, findBtn);
+  }
 });
 
 async function loadDenicheur() {
