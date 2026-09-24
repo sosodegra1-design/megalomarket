@@ -852,6 +852,7 @@
     .listing-mp { font-weight: 700; font-size: var(--fs-md); display: block; }
     .listing-price { color: var(--muted); font-size: var(--fs-xs); }
     .actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; align-items: center; }
+    .tier-range { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
     .site-details { margin-top: 10px; }
     summary { cursor: pointer; color: var(--muted); font-size: var(--fs-sm); }
     summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
@@ -1972,26 +1973,30 @@
       </section>
 
       <!-- ==================== VUE : BARÈMES DE MARGE ====================
-           Aucune nouvelle logique de calcul : cette vue affiche seulement ce
-           qui existe déjà — le coefficient global (config.pricing, réglé par
-           variable d'environnement) et les coefficients propres déjà
-           enregistrés par fournisseur/distributeur (suppliers.margin_coefficient,
-           modifiables via l'onglet Fournisseurs ou directement ici via la même
-           route PATCH /api/suppliers/:id). -->
+           Paliers de prix d'achat éditables (voir la fonction
+           renderBaremesMarge et le commentaire juste avant, plus bas dans ce
+           fichier) : le calcul réel des imports continue d'utiliser le
+           coefficient global ou celui du partenaire (config.pricing,
+           suppliers.margin_coefficient) — cette table est une référence
+           enregistrée localement, pas une nouvelle règle de calcul. -->
       <section class="view" id="view-baremes-marge" data-view="baremes-marge" hidden>
         <div class="card reveal-in">
           <div class="card-head-text">
-            <h2>Coefficient de marge appliqué</h2>
-            <p>Le coefficient global s'applique à tout partenaire sans marge propre. Un fournisseur ou distributeur avec une marge négociée l'emporte toujours sur le défaut.</p>
+            <h2>Barème de coefficient de marge</h2>
+            <p>Paliers de prix d'achat, chacun avec son propre coefficient. Barème de référence, modifiable ici et enregistré dans ce navigateur — le calcul réel des imports utilise aujourd'hui le coefficient global ou celui du partenaire (voir <a class="link-quiet" href="#/fournisseurs">Fournisseurs</a>), pas encore ces paliers.</p>
+          </div>
+          <div class="field" style="max-width:260px;margin-top:14px">
+            <label for="baremeSimPrice">Simuler un coût d'achat (€)</label>
+            <input class="input" type="number" step="0.01" min="0" id="baremeSimPrice" placeholder="ex. 18,40">
           </div>
           <div class="table-scroll" style="margin-top:14px">
             <table class="table">
               <thead>
                 <tr>
-                  <th>Application</th>
+                  <th>Palier prix d'achat</th>
                   <th>Coefficient</th>
-                  <th>Exemple : coût 10,00 €</th>
-                  <th>État</th>
+                  <th>Prix de vente conseillé</th>
+                  <th>Actions</th>
                 </tr>
               </thead>
               <tbody id="baremesMargeTable">
@@ -1999,7 +2004,10 @@
               </tbody>
             </table>
           </div>
-          <p class="hint hint-tight" style="margin-top:10px">Le coefficient global se règle via la variable d'environnement <code>PRICING_MARGIN_COEFFICIENT</code> sur l'hébergeur (Render) — pas de champ ici, pour ne jamais désynchroniser l'affichage de la valeur réellement utilisée par les calculs. Les coefficients par partenaire, eux, sont modifiables directement dans le tableau ci-dessus.</p>
+          <div class="actions" style="margin-top:12px">
+            <button class="btn btn-soft btn-sm" type="button" id="btnAddMarginTier">+ Ajouter un palier</button>
+          </div>
+          <p class="hint hint-tight" style="margin-top:10px">Barème enregistré dans ce navigateur (réglage local pour l'instant, pas une donnée serveur) — modifie librement les paliers et coefficients ci-dessus.</p>
         </div>
       </section>
 
@@ -3725,44 +3733,124 @@ function carriers() {
 }
 
 /* ===================== BARÈMES DE MARGE ====================
-   Aucune nouvelle donnée : cette vue lit le même coefficient global
-   (state.config.pricing) et les mêmes coefficients propres par partenaire
-   (state.suppliers, déjà chargés pour l'onglet Fournisseurs) — juste
-   présentés sous forme de barème. */
+   Paliers de PRIX D'ACHAT, chacun avec son propre coefficient — pas une
+   liste de partenaires (ça, c'est la page Partenaires juste après).
+   Aucun barème par palier n'existe en base ni dans la config serveur :
+   le calcul réel des imports reste un coefficient plat (global ou par
+   partenaire, voir suppliers.margin_coefficient). Cette table est donc,
+   comme demandé, « une table éditable simple pour l'instant » — un
+   barème de référence enregistré dans ce navigateur (localStorage), non
+   branché sur le calcul de prix des imports. Les 5 paliers de départ
+   reprennent les valeurs d'exemple de la maquette validée ; ils restent
+   entièrement modifiables. */
+const MARGIN_TIERS_STORAGE_KEY = 'mm_margin_tiers_v1';
+
+function defaultMarginTiers() {
+  return [
+    { id: 'mt1', min: 0, max: 4.99, coefficient: 2.5 },
+    { id: 'mt2', min: 5, max: 14.99, coefficient: 2 },
+    { id: 'mt3', min: 15, max: 29.99, coefficient: 1.8 },
+    { id: 'mt4', min: 30, max: 59.99, coefficient: 1.6 },
+    { id: 'mt5', min: 60, max: null, coefficient: 1.4 },
+  ];
+}
+
+function loadMarginTiers() {
+  try {
+    const raw = localStorage.getItem(MARGIN_TIERS_STORAGE_KEY);
+    const parsed = raw ? JSON.parse(raw) : null;
+    return Array.isArray(parsed) && parsed.length ? parsed : defaultMarginTiers();
+  } catch {
+    return defaultMarginTiers();
+  }
+}
+
+function saveMarginTiers() {
+  try { localStorage.setItem(MARGIN_TIERS_STORAGE_KEY, JSON.stringify(state.marginTiers)); } catch { /* stockage indisponible : la session reste utilisable, juste non persistée */ }
+}
+
+state.marginTiers = loadMarginTiers();
+
+/* Même formule que src/importer/pricing.js (computeSuggestedPrice), reprise
+   côté client pour ne jamais appeler le serveur juste pour un aperçu. */
+function suggestedPriceFor(purchasePrice, coefficient) {
+  const fixedFee = Number(state.config?.pricing?.fixedFee) || 0;
+  const floor = purchasePrice + fixedFee;
+  const raw = purchasePrice * coefficient + fixedFee;
+  return Math.round(Math.max(raw, floor) * 100) / 100;
+}
+
 function renderBaremesMarge() {
   const tbody = $('baremesMargeTable');
   if (!tbody) return;
-  const global = globalMarginCoefficient();
-  const rows = [];
-  if (global != null) {
-    rows.push(
-      '<tr class="row-in" style="box-shadow: inset 3px 0 0 var(--accent)">'
-      + '<td data-label="Application"><span class="cell-strong">Coefficient global (défaut)</span>'
-      + '<div class="cell-sub">Tout partenaire sans marge propre</div></td>'
-      + '<td data-label="Coefficient" class="num">' + esc(formatCoefficient(global)) + '</td>'
-      + '<td data-label="Exemple" class="num">' + esc(money(global * 10)) + '</td>'
-      + '<td data-label="État"><span class="pill pink">ACTIF</span></td>'
-      + '</tr>',
-    );
-  }
-  const overrides = sourcingSuppliers()
-    .filter((s) => s.margin_coefficient != null)
-    .sort((a, b) => a.name.localeCompare(b.name));
-  for (const s of overrides) {
-    const coef = Number(s.margin_coefficient);
-    rows.push(
-      '<tr class="row-in">'
-      + '<td data-label="Application">' + esc(s.name)
-      + '<div class="cell-sub">' + esc(SUPPLIER_KIND_LABELS[s.kind] || s.kind) + '</div></td>'
-      + '<td data-label="Coefficient" class="num">' + esc(formatCoefficient(coef)) + '</td>'
-      + '<td data-label="Exemple" class="num">' + esc(money(coef * 10)) + '</td>'
-      + '<td data-label="État"><span class="pill accent">Marge propre</span></td>'
-      + '</tr>',
-    );
-  }
-  tbody.innerHTML = rows.length ? rows.join('') : '<tr class="table-empty"><td colspan="4">Aucune donnée de coefficient disponible.</td></tr>';
+  const simInput = $('baremeSimPrice');
+  const simValue = simInput && simInput.value !== '' ? Number(simInput.value) : null;
+  const simPrice = Number.isFinite(simValue) ? simValue : null;
+  const tiers = state.marginTiers.slice().sort((a, b) => Number(a.min) - Number(b.min));
+  const rows = tiers.map((tier) => {
+    const min = Number(tier.min);
+    const max = tier.max == null || tier.max === '' ? null : Number(tier.max);
+    const coefficient = Number(tier.coefficient);
+    const isActive = simPrice != null && simPrice >= min && (max == null || simPrice <= max);
+    const low = suggestedPriceFor(min, coefficient);
+    const priceLabel = max == null ? money(low) + ' et plus' : money(low) + ' – ' + money(suggestedPriceFor(max, coefficient));
+    return '<tr class="row-in" data-tier-id="' + esc(tier.id) + '"' + (isActive ? ' style="box-shadow: inset 3px 0 0 var(--accent)"' : '') + '>'
+      + '<td data-label="Palier prix d\'achat"><div class="tier-range">'
+      + '<input class="input" type="number" step="0.01" min="0" style="width:92px" value="' + esc(min) + '" data-field="min" aria-label="Prix minimum du palier">'
+      + '<span class="cell-muted">–</span>'
+      + '<input class="input" type="number" step="0.01" min="0" style="width:92px" value="' + (max == null ? '' : esc(max)) + '" placeholder="∞" data-field="max" aria-label="Prix maximum du palier, vide = illimité">'
+      + (isActive ? ' <span class="pill accent">ACTIF</span>' : '')
+      + '</div></td>'
+      + '<td data-label="Coefficient" class="num"><input class="input" type="number" step="0.01" min="1.01" style="width:84px" value="' + esc(coefficient) + '" data-field="coefficient" aria-label="Coefficient du palier"></td>'
+      + '<td data-label="Prix de vente conseillé" class="num">' + esc(priceLabel) + '</td>'
+      + '<td data-label="Actions" class="cell-actions"><button class="btn btn-danger-ghost btn-xs" type="button" data-action="delete-tier" data-id="' + esc(tier.id) + '">Supprimer</button></td>'
+      + '</tr>';
+  });
+  tbody.innerHTML = rows.length
+    ? rows.join('')
+    : '<tr class="table-empty"><td colspan="4">Aucun palier. Ajoute-en un ci-dessous.</td></tr>';
   stagger(tbody);
 }
+
+/* Écouteurs posés une fois pour toutes sur les éléments persistants (le corps
+   de table n'est jamais remplacé, seul son innerHTML change) : la délégation
+   survit donc à chaque rendu. `change` (pas `input`) pour les champs de
+   palier — un ré-rendu à chaque frappe couperait le focus en cours de
+   saisie ; l'aperçu de prix se met à jour une fois le champ quitté. */
+(function setupMarginTiersEditing() {
+  const tbody = $('baremesMargeTable');
+  if (tbody) {
+    tbody.addEventListener('change', (event) => {
+      const row = event.target.closest ? event.target.closest('tr[data-tier-id]') : null;
+      const field = event.target.dataset ? event.target.dataset.field : null;
+      if (!row || !field) return;
+      const tier = state.marginTiers.find((t) => t.id === row.dataset.tierId);
+      if (!tier) return;
+      const raw = event.target.value;
+      tier[field] = field === 'max' && raw === '' ? null : Number(raw);
+      saveMarginTiers();
+      renderBaremesMarge();
+    });
+    tbody.addEventListener('click', (event) => {
+      const button = event.target.closest ? event.target.closest('[data-action="delete-tier"]') : null;
+      if (!button) return;
+      state.marginTiers = state.marginTiers.filter((t) => t.id !== button.dataset.id);
+      saveMarginTiers();
+      renderBaremesMarge();
+    });
+  }
+  const addButton = $('btnAddMarginTier');
+  if (addButton) {
+    addButton.addEventListener('click', () => {
+      const highest = state.marginTiers.reduce((max, t) => (t.max == null ? max : Math.max(max, Number(t.max))), 0);
+      state.marginTiers.push({ id: 'mt' + Date.now(), min: Math.round((highest + 0.01) * 100) / 100, max: null, coefficient: globalMarginCoefficient() || 1.8 });
+      saveMarginTiers();
+      renderBaremesMarge();
+    });
+  }
+  const simInput = $('baremeSimPrice');
+  if (simInput) simInput.addEventListener('input', renderBaremesMarge);
+}());
 
 /* ===================== PARTENAIRES ====================
    Même barème que ci-dessus, présenté comme une table triable — un
