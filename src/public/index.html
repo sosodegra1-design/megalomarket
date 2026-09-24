@@ -1535,6 +1535,7 @@
         <div class="card table-card reveal-in">
           <div class="table-tools">
             <h2>Imports récents</h2>
+            <button class="btn btn-soft btn-sm" type="button" id="btnCleanupImports">Nettoyer les imports cassés / en attente</button>
             <input class="input table-filter" type="search" id="importsFilter" placeholder="Filtrer par titre, site, statut…" autocomplete="off" aria-label="Filtrer les imports">
           </div>
           <div class="table-scroll">
@@ -5453,6 +5454,31 @@ onAction($('imports'), {
     return result;
   }, 'Import supprimé.'),
 });
+
+/* Nettoyage groupé : prévisualise (GET /cleanup/preview) avant de supprimer,
+   pour ne jamais effacer en silence — le nombre exact et les titres sont
+   montrés dans la confirmation, comme pour une suppression individuelle. */
+const cleanupImportsButton = $('btnCleanupImports');
+if (cleanupImportsButton) {
+  cleanupImportsButton.addEventListener('click', () => action(cleanupImportsButton, async () => {
+    const preview = await api('/api/imports/cleanup/preview');
+    const candidates = preview.imports || [];
+    if (!candidates.length) {
+      say('Aucun import cassé ou en attente à nettoyer.', 'good');
+      return null;
+    }
+    const sample = candidates.slice(0, 8).map((i) => '· ' + i.title).join('\n');
+    const more = candidates.length > 8 ? '\n… et ' + (candidates.length - 8) + ' autre(s).' : '';
+    if (!window.confirm(
+      'Supprimer ' + candidates.length + ' import(s) cassé(s) ou en attente ?\n\n' + sample + more
+      + '\n\nSeules les fiches de travail locales sont effacées : un article déjà publié sur un canal est toujours épargné.',
+    )) return null;
+    const result = await api('/api/imports/cleanup', { method: 'DELETE' });
+    await loadImports();
+    renderDashboard();
+    return result;
+  }, 'Nettoyage terminé.'));
+}
 
 /* ===================== FICHES : ENREGISTRER / PUBLIER ===================== */
 onAction($('listings'), {

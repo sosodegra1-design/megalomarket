@@ -80,6 +80,63 @@ importsRouter.get(
   }),
 );
 
+/*
+ * Nettoyage groupé : imports CASSÉS (au moins une fiche en échec de
+ * publication) ou EN ATTENTE (jamais sortis du brouillon — extraction faite,
+ * fiches jamais générées ou génération interrompue). Les deux statuts sont
+ * ceux du schéma réel (imports.status, import_listings.status), rien
+ * d'inventé. Un import qui porte, par ailleurs, une fiche 'publie' est
+ * toujours épargné — même garde-fou que la suppression individuelle : la
+ * supprimer ferait perdre le seul lien pour la dépublier depuis ce tableau.
+ *
+ * Placées avant /:id pour qu'Express ne confonde jamais le segment littéral
+ * « cleanup » avec le paramètre :id.
+ */
+async function findCleanupCandidates() {
+  const [brokenLinks, pendingImports, publishedLinks] = await Promise.all([
+    dbAll("SELECT DISTINCT import_id AS id FROM import_listings WHERE status = 'echec'"),
+    dbAll("SELECT id, title, status FROM imports WHERE status = 'brouillon'"),
+    dbAll("SELECT DISTINCT import_id AS id FROM import_listings WHERE status = 'publie'"),
+  ]);
+  const publishedIds = new Set(publishedLinks.map((r) => r.id));
+  const brokenImports = brokenLinks.length
+    ? await dbAll(
+      `SELECT id, title, status FROM imports WHERE id IN (${brokenLinks.map(() => '?').join(',')})`,
+      brokenLinks.map((r) => r.id),
+    )
+    : [];
+  const merged = new Map();
+  for (const imp of [...brokenImports, ...pendingImports]) {
+    if (!publishedIds.has(imp.id)) merged.set(imp.id, imp);
+  }
+  return [...merged.values()];
+}
+
+importsRouter.get(
+  '/cleanup/preview',
+  asyncRoute(async (req, res) => {
+    res.json({ imports: await findCleanupCandidates() });
+  }),
+);
+
+importsRouter.delete(
+  '/cleanup',
+  asyncRoute(async (req, res) => {
+    const candidates = await findCleanupCandidates();
+    for (const imp of candidates) {
+      await dbRun('DELETE FROM import_listings WHERE import_id = ?', [imp.id]);
+      await dbRun('DELETE FROM imports WHERE id = ?', [imp.id]);
+    }
+    if (candidates.length) {
+      await logActivity(
+        'IMPORT_NETTOYAGE',
+        `Nettoyage groupé : ${candidates.length} import(s) cassé(s) ou en attente supprimé(s).`,
+      );
+    }
+    res.json({ deleted: candidates.length, titles: candidates.map((i) => i.title) });
+  }),
+);
+
 // --- Étape 1 : extraction depuis une URL fournisseur ---
 importsRouter.post(
   '/',
