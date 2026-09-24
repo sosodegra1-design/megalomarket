@@ -2344,8 +2344,10 @@ https://…/photo2.jpg"></textarea>
             </div>
             <div class="panel-foot">
               <button class="btn" id="btnHuntNiches" type="button" data-needs-ai>Lancer la chasse aux pépites</button>
+              <button class="btn btn-soft" id="btnCoachFocus" type="button" data-needs-ai>✨ Affiner l'axe avec l'IA</button>
               <p class="hint hint-tight" id="denicheurAiNote" data-ai-note hidden>IA non configurée : voir le bandeau de configuration en haut de page.</p>
             </div>
+            <p class="hint hint-tight" id="denicheurCoachHint" hidden></p>
           </div>
         </div>
 
@@ -2355,6 +2357,7 @@ https://…/photo2.jpg"></textarea>
               <h2>Dernier classement</h2>
               <p id="denicheurCount">Aucune chasse lancée pour le moment.</p>
             </div>
+            <button class="btn btn-soft btn-sm" id="btnReviewNiches" type="button" data-needs-ai hidden>🔎 Faire vérifier ce lot par l'IA</button>
           </div>
           <div class="table-scroll">
             <table class="table">
@@ -2367,11 +2370,12 @@ https://…/photo2.jpg"></textarea>
                   <th>Cible</th>
                   <th>Prix indicatif</th>
                   <th>Piste de sourcing</th>
+                  <th>Vérifié</th>
                   <th>Fournisseur</th>
                   <th></th>
                 </tr>
               </thead>
-              <tbody id="denicheurRows"><tr class="table-empty"><td colspan="9">Aucune chasse lancée pour le moment.</td></tr></tbody>
+              <tbody id="denicheurRows"><tr class="table-empty"><td colspan="10">Aucune chasse lancée pour le moment.</td></tr></tbody>
             </table>
           </div>
         </div>
@@ -5719,6 +5723,18 @@ $('btnResetDistributor').addEventListener('click', (event) => {
    le rappelle en permanence à côté du tableau. */
 state.denicheur = { batchId: null, finds: [] };
 
+/* Badge « Vérifié » : reflète l'agent superviseur (src/ai/nicheSupervisor.js),
+   jamais deviné côté client. Trois états, jamais deux : non vérifiée (aucun
+   avis pour l'instant), ok, ou signalée avec la raison en infobulle — un
+   verdict manquant ne doit jamais s'afficher comme « ok » par défaut. */
+function nicheReviewBadge(f) {
+  if (f.reviewOk === 1 || f.reviewOk === true) return '<span class="pill ok">OK</span>';
+  if (f.reviewOk === 0 || f.reviewOk === false) {
+    return '<span class="pill warn" title="' + esc(f.reviewIssue || 'Signalée par le superviseur IA.') + '">⚠ Attention</span>';
+  }
+  return '<span class="muted" title="Pas encore relue par le superviseur IA.">—</span>';
+}
+
 function renderDenicheur() {
   const rows = state.denicheur.finds || [];
   const tbody = $('denicheurRows');
@@ -5733,13 +5749,14 @@ function renderDenicheur() {
         + '<td>' + (f.targetAudience ? esc(f.targetAudience) : '<span class="muted">—</span>') + '</td>'
         + '<td>' + (f.priceRange ? esc(f.priceRange) : '<span class="muted">—</span>') + '</td>'
         + '<td>' + (f.sourcingHint ? esc(f.sourcingHint) : '<span class="muted">—</span>') + '</td>'
+        + '<td>' + nicheReviewBadge(f) + '</td>'
         + '<td><a class="btn ghost btn-sm" href="' + esc(nicheSupplierSearchUrl(f.title, f.sourcingHint)) + '" target="_blank" rel="noopener">Chercher chez un fournisseur ↗</a></td>'
         + '<td>' + (f.publishedUrl
             ? '<a class="btn ghost btn-sm" href="' + esc(f.publishedUrl) + '" target="_blank" rel="noopener">Voir l\'article ↗</a>'
             : '<button class="btn ghost btn-sm" type="button" data-niche-publish="' + i + '">Publier →</button>') + '</td>'
         + '</tr>'
       )).join('')
-      : '<tr class="table-empty"><td colspan="9">Aucune chasse lancée pour le moment.</td></tr>';
+      : '<tr class="table-empty"><td colspan="10">Aucune chasse lancée pour le moment.</td></tr>';
     stagger(tbody);
   }
   const count = $('denicheurCount');
@@ -5748,6 +5765,8 @@ function renderDenicheur() {
       ? rows.length + ' pépite' + (rows.length > 1 ? 's' : '') + ' suggérée' + (rows.length > 1 ? 's' : '') + ' par l\'IA — à vérifier avant tout achat.'
       : 'Aucune chasse lancée pour le moment.';
   }
+  const reviewButton = $('btnReviewNiches');
+  if (reviewButton) reviewButton.hidden = !rows.length;
 }
 
 /* Le Dénicheur n'a RIEN scrapé de réel : c'est une suggestion du modèle de
@@ -5848,6 +5867,44 @@ $('btnHuntNiches').addEventListener('click', (event) => action(event.currentTarg
   renderDenicheur();
   confirmFlash($('denicheurTableCard'));
 }, 'Nouvelle chasse aux pépites terminée.'));
+
+/* Agent « coach » : affine l'axe de recherche AVANT une chasse. Le texte
+   affiné remplace le champ (l'utilisateur reste libre de le retoucher avant
+   de lancer la chasse) — jamais appliqué en enchaînant directement sur
+   /hunt, pour que l'utilisateur garde la main sur ce qui part réellement. */
+$('btnCoachFocus').addEventListener('click', (event) => action(event.currentTarget, async () => {
+  const focus = $('denicheurFocus').value.trim();
+  const result = await api('/api/niches/coach', { method: 'POST', body: JSON.stringify(focus ? { focus } : {}) });
+  $('denicheurFocus').value = result.refinedFocus;
+  const hint = $('denicheurCoachHint');
+  if (hint) {
+    hint.hidden = false;
+    hint.textContent = 'Axe affiné par l\'IA' + (result.reasoning ? ' — ' + result.reasoning : '') + '. Modifie-le si besoin, puis lance la chasse.';
+  }
+  return result;
+}, 'Axe de recherche affiné.'));
+
+/* Agent « superviseur » : relit le dernier lot généré et annote chaque ligne
+   (voir nicheReviewBadge). Ne supprime ni ne modifie aucune suggestion — il
+   ajoute un avis, la décision reste humaine. */
+$('btnReviewNiches').addEventListener('click', (event) => action(event.currentTarget, async () => {
+  const batchId = state.denicheur.batchId;
+  if (!batchId) return null;
+  const result = await api('/api/niches/' + encodeURIComponent(batchId) + '/review', { method: 'POST' });
+  const byRank = new Map(result.reviewed.map((r) => [r.rank, r]));
+  state.denicheur.finds = (state.denicheur.finds || []).map((f) => {
+    const verdict = byRank.get(f.rank);
+    return verdict ? { ...f, reviewOk: verdict.ok === null ? null : (verdict.ok ? 1 : 0), reviewIssue: verdict.issue } : f;
+  });
+  renderDenicheur();
+  const flagged = result.reviewed.filter((r) => r.ok === false).length;
+  // Le message dépend du résultat (rien à dire de fixe à l'avance) : affiché
+  // ici plutôt que via le successMessage fixe de action() ci-dessous.
+  if (result.error) say('Vérification IA partielle : ' + result.error, 'err');
+  else if (flagged) say(flagged + ' suggestion(s) signalée(s) sur ' + result.reviewed.length + '.', 'info');
+  else say('Aucune anomalie détectée sur ce lot.', 'good');
+  return result;
+}));
 
 /* ===================== PIPELINE IA (CHAÎNE AUTONOME) =====================
    Dénicheur -> Rédacteur -> Inspecteur qualité -> Publication, voir

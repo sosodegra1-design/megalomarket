@@ -233,6 +233,18 @@ async function migrateTrendFindsSourcing() {
   return added;
 }
 
+/* Résultat de l'agent superviseur (src/ai/nicheSupervisor.js), ajouté après
+   coup : les lots générés avant cette évolution restent NULL (« jamais
+   relus ») plutôt que d'échouer ou de prétendre un résultat. */
+async function migrateTrendFindsReview() {
+  const addedOk = await addColumnIfMissing('trend_finds', 'review_ok', 'INTEGER');
+  const addedIssue = await addColumnIfMissing('trend_finds', 'review_issue', 'TEXT');
+  if (addedOk || addedIssue) {
+    await logActivity('MIGRATION', 'Colonnes trend_finds.review_ok / review_issue ajoutées : relecture par l\'agent superviseur du Dénicheur.');
+  }
+  return addedOk || addedIssue;
+}
+
 /* Le troisième type de partenaire — `transporteur` (transporteurs
    internationaux, transitaires, agents d'achat) — doit entrer dans la contrainte
    CHECK de `suppliers`. SQLite ne modifie pas un CHECK en place : il faut
@@ -348,6 +360,7 @@ export async function initDatabase() {
   await migrateSuppliersKinds();
   await migrateSuppliersShipping();
   await migrateTrendFindsSourcing();
+  await migrateTrendFindsReview();
 }
 
 export async function logActivity(kind, message) {

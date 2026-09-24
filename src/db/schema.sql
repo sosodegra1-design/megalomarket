@@ -98,6 +98,11 @@ CREATE TABLE IF NOT EXISTS trend_finds (
   target_audience TEXT NOT NULL DEFAULT '',
   price_range TEXT NOT NULL DEFAULT '',
   sourcing_hint TEXT NOT NULL DEFAULT '',
+  -- Résultat de l'agent superviseur (src/ai/nicheSupervisor.js) : NULL tant
+  -- que la ligne n'a jamais été relue, 1/0 ensuite. review_issue est vide
+  -- quand review_ok vaut 1 ou que la ligne n'a pas encore été relue.
+  review_ok INTEGER,
+  review_issue TEXT,
   created_at INTEGER NOT NULL
 );
 
