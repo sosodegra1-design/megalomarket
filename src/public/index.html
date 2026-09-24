@@ -285,24 +285,28 @@
       border-right: 1px solid var(--line);
       overflow-y: auto;
     }
-    .brand { display: flex; align-items: center; gap: 10px; padding: 4px 6px 16px; }
+    .brand { display: flex; align-items: center; gap: 12px; padding: 4px 6px 16px; }
     /* Marque animée : un balancement lent de deux degrés, rien de plus. Elle
        signale que l'application est vivante sans jamais attirer l'attention sur
-       elle — un back-office qu'on regarde travailler, pas un logo qu'on admire. */
+       elle — un back-office qu'on regarde travailler, pas un logo qu'on admire.
+       Le petit halo blanc en haut à gauche imite le reflet brillant de la
+       maquette (un sphère verre/chrome), superposé au halo cyan de fond. */
     .brand-mark {
-      width: 34px; height: 34px; flex: none; border-radius: 50%; display: grid; place-items: center;
-      background: radial-gradient(circle at 32% 24%, rgba(46, 230, 245, .28), rgba(9, 11, 20, .92) 72%);
-      box-shadow: 0 8px 20px -8px var(--accent), inset 0 0 0 1px rgba(255, 255, 255, .14);
+      width: 46px; height: 46px; flex: none; border-radius: 50%; display: grid; place-items: center;
+      background:
+        radial-gradient(circle at 30% 22%, rgba(255, 255, 255, .55), rgba(255, 255, 255, 0) 32%),
+        radial-gradient(circle at 34% 30%, rgba(46, 230, 245, .32), rgba(9, 11, 20, .94) 74%);
+      box-shadow: 0 10px 24px -10px var(--accent), inset 0 0 0 1px rgba(255, 255, 255, .16);
       animation: brandSway 6.5s ease-in-out infinite;
     }
-    .brand-mark svg { width: 24px; height: 24px; }
+    .brand-mark svg { width: 32px; height: 32px; }
     @keyframes brandSway {
       0%, 100% { transform: rotate(0deg) translateY(0); }
       30% { transform: rotate(-2.2deg) translateY(-1px); }
       62% { transform: rotate(1.6deg) translateY(0); }
     }
     .brand-text { display: flex; flex-direction: column; line-height: 1.15; }
-    .brand-name { font-weight: 700; font-size: var(--fs-md); }
+    .brand-name { font-weight: 700; font-size: var(--fs-lg); }
     .brand-sub { color: var(--muted-2); font-size: var(--fs-2xs); text-transform: uppercase; letter-spacing: .11em; }
     /* Le curseur de navigation : UN SEUL trait, partagé par tous les éléments,
        qui glisse de l'ancienne section vers la nouvelle au lieu de disparaître
