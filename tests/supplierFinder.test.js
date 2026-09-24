@@ -91,10 +91,13 @@ test('a successful call merges links from search_results and from text annotatio
     assert.equal(options.headers.Authorization, 'Bearer cle-de-test-perplexity');
     const sentBody = JSON.parse(options.body);
     assert.match(sentBody.input, /Gourde isotherme/);
-    // fetch_url est indispensable : sans lui, l'agent ne fait que lire des
-    // résultats de recherche, jamais la page elle-même — c'est précisément
-    // ce qui produisait des pages d'accueil de grossiste sans prix visible.
-    assert.deepEqual(sentBody.tools, [{ type: 'web_search' }, { type: 'fetch_url' }]);
+    // Le preset "pro-search" (réglé par Perplexity elle-même) inclut déjà
+    // web_search ET l'ouverture de page — un choix manuel de modèle+outils
+    // avait saturé le service en production (HTTP 429 "overloaded") dès
+    // que la consigne forçait l'ouverture de plusieurs pages.
+    assert.equal(sentBody.preset, 'pro-search');
+    assert.equal(sentBody.model, undefined);
+    assert.equal(sentBody.tools, undefined);
     return jsonResponse(200, {
       output_text: 'Voici deux fournisseurs vérifiés.',
       search_results: [
@@ -144,14 +147,40 @@ test('a 401 from Perplexity surfaces as a clear authentication error', async () 
   }
 });
 
-test('a 429 from Perplexity mentions the retry delay when the header is present', async () => {
+test('a transient 429 ("overloaded") is retried once automatically and can still succeed', async () => {
   process.env.PERPLEXITY_API_KEY = 'cle-de-test-perplexity';
-  const restore = stubPerplexityFetch(async () => jsonResponse(429, { error: 'rate limited' }, { 'retry-after': '30' }));
+  let callCount = 0;
+  const restore = stubPerplexityFetch(async () => {
+    callCount += 1;
+    if (callCount === 1) return jsonResponse(429, { error: 'overloaded' }, { 'retry-after': '0' });
+    return jsonResponse(200, {
+      output_text: 'Trouvé après réessai.',
+      search_results: [{ url: 'https://www.europages.fr/entreprises/apres-retry.html', title: 'Après réessai' }],
+    });
+  });
+  try {
+    const result = await findSupplierLinks({ title: 'Produit' });
+    assert.equal(callCount, 2, 'le module doit avoir réessayé une fois sans que l\'appelant n\'ait à recliquer');
+    assert.equal(result.links.length, 1);
+    assert.equal(result.links[0].url, 'https://www.europages.fr/entreprises/apres-retry.html');
+  } finally {
+    restore();
+  }
+});
+
+test('a 429 that persists after the retry surfaces a clear, final error', async () => {
+  process.env.PERPLEXITY_API_KEY = 'cle-de-test-perplexity';
+  let callCount = 0;
+  const restore = stubPerplexityFetch(async () => {
+    callCount += 1;
+    return jsonResponse(429, { error: 'rate limited' }, { 'retry-after': '0' });
+  });
   try {
     await assert.rejects(
       () => findSupplierLinks({ title: 'Produit' }),
-      /HTTP 429.*30s/s,
+      /HTTP 429.*réessai/s,
     );
+    assert.equal(callCount, 2, 'exactement un réessai, pas une boucle infinie');
   } finally {
     restore();
   }

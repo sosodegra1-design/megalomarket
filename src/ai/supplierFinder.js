@@ -16,11 +16,15 @@ import { config } from '../config/env.js';
  *
  * Un premier passage (web_search seul) retombait souvent sur une page
  * d'accueil ou de catégorie de grossiste, sans le produit ni un prix
- * visible — un simple résultat de recherche, jamais lu en détail. L'outil
- * fetch_url force l'agent à réellement OUVRIR chaque page candidate et à
- * confirmer un prix visible avant de la proposer ; le prompt lui interdit
- * maintenant explicitement les pages génériques, et lui demande de le dire
- * franchement plutôt que de se rabattre sur une page vague.
+ * visible — un simple résultat de recherche, jamais lu en détail. Ouvrir
+ * réellement chaque page candidate (au lieu de se fier au résumé de
+ * recherche) demande de la lire, ce qui est nettement plus lourd pour le
+ * fournisseur IA — observé en production : un modèle choisi à l'aveugle
+ * ("perplexity/sonar", faute d'accès à la doc officielle pendant le
+ * développement) saturait (HTTP 429 "upstream model overloaded") dès que
+ * la consigne l'obligeait à ouvrir plusieurs pages. Le preset "pro-search"
+ * — combinaison model+tools réglée par Perplexity elle-même, qui inclut
+ * déjà la recherche web ET l'ouverture de page — remplace ce choix manuel.
  *
  * Requête REST directe (pas de SDK) : même convention que le reste de
  * src/ai/ (compatible-OpenAI via fetch, voir client.js askOpenAiCompatible),
@@ -29,7 +33,17 @@ import { config } from '../config/env.js';
  */
 
 const PERPLEXITY_BASE_URL = 'https://api.perplexity.ai';
-const REQUEST_TIMEOUT_MS = 45000;
+const REQUEST_TIMEOUT_MS = 55000;
+// Un seul réessai : un 429 "overloaded" est presque toujours transitoire
+// (quelques secondes), mais laisser l'utilisateur cliquer indéfiniment sur
+// "Réessayer" pour un problème que le serveur peut absorber lui-même serait
+// une friction inutile. Le délai suggéré par Perplexity (Retry-After) est
+// respecté, borné pour ne pas bloquer la requête HTTP entrante trop longtemps.
+const MAX_RETRY_DELAY_MS = 15000;
+
+function sleep(ms) {
+  return new Promise((resolve) => { setTimeout(resolve, ms); });
+}
 
 function buildPrompt(title, sourcingHint) {
   const hint = String(sourcingHint || '').trim();
@@ -125,6 +139,21 @@ function extractLinks(payload) {
   return [...links.entries()].map(([url, label]) => ({ url, label }));
 }
 
+async function callAgent(prompt) {
+  return fetch(`${PERPLEXITY_BASE_URL}/v1/agent`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${config.perplexity.apiKey}`,
+    },
+    body: JSON.stringify({
+      preset: 'pro-search',
+      input: prompt,
+    }),
+    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+  });
+}
+
 /**
  * Cherche de vrais fournisseurs pour un produit + une piste de sourcing.
  * Lève une erreur explicite (clé absente, HTTP en échec, réponse illisible)
@@ -140,21 +169,22 @@ export async function findSupplierLinks({ title, sourcingHint } = {}) {
   }
   if (!String(title || '').trim()) throw new Error('Titre du produit manquant.');
 
+  const prompt = buildPrompt(title, sourcingHint);
+
   let response;
   try {
-    response = await fetch(`${PERPLEXITY_BASE_URL}/v1/agent`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${config.perplexity.apiKey}`,
-      },
-      body: JSON.stringify({
-        model: 'perplexity/sonar',
-        input: buildPrompt(title, sourcingHint),
-        tools: [{ type: 'web_search' }, { type: 'fetch_url' }],
-      }),
-      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
-    });
+    response = await callAgent(prompt);
+    if (response.status === 429) {
+      // Un seul réessai, après le délai suggéré par Perplexity (borné) : la
+      // surcharge du modèle upstream est presque toujours passagère.
+      const retryAfterHeader = Number(response.headers.get('retry-after'));
+      const delayMs = Math.min(
+        Number.isFinite(retryAfterHeader) ? retryAfterHeader * 1000 : 5000,
+        MAX_RETRY_DELAY_MS,
+      );
+      await sleep(delayMs);
+      response = await callAgent(prompt);
+    }
   } catch (error) {
     if (error?.name === 'TimeoutError' || error?.name === 'AbortError') {
       throw new Error(`Perplexity Agent API injoignable : aucune réponse en ${REQUEST_TIMEOUT_MS / 1000} s.`);
@@ -168,9 +198,8 @@ export async function findSupplierLinks({ title, sourcingHint } = {}) {
       throw new Error(`Authentification refusée (HTTP 401) — vérifie PERPLEXITY_API_KEY. Réponse : ${detail.slice(0, 300)}`);
     }
     if (response.status === 429) {
-      const retryAfter = response.headers.get('retry-after');
       throw new Error(
-        `Quota Perplexity dépassé (HTTP 429)${retryAfter ? ` — réessaie dans ${retryAfter}s` : ''}. Réponse : ${detail.slice(0, 300)}`,
+        `Quota Perplexity dépassé (HTTP 429), toujours saturé après un premier réessai. Réponse : ${detail.slice(0, 300)}`,
       );
     }
     throw new Error(`Erreur Perplexity Agent API (HTTP ${response.status}) : ${detail.slice(0, 300)}`);
