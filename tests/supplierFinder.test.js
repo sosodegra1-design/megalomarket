@@ -68,6 +68,22 @@ test('without PERPLEXITY_API_KEY, the module refuses before any network call', a
   );
 });
 
+test('the prompt requires a verified product+price page, forbids generic category pages, and asks fetch_url to be used', async () => {
+  process.env.PERPLEXITY_API_KEY = 'cle-de-test-perplexity';
+  const restore = stubPerplexityFetch(async (url, options) => {
+    const sentBody = JSON.parse(options.body);
+    assert.match(sentBody.input, /prix visible/);
+    assert.match(sentBody.input, /page de catégorie générique/);
+    assert.match(sentBody.input, /Europe/);
+    return jsonResponse(200, { output_text: 'ok', search_results: [] });
+  });
+  try {
+    await findSupplierLinks({ title: 'Gourde isotherme', sourcingHint: 'fabricant en Pologne' });
+  } finally {
+    restore();
+  }
+});
+
 test('a successful call merges links from search_results and from text annotations, deduplicated by URL', async () => {
   process.env.PERPLEXITY_API_KEY = 'cle-de-test-perplexity';
   const restore = stubPerplexityFetch(async (url, options) => {
@@ -75,7 +91,10 @@ test('a successful call merges links from search_results and from text annotatio
     assert.equal(options.headers.Authorization, 'Bearer cle-de-test-perplexity');
     const sentBody = JSON.parse(options.body);
     assert.match(sentBody.input, /Gourde isotherme/);
-    assert.deepEqual(sentBody.tools, [{ type: 'web_search' }]);
+    // fetch_url est indispensable : sans lui, l'agent ne fait que lire des
+    // résultats de recherche, jamais la page elle-même — c'est précisément
+    // ce qui produisait des pages d'accueil de grossiste sans prix visible.
+    assert.deepEqual(sentBody.tools, [{ type: 'web_search' }, { type: 'fetch_url' }]);
     return jsonResponse(200, {
       output_text: 'Voici deux fournisseurs vérifiés.',
       search_results: [

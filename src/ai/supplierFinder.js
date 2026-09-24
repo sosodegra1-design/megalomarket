@@ -1,7 +1,8 @@
 import { config } from '../config/env.js';
 
 /*
- * Recherche fournisseur réelle (Perplexity Agent API, outil web_search).
+ * Recherche fournisseur réelle (Perplexity Agent API, outils web_search +
+ * fetch_url).
  *
  * Remplace le bug signalé : le bouton "Chercher chez un fournisseur" du
  * Dénicheur renvoyait vers un site fixe (Alibaba), puis vers une recherche
@@ -13,6 +14,14 @@ import { config } from '../config/env.js';
  * peut se tromper de fournisseur ou ne rien trouver, ce module ne prétend pas
  * l'inverse.
  *
+ * Un premier passage (web_search seul) retombait souvent sur une page
+ * d'accueil ou de catégorie de grossiste, sans le produit ni un prix
+ * visible — un simple résultat de recherche, jamais lu en détail. L'outil
+ * fetch_url force l'agent à réellement OUVRIR chaque page candidate et à
+ * confirmer un prix visible avant de la proposer ; le prompt lui interdit
+ * maintenant explicitement les pages génériques, et lui demande de le dire
+ * franchement plutôt que de se rabattre sur une page vague.
+ *
  * Requête REST directe (pas de SDK) : même convention que le reste de
  * src/ai/ (compatible-OpenAI via fetch, voir client.js askOpenAiCompatible),
  * et le projet est Node/Express — le SDK officiel Perplexity documenté par
@@ -20,21 +29,23 @@ import { config } from '../config/env.js';
  */
 
 const PERPLEXITY_BASE_URL = 'https://api.perplexity.ai';
-const REQUEST_TIMEOUT_MS = 30000;
+const REQUEST_TIMEOUT_MS = 45000;
 
 function buildPrompt(title, sourcingHint) {
   const hint = String(sourcingHint || '').trim();
   return (
-    `Trouve 2 à 3 fournisseurs B2B réels pour sourcer ce produit : "${String(title || '').trim()}"`
+    `Trouve 1 à 3 FICHES PRODUIT précises (pas une page d'accueil ni une page de catégorie générique) `
+    + `pour sourcer ce produit : "${String(title || '').trim()}"`
     + (hint ? `, piste de sourcing suggérée : ${hint}.` : '.')
     + ' Priorise des fournisseurs situés en Europe (délais et logistique plus courts) quand c\'est plausible pour ce type de produit, '
     + 'sans en inventer un s\'il n\'y en a manifestement pas.'
-    + ' Une fiche d\'entreprise précise (site officiel d\'un fabricant ou grossiste) est préférable, mais si tu n\'en trouves aucune '
-    + 'avec certitude, une page de CATÉGORIE d\'un vrai annuaire B2B reconnu (Europages, Kompass, Made-in-Europe…) pour ce type de '
-    + 'produit est un résultat acceptable — mieux vaut ce repli honnête que rien du tout.'
-    + ' Écris chaque URL en clair dans ta réponse (pas seulement en citation), au format Markdown [nom](url), pour qu\'elle reste '
-    + 'lisible même si les citations structurées ne sont pas conservées.'
-    + ' Jamais un lien de recherche Google ou Bing, jamais un nom d\'entreprise inventé : si vraiment rien de vérifiable n\'existe, dis-le.'
+    + ' Pour CHAQUE candidat trouvé par recherche web, utilise l\'outil d\'ouverture de page pour la consulter réellement et confirmer '
+    + 'qu\'elle affiche bien CE produit (ou un équivalent direct) ET un prix visible, AVANT de la proposer.'
+    + ' N\'inclus JAMAIS une page d\'accueil, une page de catégorie, ou une page où tu n\'as pas pu confirmer un prix visible en l\'ouvrant '
+    + '— dans ce cas, dis-le franchement plutôt que de proposer un résultat vague. Mieux vaut 0 résultat qu\'un résultat imprécis.'
+    + ' Écris chaque résultat confirmé en Markdown [nom du fournisseur — prix constaté sur la page](url), le prix étant celui que tu as '
+    + 'réellement vu en ouvrant la page, pas une estimation.'
+    + ' Jamais un lien de recherche Google ou Bing, jamais un nom d\'entreprise inventé.'
   );
 }
 
@@ -140,7 +151,7 @@ export async function findSupplierLinks({ title, sourcingHint } = {}) {
       body: JSON.stringify({
         model: 'perplexity/sonar',
         input: buildPrompt(title, sourcingHint),
-        tools: [{ type: 'web_search' }],
+        tools: [{ type: 'web_search' }, { type: 'fetch_url' }],
       }),
       signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     });
