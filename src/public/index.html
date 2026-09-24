@@ -5733,7 +5733,7 @@ function renderDenicheur() {
         + '<td>' + (f.targetAudience ? esc(f.targetAudience) : '<span class="muted">—</span>') + '</td>'
         + '<td>' + (f.priceRange ? esc(f.priceRange) : '<span class="muted">—</span>') + '</td>'
         + '<td>' + (f.sourcingHint ? esc(f.sourcingHint) : '<span class="muted">—</span>') + '</td>'
-        + '<td><a class="btn ghost btn-sm" href="' + esc(nicheSupplierSearchUrl(f.title)) + '" target="_blank" rel="noopener">Chercher chez un fournisseur ↗</a></td>'
+        + '<td><a class="btn ghost btn-sm" href="' + esc(nicheSupplierSearchUrl(f.title, f.sourcingHint)) + '" target="_blank" rel="noopener">Chercher chez un fournisseur ↗</a></td>'
         + '<td>' + (f.publishedUrl
             ? '<a class="btn ghost btn-sm" href="' + esc(f.publishedUrl) + '" target="_blank" rel="noopener">Voir l\'article ↗</a>'
             : '<button class="btn ghost btn-sm" type="button" data-niche-publish="' + i + '">Publier →</button>') + '</td>'
@@ -5754,12 +5754,19 @@ function renderDenicheur() {
    langage, sans accès à un fournisseur précis ni à une page produit
    existante (voir l'avertissement dans src/ai/nicheHunter.js). Il ne peut
    donc pas fournir « le lien de l'article d'origine » — il n'y en a pas.
-   Ce qu'on peut honnêtement offrir : une recherche pré-remplie chez un vrai
-   fournisseur (Alibaba, pour du sourcing en gros), pour que l'utilisateur
-   retrouve et vérifie LUI-MÊME un produit correspondant. */
-function nicheSupplierSearchUrl(title) {
-  const query = encodeURIComponent(String(title || '').trim());
-  return 'https://www.alibaba.com/trade/search?SearchText=' + query;
+   Ce qu'on peut honnêtement offrir : une recherche pré-remplie qui reprend
+   VRAIMENT la piste de sourcing suggérée par l'IA (région, type de
+   fournisseur) — jamais un lien fixe vers un seul site. Pointer toujours
+   vers Alibaba (Chine) était le bug signalé : l'IA pouvait suggérer un
+   fournisseur en Autriche et le bouton envoyait quand même vers la Chine,
+   sans aucun rapport avec ce qui était affiché. Un moteur de recherche
+   généraliste, lui, respecte la piste affichée quelle qu'elle soit. */
+function nicheSupplierSearchUrl(title, sourcingHint) {
+  const parts = [String(title || '').trim()];
+  const hint = String(sourcingHint || '').trim();
+  parts.push(hint || 'fournisseur grossiste');
+  const query = encodeURIComponent(parts.filter(Boolean).join(' '));
+  return 'https://www.google.com/search?q=' + query;
 }
 
 /* Rapproche le texte de catégorie libre renvoyé par l'IA (« Jouets électroniques »…)

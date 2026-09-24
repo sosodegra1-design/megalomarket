@@ -149,6 +149,25 @@ test('une configuration illisible laisse les actions IA bloquées', () => {
   assert.equal(node('btnGenerate').disabled, true);
 });
 
+/* Régression signalée en production : le bouton « Chercher chez un
+   fournisseur » du Dénicheur pointait TOUJOURS vers Alibaba (Chine), même
+   quand la piste de sourcing suggérée par l'IA était européenne (ex.
+   « fabricant textile en Autriche ») — le lien contredisait alors le texte
+   affiché juste à côté. La recherche doit maintenant reprendre la piste
+   réellement suggérée, quelle qu'elle soit. */
+test('la recherche fournisseur du Dénicheur respecte la piste de sourcing affichée, pas un site fixe', () => {
+  const { sandbox } = loadDashboard();
+  const url = sandbox.nicheSupplierSearchUrl('Gourde isotherme 750ml', 'fabricant textile en Autriche');
+  assert.ok(!/alibaba/i.test(url), 'ne doit plus renvoyer vers un site fixe sans rapport avec la piste affichée');
+  assert.match(url, /Autriche/, 'la région suggérée par l’IA doit se retrouver dans la recherche');
+  assert.match(url, /Gourde%20isotherme/i);
+
+  // Sans piste de sourcing (l'IA ne l'a pas remplie), un repli générique
+  // reste utilisable plutôt qu'une recherche vide ou une erreur.
+  const fallback = sandbox.nicheSupplierSearchUrl('Gourde isotherme 750ml', '');
+  assert.match(fallback, /fournisseur/);
+});
+
 /* ===================== MOUVEMENT =====================
    L'animation ne fait pas partie du contrat fonctionnel, mais deux de ses
    propriétés en font partie : elle ne doit JAMAIS retarder une action, et elle
