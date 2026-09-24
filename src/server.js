@@ -126,6 +126,7 @@ function logConfigurationSummary() {
     ['studio photo', state(config.cloudinary.ready)],
     ['tarifs Sendcloud', state(config.sendcloud.ready)],
     ['e-mails post-achat (Brevo)', state(config.brevo.ready)],
+    ['recherche fournisseur (Perplexity)', state(config.perplexity.ready)],
     ['eBay', state(config.ebay.ready)],
   ];
 
