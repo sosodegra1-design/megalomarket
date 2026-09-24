@@ -12,6 +12,7 @@ import {
   pushPriceToAllChannels,
   hasSuccessfulPush,
 } from '../services/pushSync.js';
+import { buildProductsFragment } from '../services/productsTable.js';
 
 export const api = Router();
 
@@ -128,17 +129,51 @@ api.get('/config', (req, res) => {
 });
 
 // --- Produits ---
+async function loadProductsWithListings() {
+  const products = await dbAll('SELECT * FROM products ORDER BY created_at DESC');
+  return Promise.all(
+    products.map(async (p) => ({
+      ...p,
+      listings: await dbAll('SELECT * FROM channel_listings WHERE product_id = ?', [p.id]),
+    })),
+  );
+}
+
 api.get(
   '/products',
   asyncRoute(async (req, res) => {
-    const products = await dbAll('SELECT * FROM products ORDER BY created_at DESC');
-    const withListings = await Promise.all(
-      products.map(async (p) => ({
-        ...p,
-        listings: await dbAll('SELECT * FROM channel_listings WHERE product_id = ?', [p.id]),
-      })),
-    );
-    res.json(withListings);
+    res.json(await loadProductsWithListings());
+  }),
+);
+
+/*
+ * Fragment HTML partiel du tableau Produits (lignes <tr> déjà rendues), pour
+ * que le tableau de bord n'ait plus à charger tout le catalogue en JSON et à
+ * le filtrer/trier en mémoire à chaque frappe — voir services/productsTable.js
+ * pour le détail du filtre/tri/pagination, identiques à l'ancien moteur
+ * client. Les en-têtes X-Total-Count/X-Page/X-Pages portent la pagination :
+ * le corps de la réponse ne contient QUE les lignes, jamais de métadonnées
+ * mélangées au balisage.
+ */
+api.get(
+  '/products/fragment',
+  asyncRoute(async (req, res) => {
+    const products = await loadProductsWithListings();
+    const page = Number(req.query.page);
+    const fragment = buildProductsFragment({
+      products,
+      query: typeof req.query.q === 'string' ? req.query.q : '',
+      sortKey: typeof req.query.sort === 'string' ? req.query.sort : undefined,
+      sortDir: typeof req.query.dir === 'string' ? req.query.dir : undefined,
+      page: Number.isInteger(page) && page > 0 ? page : 1,
+      aiReady: config.ai.ready,
+    });
+    res
+      .set('X-Total-Count', String(fragment.total))
+      .set('X-Page', String(fragment.page))
+      .set('X-Pages', String(fragment.pages))
+      .type('html')
+      .send(fragment.html);
   }),
 );
 

@@ -932,6 +932,34 @@
        pagination. */
     .table-foot-tools { justify-content: flex-start; gap: var(--sp-3); }
 
+    /* Masqué visuellement mais lu par les lecteurs d'écran — utilisé pour
+       l'annonce de résultats de la table Produits (voir #productsStatus). */
+    .visually-hidden {
+      position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+      overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0;
+    }
+
+    /* Table Produits : rendue par fragment HTML serveur (voir
+       GET /api/products/fragment, chargée par loadProductsFragment() dans le
+       JS) plutôt que par le moteur générique createTable() des autres tables
+       — c'est celle qui peut le plus grossir, et pour laquelle renvoyer +
+       reparser tout le JSON catalogue à chaque frappe de filtre devenait
+       sensible. `content-visibility: auto` laisse le navigateur sauter le
+       calcul de style/layout/peinture des lignes hors écran (au-delà de la
+       hauteur visible de page) ; `contain-intrinsic-size` fixe une taille de
+       réserve approximative (une ligne ≈ 42px) pour que la scrollbar ne
+       saute pas tant que la ligne réelle n'a jamais été mesurée. */
+    #products tr { content-visibility: auto; contain-intrinsic-size: auto 42px; }
+    /* Un seul point de transition nommé : au clic sur un filtre/tri/page, le
+       navigateur peut alors fondre l'ancien contenu de CETTE carte vers le
+       nouveau (document.startViewTransition dans loadProductsFragment) sans
+       qu'on ait à écrire l'animation nous-mêmes. Ignoré sans risque par les
+       navigateurs qui ne connaissent pas la propriété. */
+    #productsTableCard { view-transition-name: products-table; }
+    @media (prefers-reduced-motion: reduce) {
+      #productsTableCard { view-transition-name: none; }
+    }
+
     /* ---------- Squelettes de chargement ----------
        Rien ne doit jamais être un écran vide : chaque bloc affiche la forme de
        ce qui va le remplacer, avec une lueur lente qui dit « ça arrive ». */
@@ -1590,13 +1618,20 @@
           </div>
         </div>
 
-        <div class="card table-card reveal-in">
+        <div class="card table-card reveal-in" id="productsTableCard">
           <div class="table-tools">
-            <h2>Catalogue interne</h2>
-            <input class="input table-filter" type="search" id="productsFilter" placeholder="Filtrer par nom ou SKU…" autocomplete="off" aria-label="Filtrer les produits">
+            <h2 id="productsHeading">Catalogue interne</h2>
+            <search>
+              <label for="productsFilter" class="visually-hidden">Filtrer les produits par nom ou SKU</label>
+              <input class="input table-filter" type="search" id="productsFilter" placeholder="Filtrer par nom ou SKU…" autocomplete="off">
+            </search>
           </div>
+          <!-- Annonce le nombre de résultats après chaque filtre/tri/page, pour
+               qui n'a jamais vu la table se redessiner visuellement (lecteur
+               d'écran). Vide au repos : rien à annoncer tant que rien n'a changé. -->
+          <p id="productsStatus" class="visually-hidden" role="status" aria-live="polite" aria-atomic="true"></p>
           <div class="table-scroll">
-            <table class="table">
+            <table class="table" aria-labelledby="productsHeading">
               <thead id="productsHead">
                 <tr>
                   <th data-sort="name">Produit</th>
@@ -3506,57 +3541,219 @@ function summarisePush(results) {
   return parts.join('  |  ') || 'aucun canal concerné';
 }
 
-function listingSummary(p) {
-  const listings = p.listings || [];
-  if (!listings.length) return 'aucune fiche par canal';
-  return listings.map((l) => esc(l.channel) + ' ' + money(l.price)).join(' · ');
+/* ===================== PRODUITS =====================
+   Contrairement aux autres tables (moteur générique createTable() ci-dessus,
+   entièrement local), Produits est LA table qui peut le plus grossir — le
+   catalogue de référence, pas un lot ponctuel d'imports. Charger tout le
+   JSON puis filtrer/trier en mémoire à chaque frappe devenait sensible avant
+   même que ça ne le soit pour les autres. Elle charge donc son contenu par
+   fragment HTML déjà rendu (GET /api/products/fragment, voir
+   services/productsTable.js) : le filtre/tri/pagination s'exécutent côté
+   serveur, et le navigateur n'a plus qu'à afficher du HTML reçu tel quel —
+   rien à parser, rien à reconstruire.
+   `state.products` (JSON complet) continue d'exister à part, uniquement pour
+   les compteurs du tableau de bord (kpiProduits, navCountProduits) : eux ont
+   besoin du total réel, pas de la page actuellement affichée. */
+const productsFragmentState = { query: '', sortKey: 'name', sortDir: 'asc', page: 1 };
+let productsFragmentAbort = null;
+let productsFilterDebounceTimer = null;
+
+const PRODUCTS_SORT_KEYS = new Set(['name', 'sku', 'cost_price']);
+
+/* Restaure le filtre/tri/page depuis l'URL (#/produits?q=...&sort=...&dir=...
+   &page=...) — ce qui rend un lien partagé ou un rechargement de page
+   fidèle à ce qui était affiché, au lieu de retomber silencieusement sur la
+   première page non filtrée. `hashParts` est déclarée plus bas dans ce même
+   script mais hissée (function déclarée) : l'appeler ici, avant sa
+   définition textuelle, est sans risque. */
+function restoreProductsStateFromHash() {
+  // Absent dans le bac à sable minimal des tests de tableau de bord (voir
+  // tests/carriersUi.test.js, dashboard.test.js…) : un no-op silencieux ici
+  // évite qu'une fonctionnalité annexe (partage de lien) ne fasse échouer
+  // l'évaluation de tout le script pour des tests qui ne la concernent pas.
+  if (typeof URLSearchParams === 'undefined') return;
+  const params = new URLSearchParams(hashParts().query);
+  const q = params.get('q') || '';
+  const sort = params.get('sort');
+  const dir = params.get('dir');
+  const page = Number(params.get('page'));
+  productsFragmentState.query = q;
+  productsFragmentState.sortKey = sort && PRODUCTS_SORT_KEYS.has(sort) ? sort : 'name';
+  productsFragmentState.sortDir = dir === 'desc' ? 'desc' : 'asc';
+  productsFragmentState.page = Number.isInteger(page) && page > 0 ? page : 1;
+  const input = $('productsFilter');
+  if (input) input.value = q;
+}
+restoreProductsStateFromHash();
+
+function productsFragmentQuery() {
+  if (typeof URLSearchParams === 'undefined') return '';
+  const params = new URLSearchParams();
+  if (productsFragmentState.query) params.set('q', productsFragmentState.query);
+  if (productsFragmentState.sortKey !== 'name') params.set('sort', productsFragmentState.sortKey);
+  if (productsFragmentState.sortDir !== 'asc') params.set('dir', productsFragmentState.sortDir);
+  if (productsFragmentState.page !== 1) params.set('page', String(productsFragmentState.page));
+  return params.toString();
 }
 
-/* ===================== PRODUITS ===================== */
-const productsTable = createTable({
-  body: 'products',
-  view: 'produits',
-  head: 'productsHead',
-  filter: 'productsFilter',
-  pager: 'productsPager',
-  pageSize: 10,
-  skeleton: 4,
-  empty: 'Aucun produit. Crée-en un ci-dessus.',
-  defaultSort: 'name',
-  columns: [
-    { key: 'name', value: (p) => p.name },
-    { key: 'sku', value: (p) => p.sku },
-    { key: 'cost_price', value: (p) => Number(p.cost_price) },
-  ],
-  search: (p) => [p.name, p.sku, p.description].join(' '),
-  row: (p) => {
-    const id = esc(p.id);
-    const aiDisabled = state.aiReady ? '' : ' disabled';
-    return '<tr class="row-in">'
-      + '<td data-label="Produit"><span class="cell-strong">' + esc(p.name) + '</span></td>'
-      + '<td data-label="SKU"><span class="pill off">' + esc(p.sku) + '</span></td>'
-      + '<td data-label="Prix de revient" class="num">' + money(p.cost_price) + '</td>'
-      + '<td data-label="Fiches canaux" class="cell-muted">' + listingSummary(p) + '</td>'
-      + '<td data-label="Actions" class="cell-actions">'
-      + '<div class="actions">'
-      + '<button class="btn btn-ghost btn-xs" type="button" data-action="suggest" data-id="' + id + '" data-needs-ai' + aiDisabled + '>Suggérer un prix</button>'
-      + '<button class="btn btn-ghost btn-xs" type="button" data-action="describe" data-id="' + id + '" data-needs-ai' + aiDisabled + '>Générer une description</button>'
-      + '</div>'
-      + '<div class="actions">'
-      + '<input class="input input-xs" type="number" id="pp-' + id + '" step="0.01" min="0" placeholder="prix à pousser">'
-      + '<button class="btn btn-xs" type="button" data-action="push" data-id="' + id + '">Pousser ce prix</button>'
-      + '</div>'
-      + '</td>'
-      + '</tr>';
-  },
-});
+/* Reflète le filtre actif dans l'URL (lien partageable, retour arrière) sans
+   perturber le routeur par hash existant (routeFromHash ne lit que la partie
+   avant le « ? », voir ROUTES) — remplace l'entrée d'historique plutôt que
+   d'en empiler une par frappe, exactement comme le fait déjà le filtre AJAX
+   de BBhappy pour la même raison. */
+function syncProductsUrl() {
+  if (typeof location === 'undefined' || typeof history === 'undefined') return;
+  const qs = productsFragmentQuery();
+  const hash = '#/produits' + (qs ? '?' + qs : '');
+  if (location.hash !== hash) history.replaceState(null, '', hash);
+}
+
+function renderProductsHead() {
+  const head = $('productsHead');
+  if (!head) return;
+  head.querySelectorAll('[data-sort]').forEach((th) => {
+    const active = th.dataset.sort === productsFragmentState.sortKey;
+    th.classList.toggle('sorted', active);
+    th.classList.toggle('desc', active && productsFragmentState.sortDir === 'desc');
+    th.setAttribute('aria-sort', active ? (productsFragmentState.sortDir === 'desc' ? 'descending' : 'ascending') : 'none');
+    if (!th.hasAttribute('tabindex')) th.setAttribute('tabindex', '0');
+  });
+}
+
+function renderProductsPager(total, page, pages) {
+  const pager = $('productsPager');
+  if (!pager) return;
+  if (!total) { pager.innerHTML = ''; return; }
+  const pageSize = 10;
+  const first = (page - 1) * pageSize + 1;
+  const last = Math.min(total, page * pageSize);
+  pager.innerHTML = '<span class="pager-info">' + first + '–' + last + ' sur ' + total + '</span>'
+    + '<span class="pager-nav">'
+    + '<button type="button" class="btn btn-ghost btn-xs" data-page="prev"' + (page <= 1 ? ' disabled' : '') + '>Précédent</button>'
+    + '<span class="pager-page">Page ' + page + ' / ' + pages + '</span>'
+    + '<button type="button" class="btn btn-ghost btn-xs" data-page="next"' + (page >= pages ? ' disabled' : '') + '>Suivant</button>'
+    + '</span>';
+}
+
+/* Un filtre/tri/page annule la requête précédente encore en vol
+   (AbortController) : sans ça, taper vite dans le filtre pourrait faire
+   revenir une réponse obsolète APRÈS la bonne et l'écraser — la table
+   afficherait alors un résultat qui ne correspond plus à ce qui est tapé. */
+async function loadProductsFragment() {
+  if (productsFragmentAbort) productsFragmentAbort.abort();
+  // Indisponible dans le bac à sable minimal des tests de tableau de bord :
+  // la requête part alors sans signal d'annulation plutôt que de planter.
+  const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+  productsFragmentAbort = controller;
+
+  const body = $('products');
+  const qs = productsFragmentQuery();
+  syncProductsUrl();
+
+  let response;
+  try {
+    response = await fetch('/api/products/fragment' + (qs ? '?' + qs : ''), {
+      credentials: 'same-origin',
+      signal: controller ? controller.signal : undefined,
+    });
+  } catch (error) {
+    if (error.name === 'AbortError') return; // remplacée par une requête plus récente, rien à faire
+    if (body) body.innerHTML = '<tr class="table-empty"><td colspan="5">Chargement impossible : ' + esc(error.message) + '</td></tr>';
+    return;
+  }
+  if (productsFragmentAbort !== controller) return; // une requête plus récente est déjà en vol
+
+  const html = await response.text();
+  if (!response.ok) {
+    if (body) body.innerHTML = '<tr class="table-empty"><td colspan="5">Erreur de chargement (HTTP ' + response.status + ').</td></tr>';
+    return;
+  }
+
+  const total = Number(response.headers.get('X-Total-Count') || 0);
+  const page = Number(response.headers.get('X-Page') || 1);
+  const pages = Number(response.headers.get('X-Pages') || 1);
+  productsFragmentState.page = page;
+
+  function apply() {
+    if (body) body.innerHTML = html;
+    renderProductsHead();
+    renderProductsPager(total, page, pages);
+    const status = $('productsStatus');
+    if (status) {
+      status.textContent = total
+        ? total + ' produit' + (total > 1 ? 's' : '') + (productsFragmentState.query ? ' pour « ' + productsFragmentState.query + ' »' : '')
+        : (productsFragmentState.query ? 'Aucun résultat pour « ' + productsFragmentState.query + ' ».' : 'Aucun produit.');
+    }
+  }
+
+  // startViewTransition fond visuellement l'ancien contenu de la carte vers
+  // le nouveau (voir #productsTableCard { view-transition-name } en CSS) —
+  // une seule ligne suffit, le navigateur fait l'animation lui-même. Repli
+  // silencieux si l'API n'existe pas (Firefox/Safari plus anciens) ou si
+  // l'utilisateur a demandé de réduire les animations.
+  if (typeof document.startViewTransition === 'function' && motionOK()) {
+    document.startViewTransition(apply);
+  } else {
+    apply();
+  }
+}
+
+const productsFilterEl = $('productsFilter');
+if (productsFilterEl) {
+  productsFilterEl.addEventListener('input', () => {
+    productsFragmentState.query = productsFilterEl.value || '';
+    productsFragmentState.page = 1;
+    // Debounce : le filtre n'a besoin de partir qu'une fois que la frappe
+    // s'arrête, pas à chaque caractère — surtout utile ici puisque chaque
+    // frappe déclenche maintenant une vraie requête réseau (fragment serveur),
+    // pas un simple filtre en mémoire comme avant.
+    clearTimeout(productsFilterDebounceTimer);
+    productsFilterDebounceTimer = setTimeout(loadProductsFragment, 300);
+  });
+}
+
+const productsHeadEl = $('productsHead');
+if (productsHeadEl) {
+  productsHeadEl.addEventListener('click', (event) => {
+    const th = event.target && event.target.closest ? event.target.closest('[data-sort]') : null;
+    if (!th) return;
+    const key = th.dataset.sort;
+    if (productsFragmentState.sortKey === key) {
+      productsFragmentState.sortDir = productsFragmentState.sortDir === 'asc' ? 'desc' : 'asc';
+    } else {
+      productsFragmentState.sortKey = key;
+      productsFragmentState.sortDir = 'asc';
+    }
+    productsFragmentState.page = 1;
+    loadProductsFragment();
+  });
+  // Une colonne triable est un contrôle : elle répond au clavier (Entrée/Espace)
+  // comme au clic — même règle que le moteur createTable() des autres tables.
+  productsHeadEl.addEventListener('keydown', (event) => {
+    const key = event.key;
+    if (key !== 'Enter' && key !== ' ' && key !== 'Spacebar') return;
+    const th = event.target && event.target.closest ? event.target.closest('[data-sort]') : null;
+    if (!th) return;
+    event.preventDefault();
+    if (typeof th.click === 'function') th.click();
+  });
+}
+
+const productsPagerEl = $('productsPager');
+if (productsPagerEl) {
+  productsPagerEl.addEventListener('click', (event) => {
+    const btn = event.target && event.target.closest ? event.target.closest('[data-page]') : null;
+    if (!btn || btn.disabled) return;
+    productsFragmentState.page += btn.dataset.page === 'next' ? 1 : -1;
+    loadProductsFragment();
+  });
+}
 
 async function loadProducts() {
-  productsTable.setLoading();
   const products = await api('/api/products');
   state.products = products;
-  productsTable.setRows(products);
   scheduleDashboard();
+  await loadProductsFragment();
   return products;
 }
 
@@ -6686,9 +6883,19 @@ const ROUTES = {
   '#/support': 'support',
 };
 
+/* Sépare la route (avant « ? ») de sa chaîne de requête : #/produits?q=vélo
+   doit être reconnu comme la vue "produits" exactement comme #/produits tout
+   court — seul productsFragmentState (voir plus bas) lit la partie après le
+   « ? », pour restaurer un filtre partagé par lien. */
+function hashParts() {
+  const raw = String((typeof location !== 'undefined' && location.hash) || '');
+  const qIndex = raw.indexOf('?');
+  return qIndex === -1 ? { path: raw, query: '' } : { path: raw.slice(0, qIndex), query: raw.slice(qIndex + 1) };
+}
+
 function routeFromHash() {
   if (typeof location === 'undefined') return 'dashboard';
-  return ROUTES[String(location.hash || '')] || 'dashboard';
+  return ROUTES[hashParts().path] || 'dashboard';
 }
 
 /* Position d'une vue dans la barre latérale. Sert uniquement à choisir le sens
@@ -6842,7 +7049,17 @@ function boot() {
   booted = true;
   showView(routeFromHash());
   if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
-    window.addEventListener('hashchange', () => showView(routeFromHash()));
+    window.addEventListener('hashchange', () => {
+      const view = routeFromHash();
+      showView(view);
+      // Un lien partagé (#/produits?q=...) ou un retour arrière du navigateur
+      // doit rouvrir la table dans le même état filtré/trié qu'au moment du
+      // partage — pas seulement la bonne vue. `history.replaceState` (utilisé
+      // par syncProductsUrl) ne déclenche jamais cet événement, donc aucune
+      // boucle : seule une VRAIE navigation (retour arrière, lien cliqué,
+      // saisie manuelle de l'URL) entre ici.
+      if (view === 'produits') { restoreProductsStateFromHash(); loadProductsFragment(); }
+    });
     if (typeof window.matchMedia === 'function') {
       const media = window.matchMedia('(prefers-reduced-motion: reduce)');
       if (media && typeof media.addEventListener === 'function') {
