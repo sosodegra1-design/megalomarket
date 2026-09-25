@@ -112,7 +112,7 @@ test('un réglage manquant est nommé, avec sa conséquence', () => {
   assert.match(banner.innerHTML, /Fournisseur IA non configuré/);
 });
 
-test('tout configuré : le bandeau passe au vert', () => {
+test('tout configuré : le bandeau passe au vert, en version compacte', () => {
   const { sandbox, banner } = loadDashboard();
   sandbox.renderBanner({
     ...BASELINE,
@@ -121,7 +121,11 @@ test('tout configuré : le bandeau passe au vert', () => {
     missing: [],
   });
 
-  assert.equal(banner.className, 'banner ok');
+  // `compact` n'est pas cosmétique : ce bandeau s'affiche sur les quatorze vues
+  // et sa version pleine occupait ~80 px par écran pour une information qui
+  // n'appelle aucune action. Le bandeau D'ALERTE, lui, reste complet (test
+  // suivant) parce que là il y a vraiment quelque chose à faire.
+  assert.equal(banner.className, 'banner ok compact');
   assert.match(banner.innerHTML, /Tout est configuré/);
   assert.match(banner.innerHTML, /anthropic \(claude-sonnet-5\)/);
 });
