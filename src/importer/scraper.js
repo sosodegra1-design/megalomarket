@@ -669,10 +669,61 @@ function htmlToText(html) {
   return fragment('#__dsh_root').text().replace(/\s+/g, ' ').trim();
 }
 
-/** Normalise un texte déjà propre (attribut `content`, description JSON-LD…). */
+/* Décodeur d'entités HTML, adossé à cheerio (déjà une dépendance DIRECTE du
+   projet) plutôt qu'à une table écrite à la main : une table partielle laisserait
+   passer silencieusement les cas non prévus, et c'est exactement le genre de trou
+   qu'on cherche à fermer ici.
+
+   Pourquoi c'est nécessaire : les attributs `content` des balises meta ne sont
+   PAS décodés par cheerio (contrairement à `.text()`), et les titres Alibaba
+   arrivent ainsi — observé en production sur un vrai import :
+   « Tableau De Dessin Lumineux Led Carr&eacute; … D&#39;&eacute;criture ».
+   Sans décodage, ces entités partent telles quelles dans le nom du produit
+   publié sur la boutique. */
+const entityDecoder = cheerio.load('<div id="__decode"></div>');
+
+/* Sentinelle qui survit au parseur HTML (contrairement à `\u0000`, que les
+   parseurs suppriment) et qui n'apparaît pas dans un titre de produit. */
+const AMPERSAND_GUARD = '\uE000';
+
+/**
+ * Décode les entités HTML en UNE SEULE passe.
+ *
+ * Pourquoi la sentinelle : décoder directement `&amp;eacute;` donnerait `é`,
+ * alors que le site affichait littéralement « &eacute; ». Le parseur HTML
+ * décode en effet `&amp;` en `&` puis réinterprète le reste — un double décodage
+ * qui corromprait silencieusement un titre légitimement échappé. On met donc les
+ * « & » d'origine de côté le temps du décodage, puis on les restaure.
+ */
+function decodeHtmlEntities(value) {
+  const guarded = String(value).replace(/&amp;|&#0*38;|&#x0*26;/gi, AMPERSAND_GUARD);
+  return entityDecoder('#__decode').html(guarded).text().split(AMPERSAND_GUARD).join('&');
+}
+
+/** Normalise un texte déjà propre (attribut `content`, `.text()`, titres…).
+    Ces valeurs viennent du DOM et sont DÉJÀ décodées par cheerio : les redécoder
+    transformerait un titre affichant littéralement « &eacute; » en « é ». */
 function cleanText(value) {
   if (value === null || value === undefined) return '';
   return String(value).replace(/\s+/g, ' ').trim();
+}
+
+/**
+ * Normalise un texte issu d'une source JSON — bloc JSON-LD, API Shopify ou
+ * WooCommerce. Ces valeurs ne traversent AUCUN parseur HTML (`JSON.parse`
+ * seulement), donc leurs entités HTML restent brutes.
+ *
+ * C'est de là que venait le titre observé en production : « … Led Carr&eacute;
+ * En Acrylique … D&#39;&eacute;criture Effa&ccedil;able », publié tel quel dans
+ * le nom du produit. `cleanText` ne pouvait pas le corriger, puisque les valeurs
+ * du DOM passent déjà par le décodeur de cheerio — décoder les deux fois serait
+ * faux.
+ */
+function cleanJsonText(value) {
+  if (value === null || value === undefined) return '';
+  // Décoder AVANT de compresser les espaces : `&nbsp;` devient une espace
+  // insécable que le `\s+` suivant ramène à une espace ordinaire.
+  return decodeHtmlEntities(String(value)).replace(/\s+/g, ' ').trim();
 }
 
 /**
@@ -1131,7 +1182,7 @@ async function scrapeShopifyFastPath(origin, handle, { lookupHost, budget }) {
     return {
       responded: true,
       payload: {
-        title: cleanText(product.title),
+        title: cleanJsonText(product.title),
         rawDescription: htmlToText(product.body_html),
         purchasePrice: Number.isFinite(price) ? price : 0,
         currency: detectCurrencyFromText(product.currency || variant?.price_currency || '', 'USD'),
@@ -1200,7 +1251,7 @@ async function scrapeWoocommerceFastPath(origin, handle, { lookupHost, budget })
     return {
       responded: true,
       payload: {
-        title: cleanText(product.name),
+        title: cleanJsonText(product.name),
         rawDescription: htmlToText(description),
         purchasePrice: price,
         currency,
@@ -1244,7 +1295,7 @@ function extractFromHtml(html, finalUrl, patternSite) {
   const jsonLdProduct = parseJsonLdProduct($);
 
   const title =
-    cleanText(jsonLdProduct?.name) ||
+    cleanJsonText(jsonLdProduct?.name) ||
     cleanText($('meta[property="og:title"]').attr('content')) ||
     cleanText($('[itemprop="name"]').first().attr('content') || $('[itemprop="name"]').first().text()) ||
     cleanText($('h1').first().text()) ||
@@ -1253,7 +1304,7 @@ function extractFromHtml(html, finalUrl, patternSite) {
   if (!title || BLOCKED_PAGE_TITLE.test(title)) return null;
 
   const rawDescription =
-    cleanText(jsonLdProduct?.description) ||
+    cleanJsonText(jsonLdProduct?.description) ||
     cleanText($('meta[property="og:description"]').attr('content')) ||
     cleanText($('meta[name="description"]').attr('content')) ||
     cleanText($('[itemprop="description"]').first().attr('content') || $('[itemprop="description"]').first().text());
@@ -1391,7 +1442,7 @@ const MARKDOWN_INLINE = /[*_`>#]+/g;
 
 /** Retire le balisage markdown d'une ligne (liens, emphases, titres). */
 function stripMarkdownInline(value) {
-  return String(value || '')
+  return decodeHtmlEntities(String(value || ''))
     .replace(/!\[[^\]]*\]\([^)]*\)/g, ' ')
     .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')
     .replace(MARKDOWN_INLINE, ' ')
