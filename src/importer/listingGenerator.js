@@ -1,6 +1,7 @@
 import { askModel, parseJsonFromModel } from '../ai/client.js';
 import { dbGet, dbRun, logActivity } from '../db/database.js';
-import { computeSuggestedPrice } from './pricing.js';
+import { computePriceFromSupplier } from './pricing.js';
+import { loadCurrencyRates } from '../db/currency-catalogue.js';
 import { config } from '../config/env.js';
 import { connectors } from '../connectors/index.js';
 
@@ -204,11 +205,37 @@ export async function generateListingsForImport(importId) {
     throw new Error(`Réponse IA non exploitable (JSON invalide) : ${raw.slice(0, 200)}`);
   }
 
-  const suggestedPrice = computeSuggestedPrice(imp.purchase_price, config.pricing);
-  // Le prix d'achat est « exploitable » dès qu'il est strictement positif. On ne
-  // touche pas à l'arithmétique (computeSuggestedPrice reste la seule source du
-  // prix) : on se contente de rendre le cas dégénéré impossible à manquer.
-  const purchasePriceIsUsable = Number.isFinite(imp.purchase_price) && imp.purchase_price > 0;
+  /* Prix conseillé : on part du COÛT RENDU (prix fournisseur converti en euros,
+     plus la part de transport et de douane de ce lot), et non plus du prix
+     fournisseur brut. L'ancien calcul multipliait un montant en dollars par un
+     coefficient et appelait le résultat des euros.
+
+     Un échec de conversion (devise sans taux) ne doit PAS faire perdre les
+     fiches : leur texte reste utile et le prix se corrige après coup. On génère
+     donc à 0 € en gardant la RAISON, exactement comme pour un prix d'achat non
+     lu — sans quoi l'utilisateur verrait un prix nul sans savoir pourquoi. */
+  let suggestedPrice = 0;
+  let priceError = null;
+  try {
+    const rates = await loadCurrencyRates();
+    ({ suggestedPrice } = computePriceFromSupplier({
+      purchasePrice: imp.purchase_price,
+      currency: imp.currency,
+      lotQuantity: imp.lot_quantity,
+      lotFees: imp.lot_fees,
+      rates,
+      marginCoefficient: config.pricing.marginCoefficient,
+      fixedFee: config.pricing.fixedFee,
+    }));
+  } catch (error) {
+    priceError = error.message;
+  }
+
+  // Le prix d'achat est « exploitable » dès qu'il est strictement positif ET
+  // convertible. On ne touche pas à l'arithmétique (computeSuggestedPrice reste
+  // la seule source du prix) : on rend le cas dégénéré impossible à manquer.
+  const purchasePriceIsUsable = !priceError
+    && Number.isFinite(imp.purchase_price) && imp.purchase_price > 0;
   const now = Date.now();
   const saved = [];
 
@@ -267,12 +294,18 @@ export async function generateListingsForImport(importId) {
   // champ n'est ajouté QUE dans ce cas — sinon il deviendrait un bruit permanent
   // que plus personne ne lirait.
   if (!purchasePriceIsUsable) {
-    payload.warning = MISSING_PURCHASE_PRICE_WARNING;
+    // Deux causes très différentes, et les confondre enverrait l'utilisateur
+    // corriger le mauvais champ : un prix non lu se saisit à la main, une devise
+    // sans taux se règle dans Paramètres.
+    payload.warning = priceError
+      ? `Prix conseillé calculé à 0 € : ${priceError}`
+      : MISSING_PURCHASE_PRICE_WARNING;
     await logActivity(
       'IMPORT_PRIX_MANQUANT',
-      `Import #${importId} : ${MISSING_PURCHASE_PRICE_WARNING}`,
+      `Import #${importId} : ${payload.warning}`,
     );
   }
+  if (priceError) payload.priceError = priceError;
 
   return payload;
 }

@@ -1,4 +1,6 @@
 import { createClient } from '@libsql/client';
+/* Données pures, sans import : aucun cycle possible avec ce module. */
+import { CURRENCY_CATALOGUE } from './currency-data.js';
 import { mkdirSync, readFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -237,6 +239,26 @@ async function migrateImportsExtractionMethod() {
   return addedMethod || addedNotes;
 }
 
+/* Coût rendu d'un import : ce qu'une unité coûte VRAIMENT, transport et douane
+   compris. Le hub ne calculait le prix de vente qu'à partir du prix fournisseur,
+   ce qui revient à ignorer la moitié de la dépense — sur un produit à 0,75 $
+   dont le port coûte 2,50 $, le prix de vente conseillé était faux de plus de
+   300 %.
+
+   `lot_quantity` et `lot_fees` sont saisis sur l'import, parce que les frais se
+   connaissent par LOT (un envoi de 500 pièces), pas par pièce : c'est la
+   division qui donne le coût unitaire. Les deux ont une valeur par défaut
+   inoffensive — 1 pièce, 0 frais — donc les imports déjà en base gardent
+   exactement le prix qu'ils avaient. */
+async function migrateImportsLandedCost() {
+  const addedQuantity = await addColumnIfMissing('imports', 'lot_quantity', 'INTEGER NOT NULL DEFAULT 1');
+  const addedFees = await addColumnIfMissing('imports', 'lot_fees', 'REAL NOT NULL DEFAULT 0');
+  if (addedQuantity || addedFees) {
+    await logActivity('MIGRATION', 'Colonnes imports.lot_quantity et lot_fees ajoutées : le prix conseillé tient compte du transport et de la douane.');
+  }
+  return addedQuantity || addedFees;
+}
+
 /* Coût et délai d'expédition d'un transporteur, saisis à la main (aucune API
    de cotation en temps réel n'est branchée ici — voir src/services/shipping.js).
    NULL tant que non renseigné : un transporteur sans coût connu est ignoré par
@@ -407,6 +429,36 @@ export async function initDatabase() {
   await migrateTrendFindsReview();
   await migrateImportListingsQuality();
   await migrateImportsExtractionMethod();
+  await migrateImportsLandedCost();
+  await seedCurrenciesIfEmpty();
+}
+
+/* Les devises sont installées AVEC le schéma, et non au démarrage du serveur
+   comme les catalogues de partenaires et de transporteurs. La raison est simple :
+   le moteur de prix ne peut pas convertir un montant sans taux, donc sans cette
+   table il ne calcule RIEN. Un catalogue de confort peut manquer sans
+   conséquence ; celui-ci, non — et une base de test doit en avoir autant qu'une
+   base de production.
+
+   Le seed ne remplit la table que si elle est vide : un taux corrigé à la main
+   survit donc à tous les redéploiements, et une devise supprimée volontairement
+   ne réapparaît pas toute seule. */
+async function seedCurrenciesIfEmpty() {
+  const existing = await dbAll('SELECT code FROM currencies LIMIT 1');
+  if (existing.length > 0) return 0;
+
+  const now = Date.now();
+  for (const devise of CURRENCY_CATALOGUE) {
+    await dbRun(
+      'INSERT INTO currencies (code, country, name, rate_to_eur, updated_at) VALUES (?, ?, ?, ?, ?)',
+      [devise.code, devise.country, devise.name, devise.rateToEur, now],
+    );
+  }
+  await logActivity(
+    'MIGRATION',
+    `Tableau des devises installé : ${CURRENCY_CATALOGUE.length} devises, avec des taux de départ à vérifier dans Paramètres.`,
+  );
+  return CURRENCY_CATALOGUE.length;
 }
 
 export async function logActivity(kind, message) {

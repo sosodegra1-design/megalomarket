@@ -90,7 +90,8 @@ test('chaque vue a un sous-titre, un groupe et un titre', () => {
   const { sandbox } = loadDashboard();
   const V = vues(sandbox);
   const noms = Object.keys(V);
-  assert.equal(noms.length, 14, 'les quatorze vues du hub');
+  // Quinze depuis l'ajout de Paramètres (tableau des devises).
+  assert.equal(noms.length, 15, 'les quinze vues du hub');
   for (const nom of noms) {
     const v = V[nom];
     assert.ok(v.title && v.title.trim(), `titre manquant pour ${nom}`);

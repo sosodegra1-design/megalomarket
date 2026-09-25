@@ -5,7 +5,8 @@ import { readProductPageWithAgent } from '../importer/aiReader.js';
 import { generateListingsForImport, validateSitePayload } from '../importer/listingGenerator.js';
 import { publishListing, unpublishListing } from '../importer/publisher.js';
 import { connectors } from '../connectors/index.js';
-import { computeSuggestedPrice } from '../importer/pricing.js';
+import { computePriceFromSupplier } from '../importer/pricing.js';
+import { loadCurrencyRates } from '../db/currency-catalogue.js';
 import { config } from '../config/env.js';
 import { withResolvedMargin } from './suppliers.js';
 import { inspectImages } from '../ai/visionInspector.js';
@@ -429,7 +430,7 @@ importsRouter.delete(
 importsRouter.patch(
   '/:id',
   asyncRoute(async (req, res) => {
-    const { purchasePrice, currency, title, rawDescription, imageUrls } = req.body || {};
+    const { purchasePrice, currency, title, rawDescription, imageUrls, lotQuantity, lotFees } = req.body || {};
 
     const imp = await dbGet('SELECT id FROM imports WHERE id = ?', [req.params.id]);
     if (!imp) throw new Error('Import introuvable.');
@@ -456,6 +457,28 @@ importsRouter.patch(
       }
       fields.push('currency = ?');
       values.push(currency.trim().toUpperCase());
+    }
+
+    /* Quantité du lot et frais totaux (transport + douane) : les deux
+       ingrédients du coût rendu. Les frais se connaissent par LOT — un envoi de
+       500 pièces coûte un forfait — donc on stocke le forfait et la quantité, et
+       c'est le moteur de prix qui divise. Stocker directement un « coût
+       unitaire » obligerait à refaire la division à chaque correction de
+       quantité, et les deux valeurs finiraient par diverger. */
+    if (lotQuantity !== undefined) {
+      if (!Number.isInteger(lotQuantity) || lotQuantity < 1) {
+        throw new Error('Quantité du lot invalide : un entier supérieur ou égal à 1 est attendu.');
+      }
+      fields.push('lot_quantity = ?');
+      values.push(lotQuantity);
+    }
+
+    if (lotFees !== undefined) {
+      if (!Number.isFinite(lotFees) || lotFees < 0) {
+        throw new Error('Frais du lot invalides : un nombre positif ou nul est attendu (transport et douane du lot entier).');
+      }
+      fields.push('lot_fees = ?');
+      values.push(lotFees);
     }
 
     if (title !== undefined) {
@@ -502,7 +525,10 @@ importsRouter.patch(
  * coefficient d'une autre requête.
  */
 async function applySupplierMargin(importId, result) {
-  const imp = await dbGet('SELECT purchase_price, supplier_id FROM imports WHERE id = ?', [importId]);
+  const imp = await dbGet(
+    'SELECT purchase_price, currency, lot_quantity, lot_fees, supplier_id FROM imports WHERE id = ?',
+    [importId],
+  );
   if (!imp || imp.supplier_id == null) return result;
 
   const supplier = await dbGet('SELECT margin_coefficient FROM suppliers WHERE id = ?', [imp.supplier_id]);
@@ -510,7 +536,17 @@ async function applySupplierMargin(importId, result) {
   // prix, et le réécrire avec la même valeur ne ferait que brouiller l'affichage.
   if (!supplier || supplier.margin_coefficient == null) return result;
 
-  const price = computeSuggestedPrice(imp.purchase_price, {
+  /* Même chaîne que le générateur : coût rendu (devise convertie + transport
+     réparti), PUIS coefficient du partenaire. Appliquer le coefficient au prix
+     fournisseur brut, comme avant, aurait ignoré la conversion et le fret — donc
+     donné deux prix différents pour la même fiche selon le chemin emprunté. */
+  const rates = await loadCurrencyRates();
+  const { suggestedPrice: price } = computePriceFromSupplier({
+    purchasePrice: imp.purchase_price,
+    currency: imp.currency,
+    lotQuantity: imp.lot_quantity,
+    lotFees: imp.lot_fees,
+    rates,
     marginCoefficient: supplier.margin_coefficient,
     fixedFee: config.pricing.fixedFee,
   });

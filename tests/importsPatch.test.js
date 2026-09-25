@@ -292,3 +292,56 @@ test('more than 30 images is refused', async () => {
   assert.equal(status, 400);
   assert.match(body.error, /30 photos maximum/);
 });
+
+/* ===================== COÛT RENDU : LOT ET FRAIS ===================== */
+
+test('la quantité du lot et les frais totaux se saisissent sur l’import', async () => {
+  const id = await createImport({ purchasePrice: 0.75 });
+  const { status, body } = await call(`/api/imports/${id}`, {
+    method: 'PATCH',
+    body: { lotQuantity: 500, lotFees: 375 },
+  });
+  assert.equal(status, 200);
+  assert.equal(body.lot_quantity, 500);
+  assert.equal(body.lot_fees, 375);
+
+  // Les deux valeurs sont bien persistées : ce sont elles qui alimentent le
+  // calcul du coût rendu, donc une valeur perdue fausserait tous les prix.
+  const enBase = await dbGet('SELECT lot_quantity, lot_fees FROM imports WHERE id = ?', [id]);
+  assert.equal(enBase.lot_quantity, 500);
+  assert.equal(enBase.lot_fees, 375);
+});
+
+test('une quantité de lot absurde est refusée', async () => {
+  const id = await createImport();
+  for (const mauvaise of [0, -3, 2.5, 'beaucoup']) {
+    const { status, body } = await call(`/api/imports/${id}`, {
+      method: 'PATCH',
+      body: { lotQuantity: mauvaise },
+    });
+    assert.equal(status, 400, `quantité « ${mauvaise} » doit être refusée`);
+    assert.match(body.error, /Quantité du lot invalide/);
+  }
+});
+
+test('des frais de lot négatifs sont refusés', async () => {
+  const id = await createImport();
+  const { status, body } = await call(`/api/imports/${id}`, {
+    method: 'PATCH',
+    body: { lotFees: -10 },
+  });
+  assert.equal(status, 400);
+  assert.match(body.error, /Frais du lot invalides/);
+});
+
+test('omettre la quantité laisse la valeur en base intacte', async () => {
+  // Un PATCH partiel ne doit jamais remettre un champ à zéro par omission :
+  // corriger la devise ne doit pas effacer la quantité du lot.
+  const id = await createImport({ purchasePrice: 0.75 });
+  await call(`/api/imports/${id}`, { method: 'PATCH', body: { lotQuantity: 500, lotFees: 375 } });
+  await call(`/api/imports/${id}`, { method: 'PATCH', body: { currency: 'EUR' } });
+
+  const enBase = await dbGet('SELECT lot_quantity, lot_fees FROM imports WHERE id = ?', [id]);
+  assert.equal(enBase.lot_quantity, 500, 'la quantité est conservée');
+  assert.equal(enBase.lot_fees, 375, 'les frais sont conservés');
+});

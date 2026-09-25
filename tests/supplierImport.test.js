@@ -35,7 +35,7 @@ process.env.OWN_SITE_API_KEY = '';
 const { app } = await import('../src/server.js');
 const { config } = await import('../src/config/env.js');
 const { initDatabase, dbRun, dbGet, dbAll } = await import('../src/db/database.js');
-const { computeSuggestedPrice } = await import('../src/importer/pricing.js');
+const { computeSuggestedPrice, computeLandedCost, computePriceFromSupplier } = await import('../src/importer/pricing.js');
 
 const AI_REPLY = JSON.stringify({
   amazon: { title: 'Peluche renard 30cm', description: 'Douce et robuste.' },
@@ -167,12 +167,29 @@ test('la marge du partenaire remplace le coefficient global pour cet import', as
   }
 
   assert.equal(result.status, 200);
-  const expected = computeSuggestedPrice(10, {
+  // Nombre EXPLICITE, et non dérivé de la fonction testée : 10 USD valent
+  // 9,20 EUR au taux de 0,92, et 9,20 x 2,5 = 23,00.
+  // L'ancienne formule donnait 25,00 — elle ignorait la conversion de devise.
+  const expected = computePriceFromSupplier({
+    purchasePrice: 10,
+    currency: 'USD',
+    rates: { USD: 0.92 },
     marginCoefficient: 2.5,
     fixedFee: config.pricing.fixedFee,
-  });
-  assert.equal(expected, 25);
-  assert.ok(expected > computeSuggestedPrice(10, config.pricing), 'le test doit vraiment changer de prix');
+  }).suggestedPrice;
+  assert.equal(expected, 23);
+  // La conversion en euros ABAISSE le prix de base : 10 USD valent 9,20 EUR, pas
+  // 10. L'ancienne formule, qui ignorait la devise, aurait annoncé 25,00.
+  assert.ok(expected < 25, 'la conversion en euros abaisse le prix par rapport à l ancien calcul en dollars');
+  // Et la marge du partenaire change réellement le prix : on compare la MÊME
+  // chaîne avec le coefficient global, sinon on comparerait deux choses à la
+  // fois (la devise et le coefficient) — l'assertion précédente faisait cette
+  // erreur.
+  const avecCoefficientGlobal = computeSuggestedPrice(
+    computeLandedCost({ purchasePrice: 10, currency: 'USD', rates: { USD: 0.92 } }),
+    config.pricing,
+  );
+  assert.notEqual(expected, avecCoefficientGlobal, 'la marge du partenaire change bien le prix');
 
   // Le prix est celui du partenaire, dans la réponse ET en base.
   assert.ok(result.body.listings.every((l) => l.suggestedPrice === expected));
@@ -194,7 +211,9 @@ test('une marge NULL retombe sur le coefficient global', async () => {
   }
 
   assert.equal(result.status, 200);
-  const expected = computeSuggestedPrice(10, config.pricing);
+  const landed = computeLandedCost({ purchasePrice: 10, currency: 'USD', rates: { USD: 0.92 } });
+  assert.equal(landed, 9.2, 'coût rendu : 10 USD convertis, plus aucun frais');
+  const expected = computeSuggestedPrice(landed, config.pricing);
   assert.ok(result.body.listings.every((l) => l.suggestedPrice === expected));
 });
 
@@ -210,7 +229,9 @@ test('un import sans partenaire garde le coefficient global', async () => {
   }
 
   assert.equal(result.status, 200);
-  const expected = computeSuggestedPrice(10, config.pricing);
+  const landed = computeLandedCost({ purchasePrice: 10, currency: 'USD', rates: { USD: 0.92 } });
+  assert.equal(landed, 9.2, 'coût rendu : 10 USD convertis, plus aucun frais');
+  const expected = computeSuggestedPrice(landed, config.pricing);
   assert.ok(result.body.listings.every((l) => l.suggestedPrice === expected));
 });
 
