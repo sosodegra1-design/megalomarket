@@ -198,6 +198,8 @@
       --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
 
       --sidebar-w: 252px;
+      /* Largeur de la barre repliée : juste de quoi loger une icône. */
+      --sidebar-w-collapsed: 74px;
       --shadow: 0 1px 0 rgba(255, 255, 255, .03), 0 22px 46px -34px #000;
       --shadow-pop: 0 24px 48px -24px #000, 0 2px 0 rgba(255, 255, 255, .03);
       --ease: cubic-bezier(.22, .8, .3, 1);
@@ -383,6 +385,32 @@
     .nav-item.active .nav-count { color: var(--accent-ink); background: rgba(76, 141, 255, .16); }
     .nav-item:focus-visible { outline: 2px solid var(--accent); outline-offset: -1px; }
     .sidebar-foot { margin-top: auto; padding: 14px 10px 4px; color: var(--muted-2); font-size: var(--fs-2xs); line-height: 1.6; }
+    .nav-collapse { width: 100%; justify-content: flex-start; margin-bottom: 10px; }
+    .sidebar-foot-text { display: block; }
+    /* ---------- Barre latérale réduite ----------
+       Les libellés des entrées sont des nœuds de texte NUS (il n'y a aucun
+       élément à cibler), donc on les masque par `font-size: 0` et on rétablit
+       une taille lisible sur les enfants qui doivent rester visibles. Les deux
+       largeurs passent par des jetons, sinon `width` et `margin-left` finiraient
+       par diverger au premier ajustement.
+
+       Tout est sous `min-width: 701px` : en dessous, la barre est déjà un tiroir
+       hors écran et `margin-left` doit rester à 0 — la spécificité plus forte de
+       `.app.nav-collapsed .main` écraserait sans cela la règle mobile. */
+    @media (min-width: 701px) {
+      .app.nav-collapsed .sidebar { width: var(--sidebar-w-collapsed); padding-left: 9px; padding-right: 9px; }
+      .app.nav-collapsed .main { margin-left: var(--sidebar-w-collapsed); }
+      .app.nav-collapsed .brand-text,
+      .app.nav-collapsed .nav-label,
+      .app.nav-collapsed .sidebar-foot-text,
+      .app.nav-collapsed .nav-collapse-label { display: none; }
+      .app.nav-collapsed .nav-collapse { justify-content: center; }
+      .app.nav-collapsed .brand { justify-content: center; padding-left: 0; padding-right: 0; }
+      .app.nav-collapsed .nav-item { font-size: 0; justify-content: center; gap: 0; padding-left: 0; padding-right: 0; }
+      .app.nav-collapsed .nav-item svg { width: 20px; height: 20px; }
+      .app.nav-collapsed .nav-count { position: absolute; top: 2px; right: 7px; font-size: var(--fs-2xs); }
+      .app.nav-collapsed .nav-count[hidden] { display: none; }
+    }
     .nav-scrim {
       position: fixed; inset: 0; z-index: 35; background: rgba(4, 7, 12, .62);
       opacity: 0; pointer-events: none; transition: opacity .22s var(--ease);
@@ -497,6 +525,12 @@
     .grid { display: grid; gap: 18px; align-items: start; }
     .grid-2 { grid-template-columns: repeat(auto-fit, minmax(330px, 1fr)); }
     .grid-3 { grid-template-columns: repeat(auto-fit, minmax(290px, 1fr)); }
+    /* Rangée basse du tableau de bord : quatre cartes en 2 × 2 EXPLICITE. En
+       `auto-fit` avec un minimum de 290 px, quatre cartes se répartiraient en
+       3 + 1 et laisseraient deux trous — le défaut qu'on vient de corriger sur
+       les indicateurs. */
+    .grid-dash { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    @media (max-width: 900px) { .grid-dash { grid-template-columns: 1fr; } }
     .stack { display: flex; flex-direction: column; gap: 18px; }
     .card-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
     /* En-tête de carte avec un trait de séparation : c'est ce qui distingue un
@@ -644,6 +678,18 @@
     .marker[title] { cursor: help; }
     .cell-sub { color: var(--muted-2); font-size: var(--fs-2xs); margin-top: 2px; }
     .empty { color: var(--muted); font-size: var(--fs-sm); font-style: italic; }
+    /* État vide SOIGNÉ (la maquette en montre un : un cercle et une phrase pour
+       « Erreurs d'import »). Un simple texte gris en italique donne l'impression
+       que quelque chose n'a pas chargé, alors qu'une absence d'erreur est une
+       bonne nouvelle — le ton doit le dire. */
+    .empty-state { display: flex; flex-direction: column; align-items: center; gap: 9px; padding: 26px 18px; text-align: center; }
+    .empty-state-icon {
+      width: 44px; height: 44px; border-radius: 50%; display: grid; place-items: center;
+      background: var(--ok-soft); color: var(--ok-ink); border: 1px solid var(--ok-line);
+    }
+    .empty-state-icon svg { width: 22px; height: 22px; }
+    .empty-state-title { color: var(--text-2); font-size: var(--fs-sm); font-weight: 600; }
+    .empty-state-text { color: var(--muted-2); font-size: var(--fs-xs); margin: 0; }
     .cell-strong { font-weight: 600; }
     .cell-muted { color: var(--muted); }
     .num { font-variant-numeric: tabular-nums; }
@@ -1423,8 +1469,16 @@
       </a>
     </nav>
     <div class="sidebar-foot">
-      Back-office omnicanal.<br>
-      Aucune page de connexion : le navigateur présente la clé du service.
+      <!-- Repli de la barre latérale, comme sur la maquette. Utile sur un écran
+           étroit ou pour rendre la place aux tableaux larges. Le choix est
+           mémorisé : le refaire à chaque visite serait une corvée. -->
+      <button class="btn btn-ghost btn-xs nav-collapse" id="btnCollapseNav" type="button"
+              aria-expanded="true" aria-controls="sidebar" title="Réduire ou déployer le menu">
+        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 6 8 12l6 6"/></svg>
+        <span class="nav-collapse-label">Réduire le menu</span>
+      </button>
+      <span class="sidebar-foot-text">Back-office omnicanal.<br>
+      Aucune page de connexion : le navigateur présente la clé du service.</span>
     </div>
   </aside>
 
@@ -1466,6 +1520,31 @@
       <!-- ==================== VUE : TABLEAU DE BORD ==================== -->
       <section class="view active" id="view-dashboard" data-view="dashboard">
         <div class="kpi-grid">
+          <!-- Première rangée : les indicateurs de SANTÉ de la maquette PDF (coût
+               moyen, marge moyenne, imports réussis, à vérifier). Les huit
+               suivants comptent des volumes ; ceux-ci disent si le hub se porte
+               bien — ce qu'un total ne dit jamais. Ils sont en tête, comme sur
+               la maquette. -->
+          <div class="kpi">
+            <span class="kpi-label">Coût moyen</span>
+            <span class="kpi-value" id="kpiCoutMoyen">—</span>
+            <span class="kpi-hint" id="kpiCoutMoyenHint">prix d'achat moyen</span>
+          </div>
+          <div class="kpi">
+            <span class="kpi-label">Marge moyenne</span>
+            <span class="kpi-value" id="kpiMargeMoyenne">—</span>
+            <span class="kpi-hint" id="kpiMargeMoyenneHint">coefficient appliqué</span>
+          </div>
+          <div class="kpi">
+            <span class="kpi-label">Imports réussis</span>
+            <span class="kpi-value" id="kpiReussite">—</span>
+            <span class="kpi-hint" id="kpiReussiteHint">prix réellement lu</span>
+          </div>
+          <div class="kpi">
+            <span class="kpi-label">À vérifier</span>
+            <span class="kpi-value" id="kpiAVerifier">0</span>
+            <span class="kpi-hint" id="kpiAVerifierHint">imports en brouillon</span>
+          </div>
           <div class="kpi">
             <span class="kpi-label">Produits</span>
             <span class="kpi-value" id="kpiProduits"><span class="skel skel-num"></span></span>
@@ -1508,7 +1587,7 @@
           </div>
         </div>
 
-        <div class="grid grid-3">
+        <div class="grid grid-dash">
           <div class="card reveal-in">
             <div class="card-head">
               <div>
@@ -1541,6 +1620,20 @@
             <h2>Derniers événements</h2>
             <p class="hint hint-tight">Ce que le hub a fait, dans l'ordre. <a href="#/journal">Ouvrir le journal.</a></p>
             <div class="mini-list" id="dashActivity"><div class="skel-card"><span class="skel skel-bar" style="width:70%"></span><span class="skel skel-bar" style="width:45%"></span></div></div>
+          </div>
+
+          <!-- Carte reprise de la maquette PDF. Elle manquait : une extraction
+               qui échoue ne se voyait que par un toast fugace ou perdue dans le
+               journal. Ici elle reste à l'écran tant qu'elle n'est pas traitée. -->
+          <div class="card reveal-in">
+            <div class="card-head">
+              <div>
+                <h2>Erreurs d'import</h2>
+                <p class="hint hint-tight">Extractions des dernières 24 heures qui n'ont lu aucun prix.</p>
+              </div>
+              <span class="pill off" id="dashErrorCount">Aucune</span>
+            </div>
+            <div id="dashImportErrors"><div class="skel-card"><span class="skel skel-bar" style="width:65%"></span><span class="skel skel-bar" style="width:40%"></span></div></div>
           </div>
         </div>
       </section>
@@ -3588,6 +3681,82 @@ function renderDashboard() {
   }
   const configured = state.channels.filter((c) => c.configured).length;
 
+  /* ---------- Indicateurs de santé (maquette PDF, première rangée) ----------
+     Ils ne comptent pas des volumes mais disent si le hub se porte bien. Tous
+     sont calculés à partir des données déjà chargées : aucun appel réseau
+     supplémentaire. */
+  const setKpi = (id, texte) => { const el = $(id); if (el) el.textContent = texte; };
+  // Même chose pour les infobulles : un seul helper, utilisé pour la valeur
+  // comme pour sa légende (le helper `hint` du reste de la fonction est déclaré
+  // plus bas, donc inaccessible ici — le référencer lèverait une erreur).
+
+  /* Coût moyen : moyenne des prix d'achat RÉELLEMENT lus, sur la devise la plus
+     représentée. Mélanger des dollars et des euros donnerait un nombre qui ne
+     veut rien dire — on l'annonce donc dans l'infobulle plutôt que de le
+     masquer. */
+  const prixParDevise = new Map();
+  for (const imp of state.imports) {
+    const prix = Number(imp.purchase_price);
+    if (!Number.isFinite(prix) || prix <= 0) continue;
+    const devise = imp.currency || 'USD';
+    if (!prixParDevise.has(devise)) prixParDevise.set(devise, []);
+    prixParDevise.get(devise).push(prix);
+  }
+  let devisePrincipale = null;
+  for (const devise of prixParDevise.keys()) {
+    if (devisePrincipale === null || prixParDevise.get(devise).length > prixParDevise.get(devisePrincipale).length) {
+      devisePrincipale = devise;
+    }
+  }
+  if (devisePrincipale === null) {
+    setKpi('kpiCoutMoyen', '—');
+    setKpi('kpiCoutMoyenHint', 'aucun prix lu');
+  } else {
+    const liste = prixParDevise.get(devisePrincipale);
+    const moyenne = liste.reduce((total, p) => total + p, 0) / liste.length;
+    setKpi('kpiCoutMoyen', moyenne.toFixed(2) + ' ' + devisePrincipale);
+    setKpi('kpiCoutMoyenHint', 'sur ' + liste.length + ' import' + (liste.length > 1 ? 's' : ''));
+  }
+
+  /* Marge moyenne : le coefficient réellement appliqué à chaque import — celui
+     du partenaire s'il en a un, sinon le coefficient global du hub. Un
+     partenaire sans coefficient propre ne compte donc pas pour zéro. */
+  const coefficients = state.imports.map((imp) => {
+    const partenaire = state.suppliers.find((s) => String(s.id) === String(imp.supplier_id));
+    const propre = partenaire && partenaire.margin_coefficient != null
+      ? Number(partenaire.margin_coefficient)
+      : null;
+    return propre != null ? propre : globalMarginCoefficient();
+  }).filter((c) => Number.isFinite(c) && c > 0);
+  if (coefficients.length) {
+    const moyenne = coefficients.reduce((total, c) => total + c, 0) / coefficients.length;
+    setKpi('kpiMargeMoyenne', '×' + moyenne.toFixed(2));
+    setKpi('kpiMargeMoyenneHint', 'sur ' + coefficients.length + ' import' + (coefficients.length > 1 ? 's' : ''));
+  } else {
+    setKpi('kpiMargeMoyenne', '—');
+    setKpi('kpiMargeMoyenneHint', 'aucun coefficient');
+  }
+
+  /* Imports réussis : part des imports dont un prix a réellement été lu. C'est
+     l'indicateur qui manquait pour repérer un site qui bloque sans avoir à
+     ouvrir chaque fiche. */
+  const avecPrix = state.imports.filter((imp) => Number(imp.purchase_price) > 0).length;
+  if (state.imports.length) {
+    setKpi('kpiReussite', ((avecPrix / state.imports.length) * 100).toFixed(1).replace('.', ',') + ' %');
+    setKpi('kpiReussiteHint', avecPrix + ' sur ' + state.imports.length);
+  } else {
+    setKpi('kpiReussite', '—');
+    setKpi('kpiReussiteHint', 'aucun import');
+  }
+
+  /* À vérifier : les imports restés au stade brouillon, c'est-à-dire ce sur quoi
+     il reste une décision à prendre. */
+  const enBrouillon = state.imports.filter((imp) => imp.status === 'brouillon').length;
+  animateCount($('kpiAVerifier'), enBrouillon);
+  setKpi('kpiAVerifierHint', enBrouillon
+    ? 'import' + (enBrouillon > 1 ? 's' : '') + ' à valider'
+    : 'rien en attente');
+
   animateCount($('kpiProduits'), state.products.length);
   animateCount($('kpiImports'), state.imports.length);
   animateCount($('kpiFiches'), fiches);
@@ -3661,6 +3830,47 @@ function renderDashboardLists() {
       )).join('')
       : '<p class="empty">Aucun import pour le moment. <a href="#/imports">Extrais une première fiche.</a></p>';
     stagger(importsBox);
+  }
+
+  /* ---------- Erreurs d'import (maquette PDF) ----------
+     Une extraction qui n'a lu aucun prix est un échec : c'est exactement le faux
+     succès qu'on a supprimé côté serveur, et il doit rester visible. On se limite
+     aux dernières 24 heures, comme la maquette, pour que la carte redevienne
+     vide une fois le problème traité — une liste qu'on ne peut jamais vider ne
+     se lit plus. */
+  const errorsBox = $('dashImportErrors');
+  if (errorsBox) {
+    const limite = Date.now() - 24 * 3600 * 1000;
+    const enEchec = state.imports
+      .filter((i) => Number(i.created_at) >= limite && !(Number(i.purchase_price) > 0))
+      .sort((a, b) => Number(b.created_at) - Number(a.created_at));
+
+    const badge = $('dashErrorCount');
+    if (badge) {
+      badge.textContent = enEchec.length
+        ? enEchec.length + (enEchec.length > 1 ? ' erreurs' : ' erreur')
+        : 'Aucune';
+      // Vert quand tout va bien, rouge dès qu'il y a quelque chose à traiter :
+      // la couleur porte l'information, pas seulement le texte.
+      badge.className = 'pill ' + (enEchec.length ? 'bad' : 'ok');
+    }
+
+    errorsBox.innerHTML = enEchec.length
+      ? '<div class="mini-list">' + enEchec.map((i) => (
+        '<div class="mini-row row-in">'
+        + '<div class="mini-main"><span class="mini-title">' + esc(i.title) + '</span>'
+        + '<span class="mini-meta">' + esc(i.source_site) + ' · aucun prix lu · ' + esc(when(i.created_at)) + '</span></div>'
+        + '<a class="btn btn-ghost btn-xs" href="#/imports">Corriger</a>'
+        + '</div>'
+      )).join('') + '</div>'
+      // Bonne nouvelle assumée : l'absence d'erreur n'est pas un vide, c'est un
+      // résultat. Le dire évite de croire à un chargement raté.
+      : '<div class="empty-state">'
+        + '<span class="empty-state-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6.5 9.5 17 4 11.5"/></svg></span>'
+        + '<span class="empty-state-title">Aucune erreur à signaler</span>'
+        + '<p class="empty-state-text">Les imports qui échouent apparaîtront ici, avec la raison de l\'échec.</p>'
+        + '</div>';
+    stagger(errorsBox);
   }
 
   const activityBox = $('dashActivity');
@@ -7313,6 +7523,41 @@ function toggleNav(force) {
 
 $('btnMenu').addEventListener('click', () => toggleNav());
 $('navScrim').addEventListener('click', () => toggleNav(false));
+
+/* ---------- Repli de la barre latérale (maquette PDF) ----------
+   Le choix est mémorisé dans le navigateur : le refaire à chaque visite serait
+   une corvée, et ce n'est pas une donnée de service — inutile de la remonter au
+   serveur. Le stockage peut être indisponible (navigation privée) : dans ce cas
+   le repli fonctionne quand même, il n'est simplement pas retenu. */
+const NAV_COLLAPSED_KEY = 'mm_nav_collapsed_v1';
+
+function setNavCollapsed(collapsed) {
+  const app = $('app');
+  if (app && app.classList) app.classList.toggle('nav-collapsed', collapsed);
+  const button = $('btnCollapseNav');
+  if (button) {
+    button.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+    // Le libellé visible disparaît une fois replié : `title` et `aria-label`
+    // deviennent alors les seuls repères, et ils doivent décrire l'action à
+    // venir (« Déployer »), pas l'état courant.
+    button.setAttribute('aria-label', collapsed ? 'Déployer le menu' : 'Réduire le menu');
+    button.setAttribute('title', collapsed ? 'Déployer le menu' : 'Réduire le menu');
+  }
+  try { localStorage.setItem(NAV_COLLAPSED_KEY, collapsed ? '1' : '0'); } catch { /* stockage indisponible */ }
+}
+
+try { setNavCollapsed(localStorage.getItem(NAV_COLLAPSED_KEY) === '1'); } catch { /* stockage indisponible */ }
+
+if ($('btnCollapseNav')) {
+  $('btnCollapseNav').addEventListener('click', (event) => {
+    const app = $('app');
+    const collapsed = app && app.classList && typeof app.classList.contains === 'function'
+      ? app.classList.contains('nav-collapsed')
+      : false;
+    setNavCollapsed(!collapsed);
+    void event;
+  });
+}
 
 /* Échap referme le tiroir mobile et la liste de partenaires ouverte : deux
    surfaces qui recouvrent le contenu doivent toujours pouvoir être écartées au

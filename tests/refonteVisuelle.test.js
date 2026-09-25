@@ -32,8 +32,26 @@ function element(id) {
   return {
     id, innerHTML: '', textContent: '', className: '', hidden: false, disabled: false,
     title: '', value: '', dataset: {}, style: {},
-    classList: { add() {}, remove() {}, toggle() {} },
-    setAttribute() {}, removeAttribute() {}, hasAttribute() { return false; },
+    // `classList` SUIT réellement les classes : un stub vide ne permettrait pas
+    // de vérifier un repli de menu, qui n'est rien d'autre qu'un changement de
+    // classe. `className` et `classList` sont donc tenus cohérents entre eux.
+    classList: (() => {
+      const classes = new Set();
+      return {
+        add: (c) => { classes.add(c); },
+        remove: (c) => { classes.delete(c); },
+        contains: (c) => classes.has(c),
+        toggle: (c, force) => {
+          const ajouter = force === undefined ? !classes.has(c) : Boolean(force);
+          if (ajouter) classes.add(c); else classes.delete(c);
+          return ajouter;
+        },
+        _all: () => [...classes],
+      };
+    })(),
+    setAttribute(name, value) { this[name] = value; },
+    removeAttribute(name) { delete this[name]; },
+    hasAttribute(name) { return this[name] !== undefined; },
     append() {}, addEventListener() {}, querySelector() { return null; }, querySelectorAll() { return []; },
   };
 }
@@ -126,12 +144,58 @@ test('la grille d’indicateurs n’est plus automatique (elle laissait un trou)
   assert.match(CSS, /@media \(max-width: 1080px\) \{ \.kpi-grid \{ grid-template-columns: repeat\(2,/, 'palier à deux colonnes');
 });
 
-test('la grille de la vue large compte bien huit indicateurs', () => {
+test('la grille de la vue large compte douze indicateurs (3 rangées de 4)', () => {
   const grille = HTML.slice(HTML.indexOf('<div class="kpi-grid">'));
   const fin = grille.indexOf('</div>\n      </div>');
   const bloc = grille.slice(0, fin === -1 ? 12000 : fin);
   const n = (bloc.match(/class="kpi"/g) || []).length;
-  assert.equal(n, 8, 'huit indicateurs sur le tableau de bord : 4 × 2 tombe juste');
+  // 4 indicateurs de SANTÉ (maquette PDF : coût moyen, marge moyenne, imports
+  // réussis, à vérifier) + 8 compteurs de volume. Douze tombe juste sur une
+  // grille à quatre colonnes — c'est ce qui évite le trou qu'on avait avec huit.
+  assert.equal(n, 12, 'douze indicateurs : 4 × 3 rangées pleines');
+});
+
+test('les quatre indicateurs de santé de la maquette sont présents, et en tête', () => {
+  for (const id of ['kpiCoutMoyen', 'kpiMargeMoyenne', 'kpiReussite', 'kpiAVerifier']) {
+    assert.ok(HTML.includes(`id="${id}"`), `l’indicateur #${id} doit exister`);
+  }
+  // La santé d'abord, les volumes ensuite — l'ordre de la maquette.
+  const sante = HTML.indexOf('id="kpiCoutMoyen"');
+  const volume = HTML.indexOf('id="kpiProduits"');
+  assert.ok(sante > 0 && sante < volume, 'la rangée de santé précède les compteurs de volume');
+});
+
+test('les indicateurs de santé sont réellement calculés, pas décoratifs', () => {
+  const { sandbox, node } = loadDashboard();
+  // `state` est un `const` de haut niveau : il n'est pas exposé comme propriété
+  // du contexte, contrairement aux déclarations de fonction. On le récupère donc
+  // par évaluation dans le contexte, comme la table VIEWS plus haut.
+  const state = vm.runInContext('state', sandbox);
+  state.imports = [
+    { id: 1, status: 'pret', purchase_price: 10, currency: 'EUR', supplier_id: 7 },
+    { id: 2, status: 'brouillon', purchase_price: 20, currency: 'EUR', supplier_id: null },
+    { id: 3, status: 'brouillon', purchase_price: 0, currency: 'EUR', supplier_id: null },
+  ];
+  state.suppliers = [{ id: 7, kind: 'fournisseur', name: 'Test', margin_coefficient: 2 }];
+  state.products = [];
+  state.channels = [];
+  state.activity = [];
+  state.config = { pricing: { marginCoefficient: 1.5 } };
+  sandbox.renderDashboard();
+
+  // Coût moyen : (10 + 20) / 2. La fiche à 0 est EXCLUE : elle ne dit rien du
+  // prix, et la compter tirerait la moyenne vers le bas.
+  assert.equal(node('kpiCoutMoyen').textContent, '15.00 EUR');
+  // Marge moyenne : le partenaire applique 2.00, les deux autres le coefficient
+  // global 1.5 → (2 + 1.5 + 1.5) / 3. Un partenaire sans coefficient propre ne
+  // compte pas pour zéro.
+  assert.equal(node('kpiMargeMoyenne').textContent, '×1.67');
+  // Réussite : deux prix lus sur trois imports.
+  assert.match(node('kpiReussite').textContent, /^66[.,]7 %$/);
+  // À vérifier : les deux brouillons. Ce compteur passe par animateCount, qui
+  // anime sur 560 ms : la valeur affichée n'est donc pas posée de façon
+  // synchrone. C'est la CIBLE enregistrée qui porte le résultat du calcul.
+  assert.equal(node('kpiAVerifier').dataset.count, '2');
 });
 
 /* ===================== DENSITÉ DES TABLEAUX ===================== */
@@ -155,4 +219,82 @@ test('le bandeau « tout est configuré » est compact, celui d’alerte reste c
   // L'alerte, elle, garde sa mise en forme pleine : c'est là qu'il y a quelque
   // chose à faire, donc elle doit rester visible.
   assert.ok(!/\.banner\.warn\.compact|\.banner\.err\.compact/.test(CSS), 'aucune alerte n’est compactée');
+});
+
+/* ===================== CARTE « ERREURS D'IMPORT » (maquette PDF) ===================== */
+
+test('la carte « Erreurs d’import » existe, avec un état vide soigné', () => {
+  assert.ok(HTML.includes('id="dashImportErrors"'), 'le conteneur de la carte doit exister');
+  assert.ok(HTML.includes('id="dashErrorCount"'), 'la pastille de comptage doit exister');
+  assert.match(CSS, /\.empty-state-icon/, 'l’état vide a un cercle, pas un simple texte gris');
+  assert.match(HTML, /Aucune erreur à signaler/);
+});
+
+test('la carte liste les imports sans prix des dernières 24 h et passe au rouge', () => {
+  const { sandbox, node } = loadDashboard();
+  const state = vm.runInContext('state', sandbox);
+  const maintenant = Date.now();
+  state.imports = [
+    // Échec récent : aucun prix lu → doit apparaître
+    { id: 1, title: 'Fiche sans prix', source_site: 'alibaba.com', purchase_price: 0, created_at: maintenant - 3600000, status: 'brouillon' },
+    // Réussi → ne doit PAS apparaître
+    { id: 2, title: 'Fiche correcte', source_site: 'bigbuy.eu', purchase_price: 12, created_at: maintenant - 3600000, status: 'pret' },
+    // Échec mais trop ancien (48 h) → hors de la fenêtre de 24 h
+    { id: 3, title: 'Vieil échec', source_site: 'aliexpress.com', purchase_price: 0, created_at: maintenant - 48 * 3600000, status: 'brouillon' },
+  ];
+  state.products = []; state.channels = []; state.activity = []; state.suppliers = [];
+  state.config = { pricing: { marginCoefficient: 1.8 } };
+  sandbox.renderDashboard();
+
+  const html = node('dashImportErrors').innerHTML;
+  assert.match(html, /Fiche sans prix/, 'l’échec récent doit être listé');
+  assert.ok(!html.includes('Fiche correcte'), 'un import réussi ne doit pas être listé');
+  assert.ok(!html.includes('Vieil échec'), 'au-delà de 24 h, l’échec sort de la carte');
+  assert.equal(node('dashErrorCount').textContent, '1 erreur');
+  assert.match(node('dashErrorCount').className, /pill bad/);
+});
+
+test('sans erreur, la carte affiche l’état vide et une pastille verte', () => {
+  const { sandbox, node } = loadDashboard();
+  const state = vm.runInContext('state', sandbox);
+  state.imports = [{ id: 1, title: 'Ok', source_site: 'x.eu', purchase_price: 5, created_at: Date.now(), status: 'pret' }];
+  state.products = []; state.channels = []; state.activity = []; state.suppliers = [];
+  state.config = { pricing: { marginCoefficient: 1.8 } };
+  sandbox.renderDashboard();
+
+  assert.match(node('dashImportErrors').innerHTML, /Aucune erreur à signaler/);
+  assert.equal(node('dashErrorCount').textContent, 'Aucune');
+  assert.match(node('dashErrorCount').className, /pill ok/);
+});
+
+/* ===================== REPLI DE LA BARRE LATÉRALE ===================== */
+
+test('le bouton « Réduire le menu » existe et mémorise le choix', () => {
+  assert.ok(HTML.includes('id="btnCollapseNav"'), 'le bouton doit exister');
+  assert.match(HTML, /Réduire le menu/);
+  // Le repli est mémorisé : ce n'est pas une donnée de service, donc le
+  // navigateur suffit — inutile d'ajouter une colonne en base.
+  assert.match(HTML, /mm_nav_collapsed_v1/);
+
+  const { sandbox, node } = loadDashboard();
+  sandbox.setNavCollapsed(true);
+  assert.ok(node('app').classList.contains('nav-collapsed'), 'la classe de repli doit être posée');
+  assert.equal(node('btnCollapseNav').getAttribute?.('aria-expanded') ?? node('btnCollapseNav')['aria-expanded'], 'false');
+  sandbox.setNavCollapsed(false);
+  assert.ok(!node('app').classList.contains('nav-collapsed'), 'le dépli doit retirer la classe');
+});
+
+test('le repli ne s’applique QUE hors mobile (sinon il écrase le tiroir)', () => {
+  // `.app.nav-collapsed .main` a une spécificité plus forte que la règle mobile
+  // `.main { margin-left: 0 }` : sans la garde, la barre resterait décalée sur
+  // téléphone alors qu'elle est censée être un tiroir hors écran.
+  const debut = CSS.indexOf('.app.nav-collapsed .sidebar');
+  assert.ok(debut > 0, 'les règles de repli doivent exister');
+  const avant = CSS.slice(0, debut);
+  const derniereMedia = avant.lastIndexOf('@media');
+  assert.match(
+    avant.slice(derniereMedia, debut),
+    /@media \(min-width: 701px\)/,
+    'les règles de repli doivent être enfermées dans un media query de largeur minimale',
+  );
 });
