@@ -11,11 +11,13 @@ import { nichesRouter } from './routes/niches.js';
 import { siteRouter } from './routes/site.js';
 import { pipelineRouter } from './routes/pipeline.js';
 import { ordersRouter } from './routes/orders.js';
+import { currenciesRouter } from './routes/currencies.js';
 import { requireAdmin } from './middleware/auth.js';
 import { startScheduler } from './services/scheduler.js';
 import { initDatabase, logActivity } from './db/database.js';
 import { seedSuppliersIfEmpty } from './db/supplier-catalogue.js';
 import { seedCarriersIfEmpty } from './db/carrier-catalogue.js';
+import { seedCurrenciesIfEmpty } from './db/currency-catalogue.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -44,6 +46,7 @@ app.use('/api/niches', nichesRouter);
 app.use('/api/site', siteRouter);
 app.use('/api/pipeline', pipelineRouter);
 app.use('/api/orders', ordersRouter);
+app.use('/api/currencies', currenciesRouter);
 app.use(express.static(join(__dirname, 'public')));
 
 /* Décrit la base visée sans jamais exposer le jeton : l'hôte suffit à voir d'un
@@ -172,6 +175,19 @@ export async function start() {
     }
   } catch (error) {
     console.error('Catalogue de transporteurs non installé (le service démarre quand même) :', error);
+  }
+
+  /* Les devises, même principe encore : sans elles, un import en dollars ne peut
+     pas être converti et le prix conseillé serait faux. Le seed ne remplit la
+     table que si elle est vide, donc un taux corrigé à la main survit à tous les
+     redéploiements. */
+  try {
+    const { seeded } = await seedCurrenciesIfEmpty();
+    if (seeded > 0) {
+      console.log(`Tableau des devises installé : ${seeded} devises avec leur pays et un taux de départ à vérifier.`);
+    }
+  } catch (error) {
+    console.error('Tableau des devises non installé (le service démarre quand même) :', error);
   }
 
   return app.listen(config.port, () => {

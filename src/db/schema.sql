@@ -174,3 +174,18 @@ CREATE TABLE IF NOT EXISTS pipeline_runs (
   published_url TEXT,
   created_at INTEGER NOT NULL
 );
+
+-- Devises de sourcing, avec leur PAYS et leur NOM en clair : le propriétaire
+-- doit pouvoir reconnaître « Chine — Yuan chinois » sans savoir ce que « CNY »
+-- veut dire. `rate_to_eur` est la valeur en euros d'UNE unité de la devise
+-- (EUR = 1 par définition). Les taux sont saisis à la main : une API de change
+-- tomberait en panne au moment précis où l'on calcule un prix. `updated_at`
+-- permet de repérer un taux périmé.
+CREATE TABLE IF NOT EXISTS currencies (
+  code TEXT PRIMARY KEY,
+  country TEXT NOT NULL,
+  name TEXT NOT NULL,
+  rate_to_eur REAL NOT NULL CHECK (rate_to_eur > 0),
+  updated_at INTEGER NOT NULL
+);
+

@@ -37,7 +37,7 @@ const {
   generateListingsForImport,
   MISSING_PURCHASE_PRICE_WARNING,
 } = await import('../src/importer/listingGenerator.js');
-const { computeSuggestedPrice } = await import('../src/importer/pricing.js');
+const { computeLandedCost, computeSuggestedPrice } = await import('../src/importer/pricing.js');
 
 /* Réponse IA minimale mais exploitable : les quatre marketplaces. */
 const AI_REPLY = JSON.stringify({
@@ -140,7 +140,9 @@ test('a valid purchase price produces no warning at all (no permanent noise)', a
   assert.equal(result.warning, undefined);
   assert.ok(!('warning' in result), 'le champ ne doit pas exister quand le prix est exploitable');
 
-  const expected = computeSuggestedPrice(10, config.pricing);
+  // L'import de test est en USD (taux 0,92) : le coût rendu vaut 9,20 et non 10.
+  const landed = computeLandedCost({ purchasePrice: 10, currency: 'USD', rates: { USD: 0.92 } });
+  const expected = computeSuggestedPrice(landed, config.pricing);
   assert.ok(expected > 0);
   assert.ok(result.listings.every((l) => l.suggestedPrice === expected));
 
