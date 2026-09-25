@@ -1559,6 +1559,11 @@
                recréer l'import. -->
           <div id="importPriceBlock" style="display:none">
             <section class="panel-section">
+              <!-- Avertissement « page lue par un agent » : une fiche lue par IA
+                   n'a pas la valeur de preuve d'une fiche scrapée. On le dit
+                   AVANT le prix, parce que c'est le prix qui se propage dans
+                   les annonces publiées. -->
+              <div id="importExtractionWarning" class="price-warning" role="alert" hidden></div>
               <h3 class="panel-section-title">Prix d'achat fournisseur</h3>
               <div id="importPriceWarning" class="price-warning" role="alert" hidden></div>
               <div class="field-grid">
@@ -3542,7 +3547,7 @@ function renderDashboardLists() {
       ? rows.map((i) => (
         '<div class="mini-row row-in">'
         + '<div class="mini-main"><span class="mini-title">' + esc(i.title) + '</span>'
-        + '<span class="mini-meta">' + esc(i.source_site) + ' · ' + esc(when(i.created_at)) + '</span></div>'
+        + '<span class="mini-meta">' + esc(i.source_site) + (i.extraction_method === 'agent' ? ' · lue par IA' : '') + ' · ' + esc(when(i.created_at)) + '</span></div>'
         + '<span class="pill ' + (i.status === 'pret' ? 'ok' : 'off') + '">' + esc(i.status) + '</span>'
         + '</div>'
       )).join('')
@@ -5289,6 +5294,9 @@ const importsTable = createTable({
       + (i.source_url ? '<div style="font-size:.75rem"><a href="' + esc(i.source_url) + '" target="_blank" rel="noopener">Voir l\'article original ↗</a></div>' : '')
       + '</td>'
       + '<td data-label="Site" class="cell-muted">' + esc(i.source_site)
+      // Repère visible dans la liste, sans avoir à ouvrir la fiche : une page
+      // lue par un agent doit se distinguer d'un scrape réussi.
+      + (i.extraction_method === 'agent' ? '<div style="font-size:.75rem"><span class="pill off" title="Page lue par un agent web (site bloquant le scraping) — prix à vérifier">lue par IA</span></div>' : '')
       + (i.supplier_name ? '<div style="font-size:.75rem">via ' + esc(i.supplier_name) + '</div>' : '') + '</td>'
       + '<td data-label="Statut"><span class="pill ' + (i.status === 'pret' ? 'ok' : 'off') + '">' + esc(i.status) + '</span></td>'
       + '<td data-label="Prix d\'achat" class="num">' + money(i.purchase_price) + ' ' + esc(i.currency) + '</td>'
@@ -5388,6 +5396,38 @@ const MISSING_PURCHASE_PRICE_WARNING = "Prix d'achat fournisseur introuvable : l
 /* Affiche le prix d'achat et la devise de l'import courant, et prévient quand le
    prix est nul ou illisible. `data` peut venir de POST /api/imports (champs
    camelCase) ou de GET /api/imports/:id (colonnes SQL) : on accepte les deux. */
+/* Avertit quand la fiche n'a PAS été extraite du code source de la page mais
+   LUE par un agent web (voir importer/aiReader.js) — le cas des sites qui
+   bloquent tout scraping, comme Alibaba.
+
+   Pourquoi c'est affiché : une lecture par agent peut se tromper de variante ou
+   de devise, et cette erreur se propagerait silencieusement dans le prix de
+   vente conseillé puis dans les annonces publiées. Le prix affiché reste donc à
+   vérifier par l'utilisateur, et on lui donne la preuve (prix tel qu'écrit sur
+   la page, citation) pour qu'il puisse juger sans rouvrir la page.
+
+   `data` vient soit de POST /api/imports (camelCase), soit de
+   GET /api/imports/:id (colonnes SQL) : les deux formes sont acceptées, comme
+   dans renderImportPrice. */
+function renderExtractionWarning(data) {
+  const el = $('importExtractionWarning');
+  if (!el) return;
+  const method = data.extractionMethod || data.extraction_method || 'scrape';
+  const notes = data.agentNotes || data.extraction_notes || '';
+  if (method !== 'agent') {
+    el.hidden = true;
+    el.innerHTML = '';
+    return;
+  }
+  el.hidden = false;
+  // Comme partout : tout texte injecté passe par esc().
+  el.innerHTML = esc(
+    "⚠️ Fiche lue par un agent web, et non extraite du code source de la page (le site bloque l'extraction automatique). "
+    + 'Vérifie le prix et la variante avant de publier : une erreur ici se retrouve dans le prix de vente conseillé.',
+  )
+    + (notes ? '<br><span class="mini-meta">' + esc(notes) + '</span>' : '');
+}
+
 function renderImportPrice(data) {
   const raw = data.purchasePrice != null ? data.purchasePrice : data.purchase_price;
   const price = Number(raw);
@@ -5395,6 +5435,11 @@ function renderImportPrice(data) {
   const currency = String(data.currency || '');
 
   $('importPriceBlock').style.display = 'block';
+  // Appelé ici parce que c'est le seul point traversé par les DEUX chemins
+  // d'affichage : juste après l'extraction (applyImportData) et après un
+  // rechargement depuis /api/imports/:id (showImport). Un seul endroit à
+  // maintenir, donc pas d'avertissement oublié sur l'un des deux.
+  renderExtractionWarning(data);
   $('importPrice').value = usable ? String(price) : '';
   $('importCurrency').value = currency;
 
