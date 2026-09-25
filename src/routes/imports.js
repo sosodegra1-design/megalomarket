@@ -438,6 +438,10 @@ importsRouter.patch(
     const fields = [];
     const values = [];
 
+    // Un changement de PRIX (et non de titre ou de photo) doit se propager aux
+    // fiches déjà générées — voir recomputeListingPrices plus bas.
+    let prixTouche = false;
+
     if (purchasePrice !== undefined) {
       // 0 est refusé volontairement : c'est précisément le symptôme à corriger,
       // pas une valeur acceptable (elle produit des fiches que les canaux
@@ -449,14 +453,31 @@ importsRouter.patch(
       }
       fields.push('purchase_price = ?');
       values.push(purchasePrice);
+      prixTouche = true;
     }
 
     if (currency !== undefined) {
       if (typeof currency !== 'string' || !/^[A-Za-z]{3}$/.test(currency.trim())) {
         throw new Error('Devise invalide : un code de 3 lettres est attendu (ex. EUR, USD).');
       }
+      /* Trois lettres NE SUFFISENT PAS : il faut que la devise existe dans le
+         tableau, sinon aucun taux ne permet de convertir et le prix devient
+         incalculable. Sans ce contrôle, « YCN » (faute de frappe pour « CNY »)
+         s'enregistrait sans broncher, puis bloquait tout calcul de prix — une
+         erreur qu'on ne découvre qu'une fois le prix faux en ligne. */
+      const codesConnus = (await dbAll('SELECT code FROM currencies')).map((c) => c.code);
+      const codeMajuscule = currency.trim().toUpperCase();
+      if (!codesConnus.includes(codeMajuscule)) {
+        const suggestion = suggestCurrency(codeMajuscule, codesConnus);
+        throw new Error(
+          `Devise « ${codeMajuscule} » inconnue : aucun taux n'est enregistré pour elle.`
+          + (suggestion ? ` Voulais-tu dire « ${suggestion} » ?` : '')
+          + ' Ajoute-la dans Paramètres si elle est réellement utilisée.',
+        );
+      }
       fields.push('currency = ?');
       values.push(currency.trim().toUpperCase());
+      prixTouche = true;
     }
 
     /* Quantité du lot et frais totaux (transport + douane) : les deux
@@ -471,6 +492,7 @@ importsRouter.patch(
       }
       fields.push('lot_quantity = ?');
       values.push(lotQuantity);
+      prixTouche = true;
     }
 
     if (lotFees !== undefined) {
@@ -479,6 +501,7 @@ importsRouter.patch(
       }
       fields.push('lot_fees = ?');
       values.push(lotFees);
+      prixTouche = true;
     }
 
     if (title !== undefined) {
@@ -507,6 +530,20 @@ importsRouter.patch(
     if (!fields.length) throw new Error('Aucune modification fournie.');
 
     await dbRun(`UPDATE imports SET ${fields.join(', ')} WHERE id = ?`, [...values, req.params.id]);
+
+    /* LE POINT QUI MANQUAIT. Corriger le prix d'achat, la devise ou le lot ne
+       réécrivait pas les fiches déjà générées : elles gardaient le prix calculé
+       au moment de leur création. L'utilisateur corrigeait donc le prix... puis
+       publiait l'ancien, sans que rien ne le signale.
+
+       Aucun appel à l'IA n'est nécessaire : seul le PRIX change, le texte des
+       fiches reste valable. On recalcule, on ne régénère pas.
+
+       Si le calcul est impossible (devise sans taux), la requête ENTIÈRE échoue.
+       C'est voulu : mieux vaut refuser d'enregistrer que de laisser croire que
+       le prix est corrigé alors qu'il ne peut pas être calculé. */
+    if (prixTouche) await recomputeListingPrices(req.params.id);
+
     res.json(await readImportDetail(req.params.id));
   }),
 );
@@ -524,6 +561,75 @@ importsRouter.patch(
  * évite qu'une génération concurrente (autre partenaire, autre marge) hérite du
  * coefficient d'une autre requête.
  */
+/**
+ * Réécrit le prix conseillé des fiches DÉJÀ générées d'un import.
+ *
+ * Le coefficient est celui du partenaire quand il en a un, sinon le coefficient
+ * global — exactement la règle de la génération, pour que les deux chemins ne
+ * puissent pas produire deux prix différents pour la même fiche.
+ *
+ * Lève si la conversion est impossible : l'appelant doit refuser l'écriture
+ * plutôt que d'enregistrer un prix qu'il ne peut pas calculer.
+ */
+/**
+ * Devine le code visé quand une devise est inconnue : « YCN » pour « CNY ».
+ *
+ * Une faute de frappe sur un code de trois lettres est de très loin le cas le
+ * plus courant, et un message qui se contente de dire « inconnue » laisse
+ * chercher. On ne propose QUE si exactement une lettre diffère : suggérer
+ * « USD » pour « XYZ » serait pire que de ne rien suggérer.
+ */
+function suggestCurrency(code, connus) {
+  const memeLettres = (x, y) => [...x].sort().join('') === [...y].sort().join('');
+  return connus.find((candidat) => {
+    if (candidat.length !== code.length) return false;
+    // PERMUTATION : « YCN » pour « CNY ». Les mêmes lettres dans le désordre —
+    // c'est le cas réel qui a motivé ce contrôle, et il n'est pas attrapé par la
+    // comparaison caractère à caractère (YCN/CNY diffère sur les trois positions).
+    if (memeLettres(candidat, code)) return true;
+    // Sinon : une seule lettre substituée (« USD » pour « USF »).
+    let ecarts = 0;
+    for (let i = 0; i < candidat.length; i += 1) {
+      if (candidat[i] !== code[i]) ecarts += 1;
+      if (ecarts > 1) return false;
+    }
+    return ecarts === 1;
+  }) || null;
+}
+
+async function recomputeListingPrices(importId) {
+  const imp = await dbGet(
+    'SELECT purchase_price, currency, lot_quantity, lot_fees, supplier_id FROM imports WHERE id = ?',
+    [importId],
+  );
+  if (!imp) return 0;
+
+  let coefficient = config.pricing.marginCoefficient;
+  if (imp.supplier_id != null) {
+    const fournisseur = await dbGet('SELECT margin_coefficient FROM suppliers WHERE id = ?', [imp.supplier_id]);
+    if (fournisseur && fournisseur.margin_coefficient != null) {
+      coefficient = Number(fournisseur.margin_coefficient);
+    }
+  }
+
+  const rates = await loadCurrencyRates();
+  const { suggestedPrice } = computePriceFromSupplier({
+    purchasePrice: imp.purchase_price,
+    currency: imp.currency,
+    lotQuantity: imp.lot_quantity,
+    lotFees: imp.lot_fees,
+    rates,
+    marginCoefficient: coefficient,
+    fixedFee: config.pricing.fixedFee,
+  });
+
+  const info = await dbRun(
+    'UPDATE import_listings SET suggested_price = ?, updated_at = ? WHERE import_id = ?',
+    [suggestedPrice, Date.now(), importId],
+  );
+  return info.rowsAffected ?? 0;
+}
+
 async function applySupplierMargin(importId, result) {
   const imp = await dbGet(
     'SELECT purchase_price, currency, lot_quantity, lot_fees, supplier_id FROM imports WHERE id = ?',

@@ -345,3 +345,92 @@ test('omettre la quantité laisse la valeur en base intacte', async () => {
   assert.equal(enBase.lot_quantity, 500, 'la quantité est conservée');
   assert.equal(enBase.lot_fees, 375, 'les frais sont conservés');
 });
+
+/* ===================== LE PRIX SE PROPAGE AUX FICHES ===================== */
+
+test('corriger le prix d’achat recalcule le prix des fiches DÉJÀ générées', async () => {
+  // Le défaut signalé : on corrigeait le prix, les fiches gardaient l'ancien —
+  // et on publiait l'ancien sans que rien ne le dise.
+  const id = await createImport({ purchasePrice: 2 });
+  await dbRun(
+    `INSERT INTO import_listings (import_id, marketplace, title, description, suggested_price, status, created_at, updated_at)
+     VALUES (?, 'amazon', 'Fiche déjà générée', 'Texte inchangé', 0.01, 'a_valider', ?, ?)`,
+    [id, Date.now(), Date.now()],
+  );
+
+  const { status } = await call(`/api/imports/${id}`, { method: 'PATCH', body: { purchasePrice: 4 } });
+  assert.equal(status, 200);
+
+  const apres = await dbGet('SELECT suggested_price FROM import_listings WHERE import_id = ?', [id]);
+  assert.ok(apres.suggested_price > 0.01, 'le prix obsolète a bien été remplacé');
+});
+
+test('doubler le prix d’achat double le prix conseillé des fiches', async () => {
+  // Propriété indépendante du taux et du coefficient : elle prouve que le
+  // recalcul a eu lieu, sans dépendre de valeurs qui changent avec la config.
+  const id = await createImport({ purchasePrice: 2 });
+  await dbRun(
+    `INSERT INTO import_listings (import_id, marketplace, title, description, suggested_price, status, created_at, updated_at)
+     VALUES (?, 'amazon', 'Fiche', 'Texte', 0, 'a_valider', ?, ?)`,
+    [id, Date.now(), Date.now()],
+  );
+
+  await call(`/api/imports/${id}`, { method: 'PATCH', body: { purchasePrice: 4 } });
+  const premier = (await dbGet('SELECT suggested_price FROM import_listings WHERE import_id = ?', [id])).suggested_price;
+
+  await call(`/api/imports/${id}`, { method: 'PATCH', body: { purchasePrice: 8 } });
+  const second = (await dbGet('SELECT suggested_price FROM import_listings WHERE import_id = ?', [id])).suggested_price;
+
+  /* Tolérance d'un centime : le coût rendu est arrondi au centime À CHAQUE
+     étape, donc 4 x 0,92 x 1,8 et 8 x 0,92 x 1,8 ne sont pas exactement dans un
+     rapport de 2 (6,62 contre 13,25). Exiger l'égalité au centime testerait
+     l'arrondi, pas la propagation du prix. */
+  assert.ok(
+    Math.abs(second - premier * 2) <= 0.02,
+    `le prix doit doubler : ${premier} -> ${second}`,
+  );
+});
+
+test('le texte des fiches n’est PAS touché par un simple changement de prix', async () => {
+  // Recalculer n'est pas régénérer : aucune IA n'est appelée, les descriptions
+  // écrites restent valables.
+  const id = await createImport({ purchasePrice: 2 });
+  await dbRun(
+    `INSERT INTO import_listings (import_id, marketplace, title, description, suggested_price, status, created_at, updated_at)
+     VALUES (?, 'amazon', 'Titre écrit par l’IA', 'Description écrite par l’IA', 1, 'a_valider', ?, ?)`,
+    [id, Date.now(), Date.now()],
+  );
+
+  await call(`/api/imports/${id}`, { method: 'PATCH', body: { purchasePrice: 5 } });
+
+  const fiche = await dbGet('SELECT title, description FROM import_listings WHERE import_id = ?', [id]);
+  assert.equal(fiche.title, 'Titre écrit par l’IA');
+  assert.equal(fiche.description, 'Description écrite par l’IA');
+});
+
+/* ===================== DEVISE : LA FAUTE DE FRAPPE ===================== */
+
+test('une devise absente du tableau est refusée, avec la bonne suggestion', async () => {
+  // « YCN » au lieu de « CNY » : trois lettres valides, mais aucun taux — donc
+  // un prix incalculable. Le refus doit nommer la faute probable.
+  const id = await createImport();
+  const { status, body } = await call(`/api/imports/${id}`, { method: 'PATCH', body: { currency: 'YCN' } });
+  assert.equal(status, 400);
+  assert.match(body.error, /inconnue/);
+  assert.match(body.error, /CNY/, 'la suggestion doit apparaître');
+});
+
+test('une devise réellement inconnue est refusée SANS suggestion inventée', async () => {
+  const id = await createImport();
+  const { status, body } = await call(`/api/imports/${id}`, { method: 'PATCH', body: { currency: 'XYZ' } });
+  assert.equal(status, 400);
+  assert.match(body.error, /inconnue/);
+  assert.ok(!/Voulais-tu dire/.test(body.error), 'aucune suggestion quand aucune ne s’impose');
+});
+
+test('une devise du tableau est acceptée, en minuscules comme en majuscules', async () => {
+  const id = await createImport();
+  const { status, body } = await call(`/api/imports/${id}`, { method: 'PATCH', body: { currency: 'cny' } });
+  assert.equal(status, 200);
+  assert.equal(body.currency, 'CNY');
+});
