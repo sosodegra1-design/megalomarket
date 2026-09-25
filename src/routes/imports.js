@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { dbAll, dbGet, dbRun, logActivity } from '../db/database.js';
-import { scrapeProductFromUrl } from '../importer/scraper.js';
+import { scrapeProductFromUrl, detectSourceSite } from '../importer/scraper.js';
 import { generateListingsForImport, validateSitePayload } from '../importer/listingGenerator.js';
 import { publishListing, unpublishListing } from '../importer/publisher.js';
 import { connectors } from '../connectors/index.js';
@@ -177,6 +177,117 @@ importsRouter.post(
       `Produit importé depuis ${data.sourceSite} : ${data.title}${supplier ? ` (partenaire : ${supplier.name})` : ''}`,
     );
     res.status(201).json({ id: info.lastInsertRowid, ...data, imageUrls, supplier });
+  }),
+);
+
+/*
+ * Création MANUELLE d'un import, sans aucune extraction — la garantie honnête.
+ *
+ * Le tableau de bord promettait « remplis la fiche manuellement » alors que
+ * l'unique route de création (POST /api/imports) exigeait de scraper d'abord :
+ * sur un site qui bloque, l'utilisateur n'avait donc AUCUN moyen de créer
+ * l'import, et la promesse était un mensonge. Ici la page fournisseur n'est
+ * jamais visitée : aucun réseau, donc aucun blocage possible et aucun risque
+ * SSRF à couvrir. Le prix d'achat et la devise sont validés avec EXACTEMENT la
+ * même rigueur que PATCH /:id — 0 reste refusé, car c'est le symptôme d'une
+ * extraction manquée et les canaux rejettent une fiche à 0 €.
+ *
+ * À partir de là, le flux est identique à un import scrapé : GET /:id puis
+ * POST /:id/generate. L'IA n'a jamais eu besoin du scrape, seulement d'un titre
+ * et d'un prix.
+ */
+importsRouter.post(
+  '/manual',
+  asyncRoute(async (req, res) => {
+    const { url, title, purchasePrice, currency, rawDescription, imageUrls, supplierId } = req.body || {};
+
+    // Titre : chaîne non vide (mêmes règles que PATCH /:id).
+    if (typeof title !== 'string' || !title.trim()) {
+      throw new Error('Titre invalide : une chaîne non vide est attendue (c\'est la donnée indispensable avec le prix).');
+    }
+    // Prix strictement supérieur à 0, jamais une chaîne numérique : 0 est le
+    // symptôme à corriger, pas une valeur acceptable.
+    if (!Number.isFinite(purchasePrice) || purchasePrice <= 0) {
+      throw new Error(
+        "Prix d'achat invalide : il doit être un nombre strictement supérieur à 0 (0 € signale une extraction manquée).",
+      );
+    }
+    if (typeof currency !== 'string' || !/^[A-Za-z]{3}$/.test(currency.trim())) {
+      throw new Error('Devise invalide : un code de 3 lettres est attendu (ex. EUR, USD).');
+    }
+    if (rawDescription !== undefined && rawDescription !== null && typeof rawDescription !== 'string') {
+      throw new Error('Description brute invalide : une chaîne est attendue.');
+    }
+    if (imageUrls !== undefined && imageUrls !== null && !Array.isArray(imageUrls)) {
+      throw new Error("imageUrls doit être un tableau d'URLs.");
+    }
+
+    // L'URL est FACULTATIVE. Quand elle est fournie, on la valide comme à
+    // l'extraction (http/https, rien d'autre) mais on ne la visite pas : elle
+    // sert uniquement de référence pour retrouver la fiche plus tard. Aucune
+    // requête réseau n'est émise par cette route, donc aucune barrière SSRF à
+    // franchir — on n'enregistre qu'une chaîne.
+    let sourceUrl = '';
+    let sourceSite = 'manuel';
+    if (url !== undefined && url !== null && String(url).trim()) {
+      const candidate = String(url).trim();
+      let parsedUrl;
+      try {
+        parsedUrl = new URL(candidate);
+      } catch {
+        throw new Error('URL invalide (doit commencer par http:// ou https://).');
+      }
+      if (parsedUrl.protocol !== 'http:' && parsedUrl.protocol !== 'https:') {
+        throw new Error('URL invalide : seuls les schémas http:// et https:// sont autorisés.');
+      }
+      sourceUrl = candidate;
+      // Même étiquette que l'extraction (« alibaba », « autre »…) pour que la
+      // table des imports reste cohérente quel que soit le mode de création.
+      sourceSite = detectSourceSite(candidate);
+    }
+
+    // Partenaire validé AVANT l'écriture : un import rattaché à un identifiant
+    // fantôme afficherait « aucun partenaire » tout en prétendant le contraire.
+    const resolvedSupplierId = await resolveSupplierId(supplierId);
+    const images = imageUrls ? parseImageUrls(imageUrls) : [];
+
+    const info = await dbRun(
+      `INSERT INTO imports (source_url, source_site, title, raw_description, purchase_price, currency, image_urls, status, supplier_id, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, 'brouillon', ?, ?)`,
+      [
+        sourceUrl,
+        sourceSite,
+        title.trim(),
+        (rawDescription || '').trim(),
+        purchasePrice,
+        currency.trim().toUpperCase(),
+        JSON.stringify(images),
+        resolvedSupplierId,
+        Date.now(),
+      ],
+    );
+    const supplier = resolvedSupplierId == null
+      ? null
+      : withResolvedMargin(await dbGet('SELECT * FROM suppliers WHERE id = ?', [resolvedSupplierId]));
+    await logActivity(
+      'IMPORT_CREE',
+      `Produit saisi à la main : ${title.trim()}${supplier ? ` (partenaire : ${supplier.name})` : ''}`,
+    );
+
+    // Même forme que POST /api/imports : le tableau de bord traite les deux
+    // origines sans distinction. `strategy: 'manuel'` dit d'où vient la donnée.
+    res.status(201).json({
+      id: info.lastInsertRowid,
+      sourceUrl,
+      sourceSite,
+      title: title.trim(),
+      rawDescription: (rawDescription || '').trim(),
+      purchasePrice,
+      currency: currency.trim().toUpperCase(),
+      imageUrls: images,
+      supplier,
+      strategy: 'manuel',
+    });
   }),
 );
 

@@ -108,15 +108,107 @@ const MIN_HTML_BUDGET_MS = 3_000;
 const MAX_REDIRECTS = 5;
 
 /**
- * En-têtes envoyés à chaque saut. Extraits en constante pour que la requête
- * initiale et les requêtes de redirection soient strictement identiques — un
- * en-tête différent selon le saut trahirait le suivi manuel.
+ * Statuts qui signalent un BLOCAGE (et non une erreur d'URL) : eux seuls
+ * méritent qu'on réessaie la même page avec une autre identité. Un 404, un 410
+ * ou un 500 sont des réponses définitives du site — changer d'agent n'y changera
+ * rien, et il faut au contraire les garder visibles pour que l'utilisateur
+ * distingue « site qui bloque » de « URL erronée ».
  */
-const BROWSER_HEADERS = {
-  'User-Agent':
-    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36',
-  'Accept-Language': 'fr-FR,fr;q=0.9,en;q=0.8',
+const RETRYABLE_STATUSES = new Set([400, 403, 429, 503]);
+
+/**
+ * Profils d'identité essayés l'un après l'autre quand un site bloque.
+ *
+ * `navigateur` : Chrome desktop, l'identité qui obtient le rendu complet.
+ * `mobile`     : Chrome Android. Beaucoup de places de marché servent au
+ *                sous-domaine `m.`/à l'agent mobile une version allégée, sans
+ *                le mur anti-robot de la version desktop.
+ * `googlebot`  : l'agent de Google. Certains sites réservent aux crawlers une
+ *                réponse complète (enjeu SEO) au lieu de la page vide servie
+ *                aux inconnus.
+ *
+ * `clientHints` vaut `null` pour Googlebot : un crawler n'annonce pas de
+ * Client Hints, les envoyer trahirait l'emprunt d'identité — précisément le
+ * genre d'incohérence que cette couche existe pour supprimer.
+ */
+const BROWSER_PROFILES = {
+  navigateur: {
+    userAgent:
+      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+    clientHints: { mobile: '?0', platform: '"Windows"' },
+    referer: true,
+    fetchSite: 'same-origin',
+  },
+  mobile: {
+    userAgent:
+      'Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36',
+    clientHints: { mobile: '?1', platform: '"Android"' },
+    referer: true,
+    fetchSite: 'same-origin',
+  },
+  googlebot: {
+    userAgent: 'Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)',
+    clientHints: null,
+    referer: false,
+    fetchSite: 'none',
+  },
 };
+
+const DESKTOP_USER_AGENT = BROWSER_PROFILES.navigateur.userAgent;
+
+/**
+ * En-têtes d'une navigation de navigateur réelle.
+ *
+ * POURQUOI c'est vital : un `fetch` qui n'envoie que `User-Agent` et
+ * `Accept-Language` est une EMPREINTE, pas une requête. Les gros sites
+ * (Alibaba, AliExpress, Amazon…) ne bloquent pas « le contenu », ils bloquent ce
+ * PROFIL : l'absence d'`Accept`, de `Sec-Fetch-*`, de Client Hints et surtout de
+ * `Referer` trahit un client automatique mieux que n'importe quel autre signal —
+ * d'où les HTTP 400/403 avant même que la page ne soit servie. On envoie donc
+ * exactement ce que Chrome envoie pour une navigation, `Referer` compris : il
+ * pointe sur l'origine du site lui-même, parce qu'un vrai visiteur arrive en
+ * cliquant depuis la page d'accueil, jamais en tapant l'URL produit directement.
+ *
+ * Les en-têtes sont reconstruits par appel ET par profil (plutôt que figés dans
+ * une constante) : `Referer` dépend de l'hôte, et la requête initiale comme
+ * chaque redirection doivent porter la MÊME identité — un en-tête qui change en
+ * cours de route trahirait le suivi manuel des redirections.
+ */
+function buildBrowserHeaders(targetUrl, profileName = 'navigateur') {
+  const profile = BROWSER_PROFILES[profileName] || BROWSER_PROFILES.navigateur;
+  let origin = null;
+  try {
+    origin = new URL(targetUrl).origin;
+  } catch {
+    origin = null; // URL déjà validée en amont : ce cas n'arrive pas, on reste défensif
+  }
+
+  const headers = {
+    'User-Agent': profile.userAgent,
+    Accept:
+      'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
+    // Node décompresse `gzip`, `deflate` et `br` même quand on fixe cet en-tête
+    // nous-mêmes : le navigateur annonce donc les trois, sans risque de recevoir
+    // un corps binaire illisible.
+    'Accept-Encoding': 'gzip, deflate, br',
+    'Accept-Language': 'fr-FR,fr;q=0.9,en-US;q=0.8,en;q=0.7',
+    'Cache-Control': 'no-cache',
+    Pragma: 'no-cache',
+    'Upgrade-Insecure-Requests': '1',
+    'Sec-Fetch-Dest': 'document',
+    'Sec-Fetch-Mode': 'navigate',
+    'Sec-Fetch-Site': profile.fetchSite,
+    'Sec-Fetch-User': '?1',
+    Connection: 'keep-alive',
+  };
+  if (profile.referer && origin) headers.Referer = `${origin}/`;
+  if (profile.clientHints) {
+    headers['Sec-Ch-Ua'] = '"Chromium";v="124", "Google Chrome";v="124", "Not-A.Brand";v="99"';
+    headers['Sec-Ch-Ua-Mobile'] = profile.clientHints.mobile;
+    headers['Sec-Ch-Ua-Platform'] = profile.clientHints.platform;
+  }
+  return headers;
+}
 
 /** Hôtes manifestement internes, refusés avant même toute résolution DNS. */
 const INTERNAL_HOST_SUFFIXES = ['.internal', '.local', '.localhost', '.home.arpa'];
@@ -431,8 +523,24 @@ function createBudget(timeoutMs, maxBytes) {
  * décrémenté ici pour chaque saut, y compris les corps de redirection — sans
  * quoi une chaîne de renvois ferait transiter plusieurs fois le plafond.
  */
-async function fetchFollowingRedirects(startUrl, { lookupHost, budget, maxBytes = budget.maxBytes }) {
+async function fetchFollowingRedirects(
+  startUrl,
+  {
+    lookupHost,
+    budget,
+    maxBytes = budget.maxBytes,
+    // Identité envoyée à CHAQUE saut. Par défaut une navigation de navigateur
+    // desktop ; la montée en identités (voir `buildDirectStrategies`) passe le
+    // profil correspondant à la tentative.
+    headers,
+    // Quand vaut `true`, un statut non-2xx est RENVOYÉ (`ok: false`, `status`)
+    // au lieu d'être levé en erreur : c'est ce qui permet à la couche de repli
+    // de décider « ce 403 mérite une autre identité » au lieu d'abandonner.
+    returnOnHttpError = false,
+  },
+) {
   let currentUrl = startUrl;
+  const requestHeaders = headers || buildBrowserHeaders(startUrl);
 
   for (let hop = 0; ; hop += 1) {
     if (hop > MAX_REDIRECTS) {
@@ -449,7 +557,7 @@ async function fetchFollowingRedirects(startUrl, { lookupHost, budget, maxBytes 
     let response;
     try {
       response = await fetch(currentUrl, {
-        headers: BROWSER_HEADERS,
+        headers: requestHeaders,
         // On suit nous-mêmes les 3xx, sinon une redirection vers une adresse
         // interne contournerait la validation faite sur l'URL demandée.
         redirect: 'manual',
@@ -463,9 +571,26 @@ async function fetchFollowingRedirects(startUrl, { lookupHost, budget, maxBytes 
 
     if (!isRedirectStatus(response.status)) {
       if (!response.ok) {
-        throw new Error(
-          `Impossible de récupérer la page (HTTP ${response.status}). Le site bloque peut-être les requêtes automatisées.`,
-        );
+        if (!returnOnHttpError) {
+          throw new Error(
+            `Impossible de récupérer la page (HTTP ${response.status}). Le site bloque peut-être les requêtes automatisées.`,
+          );
+        }
+        // Le corps d'une page de refus ne nous intéresse pas : on le libère
+        // sans le charger (une page d'erreur peut peser plusieurs Mo et
+        // consommerait le budget d'octets commun à toutes les tentatives).
+        try {
+          await response.body?.cancel?.();
+        } catch {
+          /* corps déjà consommé ou absent : sans conséquence */
+        }
+        return {
+          text: '',
+          finalUrl: currentUrl,
+          contentType: String(response.headers?.get?.('content-type') ?? ''),
+          status: response.status,
+          ok: false,
+        };
       }
       const text = await readBodyWithLimit(response, remainingBytes, maxBytes);
       budget.bytesRead += Buffer.byteLength(text, 'utf8');
@@ -473,6 +598,8 @@ async function fetchFollowingRedirects(startUrl, { lookupHost, budget, maxBytes 
         text,
         finalUrl: currentUrl,
         contentType: String(response.headers?.get?.('content-type') ?? ''),
+        status: response.status,
+        ok: true,
       };
     }
 
@@ -507,7 +634,10 @@ async function fetchFollowingRedirects(startUrl, { lookupHost, budget, maxBytes 
   }
 }
 
-function detectSourceSite(url) {
+/* Exporté pour la création MANUELLE d'un import (routes/imports.js) : elle ne
+   scrape rien, mais elle veut la même étiquette lisible (« alibaba », « autre »…)
+   que l'extraction, pour que la table des imports reste cohérente. */
+export function detectSourceSite(url) {
   const found = SOURCE_SITE_PATTERNS.find((p) => p.match.test(url));
   return found ? found.key : 'autre';
 }
@@ -1096,19 +1226,330 @@ function normalizeFastPathResult(platform, payload) {
 }
 
 /**
+ * Titres qui trahissent un mur anti-robot déguisé en page 200 (Cloudflare,
+ * Akamai…). Sans ce filtre, « Just a moment… » serait importé comme le titre
+ * d'un produit. C'est aussi ce qui déclenche l'identité suivante : une page 200
+ * sans produit est un échec, pas un succès silencieux.
+ */
+const BLOCKED_PAGE_TITLE = /(just a moment|attention required|access denied|are you a robot|enable javascript|checking your browser|403 forbidden|access to this page has been denied|page unavailable)/i;
+
+/**
+ * Extraction générique du HTML d'une fiche produit. Renvoie `null` — et non un
+ * résultat vide — quand la page ne porte aucun titre exploitable : c'est ce
+ * `null` qui fait monter d'une identité dans la stratégie directe, puis bascule
+ * vers les lecteurs tiers.
+ */
+function extractFromHtml(html, finalUrl, patternSite) {
+  const $ = cheerio.load(html || '');
+  const jsonLdProduct = parseJsonLdProduct($);
+
+  const title =
+    cleanText(jsonLdProduct?.name) ||
+    cleanText($('meta[property="og:title"]').attr('content')) ||
+    cleanText($('[itemprop="name"]').first().attr('content') || $('[itemprop="name"]').first().text()) ||
+    cleanText($('h1').first().text()) ||
+    cleanText($('title').text());
+
+  if (!title || BLOCKED_PAGE_TITLE.test(title)) return null;
+
+  const rawDescription =
+    cleanText(jsonLdProduct?.description) ||
+    cleanText($('meta[property="og:description"]').attr('content')) ||
+    cleanText($('meta[name="description"]').attr('content')) ||
+    cleanText($('[itemprop="description"]').first().attr('content') || $('[itemprop="description"]').first().text());
+
+  const { price, currency } = extractPrice(jsonLdProduct, $);
+  const imageUrls = extractImages($, finalUrl, jsonLdProduct);
+
+  return {
+    sourceSite: patternSite,
+    title: title.trim(),
+    rawDescription: rawDescription.trim(),
+    purchasePrice: price,
+    currency,
+    imageUrls,
+  };
+}
+
+/**
+ * Dérive l'hôte « mobile » d'une URL : `www.alibaba.com` → `m.alibaba.com`,
+ * `alibaba.com` → `m.alibaba.com`. On s'abstient si l'hôte n'a pas de domaine
+ * exploitable ou s'il est déjà `m.` : fabriquer `m.m.exemple.com` serait pire
+ * que ne rien tenter.
+ */
+function deriveAlternateHostUrls(parsedUrl) {
+  const host = parsedUrl.hostname.toLowerCase();
+  const bare = host.replace(/^www\./, '');
+  if (!bare.includes('.') || /^m\./.test(bare)) return [];
+  const candidate = `m.${bare}`;
+  if (candidate === host) return [];
+
+  const alternate = new URL(parsedUrl.toString());
+  alternate.hostname = candidate;
+  return [alternate.toString()];
+}
+
+/**
+ * Ordre EXACT des tentatives directes, du plus « normal » au plus spécifique :
+ * navigateur desktop → mobile → Googlebot → hôte alternatif. Chaque tentative
+ * rejoue l'URL avec une identité complète et cohérente (voir
+ * `buildBrowserHeaders`) : on ne se contente pas de changer le User-Agent.
+ */
+function buildDirectStrategies(parsedUrl) {
+  const strategies = [
+    { name: 'navigateur', url: parsedUrl.toString(), profile: 'navigateur' },
+    { name: 'mobile', url: parsedUrl.toString(), profile: 'mobile' },
+    { name: 'googlebot', url: parsedUrl.toString(), profile: 'googlebot' },
+  ];
+  for (const alternate of deriveAlternateHostUrls(parsedUrl)) {
+    let label = alternate;
+    try {
+      label = new URL(alternate).hostname;
+    } catch {
+      /* URL déjà construite par `deriveAlternateHostUrls` : on garde l'URL brute */
+    }
+    strategies.push({ name: `hôte alternatif (${label})`, url: alternate, profile: 'navigateur' });
+  }
+  return strategies;
+}
+
+/** Motif lisible d'une page 200 inexploitable, pour le rapport final. */
+function classifyUnusablePage(fetched) {
+  const body = String(fetched?.text || '').trim();
+  if (!body) return 'corps vide';
+  if (/captcha|robot check|are you a robot|just a moment|access denied|attention required|cf-error|enable javascript/i.test(body)) {
+    return 'page anti-robot';
+  }
+  return 'aucune donnée produit';
+}
+
+/**
+ * Résume en une ligne ce que chaque stratégie a répondu. C'est ce qui permet à
+ * l'utilisateur de distinguer un site qui bloque (403 répétés) d'une URL erronée
+ * (404) ou d'un service tiers indisponible — au lieu d'un message unique qui ne
+ * dit rien.
+ */
+function describeAttempts(attempts) {
+  if (!attempts.length) return 'aucune tentative enregistrée';
+  return attempts
+    .map((attempt) => {
+      const details = [attempt.status ? `HTTP ${attempt.status}` : null, attempt.note || null]
+        .filter(Boolean)
+        .join(', ');
+      return details ? `${attempt.strategy} (${details})` : attempt.strategy;
+    })
+    .join(' ; ');
+}
+
+function buildDirectFailureMessage(patternSite, attempts) {
+  return (
+    `Aucune information exploitable extraite de cette page (${patternSite}). `
+    + `Le site bloque probablement les requêtes automatisées (page vide, mur anti-robot ou contenu chargé en JavaScript). `
+    + `Stratégies essayées : ${describeAttempts(attempts)}. `
+    + `Vérifie d'abord que l'URL est bien celle d'une fiche produit, puis saisis la fiche à la main : l'IA n'a besoin que d'un titre et d'un prix.`
+  );
+}
+
+/** Ligne de métadonnée produite par r.jina.ai (« Title: … »). */
+const READER_META_LINE = /^(title|url source|published time|markdown content|description|warning)\s*:\s*/i;
+/** Image markdown : `![alt](https://…)`. */
+const READER_IMAGE_PATTERN = /!\[[^\]]*\]\(\s*(https?:\/\/[^)\s]+)/g;
+const MARKDOWN_INLINE = /[*_`>#]+/g;
+
+/** Retire le balisage markdown d'une ligne (liens, emphases, titres). */
+function stripMarkdownInline(value) {
+  return String(value || '')
+    .replace(/!\[[^\]]*\]\([^)]*\)/g, ' ')
+    .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')
+    .replace(MARKDOWN_INLINE, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+/**
+ * Extraction de dernier recours depuis la réponse texte/markdown de r.jina.ai.
+ *
+ * Deux formes possibles : du markdown (cas nominal) ou du HTML brut (certains
+ * modes du lecteur). Dans le second cas on réutilise l'extraction HTML, bien
+ * plus fiable que d'improviser ligne à ligne. Le prix est cherché en priorité
+ * sur une ligne portant à la fois un chiffre et un symbole/code monétaire :
+ * chercher sur tout le document ramasserait le premier nombre venu (quantité,
+ * référence, date de publication).
+ */
+function extractFromReaderText(text, baseUrl, patternSite) {
+  const raw = String(text || '');
+  if (!raw.trim()) return null;
+
+  if (/<\s*(?:!doctype|html|head|body|meta|script|div)\b/i.test(raw)) {
+    return extractFromHtml(raw, baseUrl, patternSite);
+  }
+
+  const lines = raw.split(/\r?\n/).map((line) => line.trim());
+  const body = [];
+  let title = '';
+  let description = '';
+  for (const line of lines) {
+    const meta = line.match(READER_META_LINE);
+    if (meta) {
+      const label = meta[1].toLowerCase();
+      const value = stripMarkdownInline(line.slice(meta[0].length));
+      if (label === 'title' && !title) title = value;
+      else if (label === 'description' && !description) description = value;
+      continue;
+    }
+    if (line) body.push(line);
+  }
+  if (!title) {
+    const heading = body.find((line) => /^#{1,4}\s+\S/.test(line)) || body[0] || '';
+    title = stripMarkdownInline(heading.replace(/^#{1,6}\s*/, ''));
+  }
+  if (!title || title.length < 2 || BLOCKED_PAGE_TITLE.test(title)) return null;
+
+  const images = [];
+  const seen = new Set();
+  for (const match of raw.matchAll(READER_IMAGE_PATTERN)) {
+    const url = match[1];
+    if (!seen.has(url)) {
+      seen.add(url);
+      images.push(url);
+    }
+    if (images.length >= MAX_GENERIC_IMAGES) break;
+  }
+
+  if (!description) description = stripMarkdownInline(body.join(' ')).slice(0, 1200);
+
+  const priceLine = lines.find(
+    (line) =>
+      /\d/.test(line)
+      && /[€$£¥]|\b(?:EUR|USD|GBP|PLN|CNY|RMB|JPY|CHF|CAD|AUD|SEK|NOK|DKK|CZK|HUF|RON|BGN|TRY|INR|BRL|MXN|HKD|SGD|NZD|ZAR)\b/i.test(line),
+  );
+  const parsed = priceFromText(priceLine || raw);
+  const price = parsed ? parsed.price : 0;
+  const currency = parsed ? parsed.currency : 'USD';
+
+  return {
+    sourceSite: patternSite,
+    title: title.trim(),
+    rawDescription: description.trim(),
+    purchasePrice: price,
+    currency,
+    imageUrls: images,
+  };
+}
+
+/**
+ * Récupère une ressource chez un LECTEUR TIERS.
+ *
+ * Sécurité — le point capital : archive.org et r.jina.ai vont chercher l'URL
+ * cible DEPUIS LEUR PROPRE RÉSEAU. On ne peut donc jamais leur transmettre une
+ * adresse que `assertHostIsPublic` n'a pas validée, sinon on leur offrirait un
+ * moyen de sonder le réseau interne du serveur (127.0.0.1, 192.168.x.x,
+ * 169.254.169.254…). L'appelant re-valide la cible juste avant de la confier au
+ * tiers ; ici on valide en plus l'hôte du service lui-même, et chaque
+ * redirection repasse par la même barrière (`fetchFollowingRedirects`).
+ */
+async function fetchReaderResource(url, { lookupHost, budget, headers, maxBytes = budget.maxBytes }) {
+  await assertHostIsPublic(new URL(url), lookupHost);
+  return fetchFollowingRedirects(url, { lookupHost, budget, headers, maxBytes, returnOnHttpError: true });
+}
+
+const WAYBACK_AVAILABILITY_URL = 'https://archive.org/wayback/available';
+const JINA_READER_URL = 'https://r.jina.ai/';
+/** Titres de pages d'erreur d'un lecteur, jamais un produit. */
+const READER_ERROR_TITLE = /(wayback machine|internet archive|not archived|no archived|blocked site error|429 too many requests|rate limit)/i;
+
+/**
+ * Repli n°1 : Wayback Machine (gratuit, sans clé). On interroge l'API
+ * `available` puis on lit l'instantané comme n'importe quelle page. Aucun
+ * instantané ⇒ on avance EN SILENCE : ce n'est pas une erreur d'import, juste
+ * une source qui n'a rien pour cette URL.
+ */
+async function tryWaybackSnapshot(targetUrl, { lookupHost, budget, patternSite }) {
+  const availabilityUrl = `${WAYBACK_AVAILABILITY_URL}?url=${encodeURIComponent(targetUrl)}`;
+  let availability;
+  try {
+    availability = await fetchReaderResource(availabilityUrl, {
+      lookupHost,
+      budget,
+      maxBytes: MAX_API_RESPONSE_BYTES,
+      headers: {
+        'User-Agent': DESKTOP_USER_AGENT,
+        Accept: 'application/json,text/plain;q=0.9,*/*;q=0.8',
+        'Accept-Language': 'fr-FR,fr;q=0.9,en;q=0.8',
+      },
+    });
+  } catch {
+    return null; // service injoignable : ce n'est pas une raison de faire échouer l'import
+  }
+  if (!availability.ok) return null;
+
+  const body = parseJsonBody(availability.text);
+  const snapshotUrl = body?.archived_snapshots?.closest?.url;
+  if (typeof snapshotUrl !== 'string' || !snapshotUrl) return null;
+
+  let snapshot;
+  try {
+    snapshot = await fetchReaderResource(snapshotUrl, {
+      lookupHost,
+      budget,
+      headers: buildBrowserHeaders(snapshotUrl, 'navigateur'),
+    });
+  } catch {
+    return null;
+  }
+  if (!snapshot.ok) return null;
+
+  const extracted = extractFromHtml(snapshot.text, snapshot.finalUrl || snapshotUrl, patternSite);
+  // L'instantané existe mais la page servie est une erreur du lecteur :
+  // importer « Wayback Machine has not archived that URL » comme titre serait
+  // pire que de continuer.
+  if (!extracted || READER_ERROR_TITLE.test(extracted.title)) return null;
+  return extracted;
+}
+
+/**
+ * Repli n°2 : lecteur Jina (offre gratuite, sans clé). Il rend la page en
+ * texte/markdown et conçoit son service pour franchir les blocages simples.
+ * Dernier recours assumé — la donnée est moins fiable qu'une page servie
+ * directement, d'où le `strategy: 'jina'` remonté à l'appelant.
+ */
+async function tryJinaReader(targetUrl, { lookupHost, budget, patternSite }) {
+  const readerUrl = `${JINA_READER_URL}${targetUrl}`;
+  let fetched;
+  try {
+    fetched = await fetchReaderResource(readerUrl, {
+      lookupHost,
+      budget,
+      headers: {
+        'User-Agent': DESKTOP_USER_AGENT,
+        Accept: 'text/plain,text/markdown;q=0.9,*/*;q=0.8',
+        'Accept-Language': 'fr-FR,fr;q=0.9,en;q=0.8',
+      },
+    });
+  } catch {
+    return null;
+  }
+  if (!fetched.ok) return null;
+  return extractFromReaderText(fetched.text, targetUrl, patternSite);
+}
+
+/**
  * Extrait titre, description, prix d'achat et photos depuis la page produit d'un fournisseur.
  *
- * Deux niveaux, du plus fiable au plus général :
+ * Quatre niveaux, du plus fiable au plus général :
  * 1. les API publiques des plateformes (Shopify, WooCommerce), qui renvoient des
  *    données structurées même quand la page est rendue en JavaScript ;
- * 2. le HTML, en s'appuyant sur les données structurées (JSON-LD schema.org),
- *    puis Open Graph, puis la microdata et le balisage brut.
+ * 2. le HTML servi directement, lu avec une identité de navigateur complète ;
+ * 3. la MÊME page, redemandée avec d'autres identités (mobile, Googlebot) puis
+ *    sur l'hôte mobile quand il en existe un ;
+ * 4. en dernier recours, un lecteur tiers (Wayback Machine puis r.jina.ai) qui
+ *    va chercher la page depuis SON réseau.
  *
- * Les deux niveaux passent par la MÊME barrière SSRF (`assertHostIsPublic` à
- * chaque saut) et partagent le MÊME budget de temps et d'octets. Des sites comme
- * Alibaba/AliExpress bloquent activement les requêtes automatisées ou chargent le
- * contenu en JavaScript : dans ce cas l'extraction peut échouer ou être
- * incomplète — c'est signalé par une erreur claire plutôt qu'un résultat vide.
+ * Tous les niveaux passent par la MÊME barrière SSRF (`assertHostIsPublic` à
+ * chaque saut, y compris pour les hôtes alternatifs et AVANT de confier l'URL à
+ * un tiers), partagent le MÊME budget de temps et d'octets, et chacune des
+ * tentatives est enregistrée dans `attempts` pour que l'appelant voie ce qui a
+ * été essayé et ce que chaque tentative a répondu.
  */
 export async function scrapeProductFromUrl(url, { lookupHost = defaultLookup, timeoutMs = FETCH_TIMEOUT_MS, maxBytes = MAX_RESPONSE_BYTES } = {}) {
   let parsedUrl;
@@ -1124,6 +1565,10 @@ export async function scrapeProductFromUrl(url, { lookupHost = defaultLookup, ti
 
   const patternSite = detectSourceSite(url);
   const budget = createBudget(timeoutMs, maxBytes);
+  // Journal des tentatives : remonté à l'appelant en cas de succès (`strategy` =
+  // celle qui a marché) comme en cas d'échec (message final), pour qu'il puisse
+  // distinguer un site qui bloque d'une URL erronée.
+  const attempts = [];
 
   // 1) API plateformes. Elles sont essayées uniquement quand le chemin y ressemble
   // (`/products/…`, `wp-json`) ou que l'hôte est un hébergeur connu : on ne veut
@@ -1139,50 +1584,71 @@ export async function scrapeProductFromUrl(url, { lookupHost = defaultLookup, ti
         : await scrapeWoocommerceFastPath(parsedUrl.origin, candidate.handle, { lookupHost, budget });
 
     const result = normalizeFastPathResult(candidate.kind, payload);
-    if (result) return result;
+    if (result) return { ...result, strategy: candidate.kind, attempts };
+    // L'API n'a pas rendu la fiche : on le note pour que le rapport final soit
+    // honnête sur TOUT ce qui a été tenté, puis on passe au HTML.
+    attempts.push({ strategy: candidate.kind, note: responded ? 'API sans fiche' : 'API indisponible' });
     // L'API a répondu autre chose que la fiche attendue (page de mot de passe,
     // JSON vide…) : inutile d'interroger une autre plateforme, on passe au HTML.
     if (responded) break;
   }
 
-  // 2) Repli HTML générique — le seul chemin possible pour un hôte inconnu.
-  const fetched = await fetchFollowingRedirects(url, { lookupHost, budget });
-  const html = fetched.text;
-  // Les images relatives se résolvent contre l'URL FINALE : une boutique qui
-  // redirige vers un autre domaine produirait sinon des liens cassés.
-  const finalUrl = fetched.finalUrl;
+  // 2) Montée en identités sur le HTML. La première tentative est exactement
+  // celle d'avant (navigateur desktop) ; chacune des suivantes ne part QUE si la
+  // précédente a été bloquée (400/403/429/503) ou a renvoyé une page sans
+  // produit. Un 404 ou un 410, à l'inverse, arrête la montée : c'est une réponse
+  // définitive du site, et la garder visible aide à repérer une URL erronée.
+  for (const strategy of buildDirectStrategies(parsedUrl)) {
+    if (budget.deadline - Date.now() <= 0) {
+      attempts.push({ strategy: strategy.name, note: 'budget de temps épuisé' });
+      break;
+    }
+    if (strategy.url !== url) {
+      // L'hôte alternatif est une NOUVELLE cible réseau : il repasse par la même
+      // barrière SSRF que l'URL d'origine (`m.exemple.com` peut très bien
+      // résoudre vers une adresse privée).
+      await assertHostIsPublic(new URL(strategy.url), lookupHost);
+    }
 
-  const $ = cheerio.load(html);
-  const jsonLdProduct = parseJsonLdProduct($);
+    // Erreurs de sûreté (SSRF), de budget, de redirection ou de volume : elles
+    // remontent telles quelles. Les « réessayer » avec une autre identité
+    // reviendrait à contourner la barrière ou à gaspiller le budget.
+    const fetched = await fetchFollowingRedirects(strategy.url, {
+      lookupHost,
+      budget,
+      headers: buildBrowserHeaders(strategy.url, strategy.profile),
+      returnOnHttpError: true,
+    });
 
-  const title =
-    cleanText(jsonLdProduct?.name) ||
-    cleanText($('meta[property="og:title"]').attr('content')) ||
-    cleanText($('[itemprop="name"]').first().attr('content') || $('[itemprop="name"]').first().text()) ||
-    cleanText($('h1').first().text()) ||
-    cleanText($('title').text());
+    if (!fetched.ok) {
+      attempts.push({ strategy: strategy.name, status: fetched.status });
+      if (!RETRYABLE_STATUSES.has(fetched.status)) break;
+      continue;
+    }
 
-  const rawDescription =
-    cleanText(jsonLdProduct?.description) ||
-    cleanText($('meta[property="og:description"]').attr('content')) ||
-    cleanText($('meta[name="description"]').attr('content')) ||
-    cleanText($('[itemprop="description"]').first().attr('content') || $('[itemprop="description"]').first().text());
-
-  const { price, currency } = extractPrice(jsonLdProduct, $);
-  const imageUrls = extractImages($, finalUrl, jsonLdProduct);
-
-  if (!title) {
-    throw new Error(
-      `Aucune information exploitable extraite de cette page (${patternSite}). Le site bloque probablement les requêtes automatisées (contenu chargé en JavaScript) — remplis la fiche manuellement pour ce produit.`,
-    );
+    const extracted = extractFromHtml(fetched.text, fetched.finalUrl, patternSite);
+    if (extracted) return { ...extracted, strategy: strategy.name, attempts };
+    attempts.push({ strategy: strategy.name, status: fetched.status, note: classifyUnusablePage(fetched) });
   }
 
-  return {
-    sourceSite: patternSite,
-    title: title.trim(),
-    rawDescription: rawDescription.trim(),
-    purchasePrice: price,
-    currency,
-    imageUrls,
-  };
+  // 3) Lecteurs tiers — dernier recours. Sécurité : on re-valide la cible JUSTE
+  // avant de la communiquer à un service qui ira la chercher depuis SON réseau.
+  // Une adresse privée est refusée ici avant qu'archive.org ou r.jina.ai n'en
+  // entende jamais parler (voir le test « aucune requête tierce pour une adresse
+  // privée »).
+  const targetUrl = parsedUrl.toString();
+  await assertHostIsPublic(new URL(targetUrl), lookupHost);
+
+  const wayback = await tryWaybackSnapshot(targetUrl, { lookupHost, budget, patternSite });
+  if (wayback) return { ...wayback, strategy: 'wayback', attempts };
+  attempts.push({ strategy: 'wayback', note: 'aucun instantané exploitable' });
+
+  const jina = await tryJinaReader(targetUrl, { lookupHost, budget, patternSite });
+  if (jina) return { ...jina, strategy: 'jina', attempts };
+  attempts.push({ strategy: 'jina', note: 'aucune donnée exploitable' });
+
+  // 4) Échec : le message dit exactement ce qui a été tenté et ce que chaque
+  // tentative a répondu — et renvoie vers la saisie manuelle, qui, elle,
+  // fonctionne toujours (POST /api/imports/manual).
+  throw new Error(buildDirectFailureMessage(patternSite, attempts));
 }
