@@ -1780,9 +1780,29 @@
                 <div class="field">
                   <label for="importCurrency">Devise</label>
                   <input type="text" id="importCurrency" maxlength="3" placeholder="USD" autocomplete="off">
-                  <p class="field-help">Code de 3 lettres (EUR, USD, CNY…).</p>
+                  <p class="field-help">Code de 3 lettres (EUR, USD, CNY…). Son taux se règle dans <a class="link-quiet" href="#/parametres">Paramètres</a>.</p>
                 </div>
               </div>
+
+              <!-- Coût rendu : transport et douane du LOT entier, répartis sur
+                   chaque pièce par le moteur de prix. Les frais se connaissent
+                   par lot (un envoi de 500 pièces coûte un forfait), donc on
+                   saisit le forfait et la quantité plutôt qu'un coût unitaire
+                   qu'il faudrait recalculer à chaque correction. -->
+              <h3 class="panel-section-title" style="margin-top:14px">Transport et douane du lot</h3>
+              <div class="field-grid">
+                <div class="field">
+                  <label for="importLotQuantity">Quantité du lot</label>
+                  <input type="number" id="importLotQuantity" step="1" min="1" placeholder="500">
+                  <p class="field-help">Combien de pièces dans cet envoi.</p>
+                </div>
+                <div class="field">
+                  <label for="importLotFees">Frais totaux (€)</label>
+                  <input type="number" id="importLotFees" step="0.01" min="0" placeholder="375">
+                  <p class="field-help">Transport + douane pour le lot entier. Réparti sur chaque pièce.</p>
+                </div>
+              </div>
+              <div id="importLandedCostPreview" class="hint" hidden></div>
               <div class="row row-actions">
                 <button class="btn btn-sm" id="btnSavePurchasePrice" type="button">Enregistrer le prix d'achat</button>
               </div>
@@ -5807,10 +5827,64 @@ function renderImportPrice(data) {
   $('importPrice').value = usable ? String(price) : '';
   $('importCurrency').value = currency;
 
+  /* Lot : quantité et frais. `data` vient soit de POST /api/imports (qui ne les
+     connaît pas encore : on laisse alors les valeurs par défaut), soit de
+     GET /api/imports/:id (colonnes SQL). */
+  const quantite = data.lotQuantity != null ? data.lotQuantity : data.lot_quantity;
+  const frais = data.lotFees != null ? data.lotFees : data.lot_fees;
+  if ($('importLotQuantity')) $('importLotQuantity').value = quantite != null ? String(quantite) : '';
+  if ($('importLotFees')) $('importLotFees').value = frais ? String(frais) : '';
+  renderLandedCostPreview(data);
+
   const warning = $('importPriceWarning');
   warning.hidden = usable;
   // Même texte que l'API ; `esc` reste appliqué par principe, comme partout.
   warning.innerHTML = usable ? '' : esc(MISSING_PURCHASE_PRICE_WARNING);
+}
+
+/**
+ * Aperçu du coût rendu, sous les champs du lot.
+ *
+ * Pourquoi un aperçu plutôt qu'un simple calcul silencieux : le prix conseillé
+ * dépend d'un taux de change et d'une répartition de frais. Sans voir le
+ * résultat intermédiaire, l'utilisateur découvrirait un prix final inattendu
+ * sans pouvoir dire d'où il vient — et douterait du calcul plutôt que du taux.
+ */
+function renderLandedCostPreview(data) {
+  const el = $('importLandedCostPreview');
+  if (!el) return;
+
+  const raw = data.purchasePrice != null ? data.purchasePrice : data.purchase_price;
+  const prix = Number(raw);
+  const devise = String(data.currency || '').trim().toUpperCase();
+  const quantite = Number(data.lotQuantity != null ? data.lotQuantity : data.lot_quantity) || 1;
+  const frais = Number(data.lotFees != null ? data.lotFees : data.lot_fees) || 0;
+
+  if (!Number.isFinite(prix) || prix <= 0 || !devise) { el.hidden = true; return; }
+
+  const taux = (state.currencies || []).find((c) => c.code === devise);
+  if (!taux) {
+    // On le dit au lieu de deviner : un taux supposé produirait un prix faux.
+    el.hidden = false;
+    el.innerHTML = esc("Devise « " + devise + " » sans taux enregistré : le prix ne peut pas être calculé. ")
+      + '<a class="link-quiet" href="#/parametres">Renseigne son taux dans Paramètres.</a>';
+    return;
+  }
+
+  const enEuros = prix * Number(taux.rate_to_eur);
+  const partFrais = frais / quantite;
+  const coutRendu = enEuros + partFrais;
+  const coefficient = state.config && state.config.pricing ? Number(state.config.pricing.marginCoefficient) : null;
+  const conseille = Number.isFinite(coefficient) && coefficient > 1 ? coutRendu * coefficient : null;
+
+  el.hidden = false;
+  el.innerHTML = esc(
+    `${prix} ${devise} × ${Number(taux.rate_to_eur)} = ${enEuros.toFixed(2)} €`
+    + ` + ${partFrais.toFixed(2)} € de frais = coût rendu ${coutRendu.toFixed(2)} €`,
+  )
+    + (conseille != null
+      ? esc(` → prix conseillé ${conseille.toFixed(2)} € (coefficient ${coefficient})`)
+      : '');
 }
 
 /* Vignettes des photos extraites, avec retrait au clic et ajout manuel. `data`
@@ -6049,6 +6123,26 @@ $('btnSavePurchasePrice').addEventListener('click', (event) => action(event.curr
 
   const body = { purchasePrice: price };
   if (currency) body.currency = currency;
+
+  /* Quantité et frais du lot : envoyés seulement s'ils sont renseignés, pour ne
+     pas écraser une valeur déjà en base par un champ laissé vide. */
+  const quantiteBrute = $('importLotQuantity') ? $('importLotQuantity').value.trim() : '';
+  if (quantiteBrute !== '') {
+    const quantite = Number(quantiteBrute);
+    if (!Number.isInteger(quantite) || quantite < 1) {
+      throw new Error('Quantité du lot invalide : un entier supérieur ou égal à 1 est attendu.');
+    }
+    body.lotQuantity = quantite;
+  }
+  const fraisBruts = $('importLotFees') ? $('importLotFees').value.trim() : '';
+  if (fraisBruts !== '') {
+    const frais = Number(fraisBruts);
+    if (!Number.isFinite(frais) || frais < 0) {
+      throw new Error('Frais du lot invalides : un nombre positif ou nul est attendu.');
+    }
+    body.lotFees = frais;
+  }
+
   const updated = await api('/api/imports/' + encodeURIComponent(state.importId), {
     method: 'PATCH', body: JSON.stringify(body),
   });
