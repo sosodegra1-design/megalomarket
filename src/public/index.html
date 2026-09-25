@@ -1496,8 +1496,52 @@
                 <button class="btn ghost" id="btnGenerate" type="button" disabled>
                   <span class="step-badge" aria-hidden="true">2</span> Générer les fiches IA
                 </button>
+                <!-- Option permanente, pas seulement après un échec : certains
+                     sites bloqueront toujours, et l'IA n'a besoin que d'un titre
+                     et d'un prix — jamais du scrape. -->
+                <button class="btn ghost" id="btnManualImport" type="button">Saisir la fiche à la main</button>
               </div>
               <p class="ai-note" data-ai-note hidden>Génération IA désactivée : aucun fournisseur IA n'est configuré (voir le bandeau ci-dessus). L'extraction, elle, reste disponible.</p>
+            </section>
+          </div>
+
+          <!-- Saisie manuelle : la voie qui fonctionne TOUJOURS. Aucun accès au
+               site fournisseur n'est nécessaire ; l'import créé est identique à
+               un import scrapé et alimente la même génération IA. -->
+          <div id="manualImportBlock" style="display:none">
+            <section class="panel-section">
+              <h3 class="panel-section-title">Saisir la fiche à la main</h3>
+              <p class="field-help">Le site est injoignable ou bloque l'extraction ? Recopie ce que tu vois : titre et prix d'achat suffisent à générer les fiches.</p>
+              <div class="field-grid">
+                <div class="field field-wide">
+                  <label for="manualImportUrl">URL du produit (facultative)</label>
+                  <input class="input" type="text" id="manualImportUrl" placeholder="https://…" autocomplete="off">
+                </div>
+                <div class="field field-wide">
+                  <label for="manualImportTitle">Titre du produit</label>
+                  <input class="input" type="text" id="manualImportTitle" autocomplete="off">
+                </div>
+                <div class="field">
+                  <label for="manualImportPrice">Prix d'achat</label>
+                  <input class="input" type="number" id="manualImportPrice" step="0.01" min="0.01" placeholder="4.90">
+                </div>
+                <div class="field">
+                  <label for="manualImportCurrency">Devise</label>
+                  <input class="input" type="text" id="manualImportCurrency" maxlength="3" value="USD" autocomplete="off">
+                </div>
+                <div class="field field-wide">
+                  <label for="manualImportDescription">Description (facultative)</label>
+                  <textarea class="input textarea" id="manualImportDescription" rows="3"></textarea>
+                </div>
+                <div class="field field-wide">
+                  <label for="manualImportImages">Photos (une URL par ligne, facultatif)</label>
+                  <textarea class="input textarea mono" id="manualImportImages" rows="2"></textarea>
+                </div>
+              </div>
+              <div class="row row-actions">
+                <button class="btn" id="btnCreateManualImport" type="button">Créer l'import</button>
+                <button class="btn ghost" id="btnCancelManualImport" type="button">Annuler</button>
+              </div>
             </section>
           </div>
 
@@ -2827,6 +2871,16 @@ function dismissToast(node) {
   setTimeout(() => { if (node.remove) node.remove(); }, motionOK() ? 200 : 0);
 }
 
+/* Action facultative proposée SOUS le bandeau d'erreur inline. Le bandeau étant
+   réécrit par `say(..., 'err')` au moment où l'erreur remonte, on mémorise
+   l'action ici puis `showInlineError` la rend au passage : c'est ce qui permet à
+   l'échec d'extraction d'offrir « Saisir la fiche à la main » sans afficher deux
+   fois le message. */
+let pendingInlineErrorAction = null;
+function offerInlineErrorAction(label, onClick) {
+  pendingInlineErrorAction = { label, onClick };
+}
+
 function showInlineError(message) {
   const box = $('status');
   if (!box) return;
@@ -2835,7 +2889,14 @@ function showInlineError(message) {
   // d'écran, la propriété seule ne suffit pas à le rendre lisible.
   box.hidden = false;
   if (box.removeAttribute) box.removeAttribute('hidden');
-  box.innerHTML = '<span class="status-icon" aria-hidden="true">!</span><span>' + esc(message) + '</span>';
+  const action = pendingInlineErrorAction;
+  pendingInlineErrorAction = null;
+  box.innerHTML = '<span class="status-icon" aria-hidden="true">!</span><span>' + esc(message) + '</span>'
+    + (action ? '<button type="button" class="btn btn-ghost btn-sm" data-inline-action="1">' + esc(action.label) + '</button>' : '');
+  if (action && typeof box.querySelector === 'function') {
+    const button = box.querySelector('[data-inline-action]');
+    if (button && button.addEventListener) button.addEventListener('click', action.onClick);
+  }
 }
 
 function clearStatus() {
@@ -5467,6 +5528,106 @@ function scrollToListings() {
   }
 }
 
+/* Rend l'import courant dans le tableau de bord, QUELLE QUE SOIT son origine :
+   extraction automatique, repli par lecteur tiers ou saisie manuelle. Factoriser
+   ce rendu est ce qui garantit que la génération IA se comporte exactement
+   pareil dans tous les cas — c'est tout l'intérêt de la saisie manuelle. */
+async function applyImportData(data) {
+  state.importId = data.id;
+  $('importDetail').style.display = 'block';
+  $('importBody').innerHTML = [
+    ['Titre', esc(data.title)],
+    ['Site détecté', esc(data.sourceSite)],
+    ['Stratégie', esc(data.strategy || 'extraction directe')],
+    ['Partenaire', data.supplier ? esc(data.supplier.name) + ' · ' + esc(supplierMarginLabel(data.supplier)) : 'aucun (coefficient global)'],
+    ['Prix d\'achat', money(data.purchasePrice) + ' ' + esc(data.currency)],
+    ['Photos trouvées', (data.imageUrls || []).length],
+    ['Description brute', esc((data.rawDescription || '(aucune)').slice(0, 400))],
+  ].map(([k, v]) => '<div class="kv"><span>' + k + '</span><span>' + v + '</span></div>').join('');
+  renderImportPrice(data);
+  state.importDetails.set(String(data.id), data);
+  state.importImagesVerdict = null;
+  hideImportImagesVerdict();
+  renderImportImages(data);
+  await loadImports();
+  updateGenerateButton();
+  renderDashboard();
+}
+
+/* Ouvre le formulaire de saisie manuelle, pré-rempli avec l'URL que
+   l'utilisateur a déjà tapée — c'est exactement ce que promet le message
+   d'échec d'extraction. Si un prix/une devise ont déjà été corrigés sur
+   l'import courant, on les reprend pour ne pas les retaper. */
+function openManualImportForm(prefillUrl) {
+  const block = $('manualImportBlock');
+  if (!block) return;
+  const urlField = $('manualImportUrl');
+  if (urlField && prefillUrl) urlField.value = prefillUrl;
+  const currencyField = $('manualImportCurrency');
+  if (currencyField && !currencyField.value) currencyField.value = 'USD';
+
+  const priceField = $('manualImportPrice');
+  if (priceField && !priceField.value && state.importId != null && state.importDetails) {
+    const current = state.importDetails.get(String(state.importId));
+    if (current) {
+      const price = Number(current.purchasePrice != null ? current.purchasePrice : current.purchase_price);
+      if (Number.isFinite(price) && price > 0) priceField.value = String(price);
+      if (currencyField && current.currency) currencyField.value = current.currency;
+    }
+  }
+
+  block.style.display = 'block';
+  if (block.scrollIntoView) block.scrollIntoView({ behavior: motionOK() ? 'smooth' : 'auto', block: 'start' });
+  const titleField = $('manualImportTitle');
+  if (titleField && titleField.focus) titleField.focus();
+}
+
+function closeManualImportForm() {
+  const block = $('manualImportBlock');
+  if (block) block.style.display = 'none';
+}
+
+/* Option PERMANENTE (pas seulement après un échec) : certains sites bloqueront
+   toujours, et l'IA n'a besoin que d'un titre et d'un prix — jamais du scrape. */
+$('btnManualImport').addEventListener('click', () => {
+  const urlField = $('importUrl');
+  openManualImportForm(urlField ? urlField.value.trim() : '');
+});
+
+$('btnCancelManualImport').addEventListener('click', () => closeManualImportForm());
+
+/* Construit le corps envoyé à POST /api/imports/manual à partir du formulaire.
+   Extrait du gestionnaire de clic pour être vérifiable sans DOM complet, et pour
+   que la validation (titre non vide, prix > 0, devise = 3 lettres) reste une
+   seule fois dans le script — exactement celle de l'API, qui refusera de toute
+   façon une valeur douteuse. */
+function manualImportPayload() {
+  const title = $('manualImportTitle').value.trim();
+  if (!title) throw new Error('Saisis un titre : c\'est la donnée indispensable avec le prix.');
+  const price = Number($('manualImportPrice').value);
+  if (!Number.isFinite(price) || price <= 0) throw new Error('Prix d\'achat invalide : saisis un nombre strictement supérieur à 0.');
+  const currency = $('manualImportCurrency').value.trim();
+  if (!/^[A-Za-z]{3}$/.test(currency)) throw new Error('Devise invalide : un code de 3 lettres est attendu (ex. EUR, USD).');
+
+  const body = { title, purchasePrice: price, currency };
+  const url = $('manualImportUrl').value.trim();
+  if (url) body.url = url;
+  const description = $('manualImportDescription').value.trim();
+  if (description) body.rawDescription = description;
+  const images = $('manualImportImages').value.split('\n').map((line) => line.trim()).filter(Boolean);
+  if (images.length) body.imageUrls = images;
+  const supplierId = $('importSupplier') ? $('importSupplier').value : '';
+  if (supplierId) body.supplierId = Number(supplierId);
+  return body;
+}
+
+$('btnCreateManualImport').addEventListener('click', (event) => action(event.currentTarget, async () => {
+  const data = await api('/api/imports/manual', { method: 'POST', body: JSON.stringify(manualImportPayload()) });
+  await applyImportData(data);
+  closeManualImportForm();
+  return data;
+}, 'Fiche créée à la main. Tu peux maintenant générer les fiches IA.'));
+
 /* Enregistre la correction via PATCH /api/imports/:id, puis rafraîchit le
    détail : les fiches déjà générées gardent leur ancien prix (c'est voulu, le
    prix conseillé est un choix), mais l'import n'est plus bloqué. */
@@ -5502,28 +5663,16 @@ $('btnExtract').addEventListener('click', (event) => action(event.currentTarget,
     const payload = { url };
     if (supplierId) payload.supplierId = Number(supplierId);
     const data = await api('/api/imports', { method: 'POST', body: JSON.stringify(payload) });
-    state.importId = data.id;
-    $('importDetail').style.display = 'block';
-    $('importBody').innerHTML = [
-      ['Titre extrait', esc(data.title)],
-      ['Site détecté', esc(data.sourceSite)],
-      ['Partenaire', data.supplier ? esc(data.supplier.name) + ' · ' + esc(supplierMarginLabel(data.supplier)) : 'aucun (coefficient global)'],
-      ['Prix d\'achat', money(data.purchasePrice) + ' ' + esc(data.currency)],
-      ['Photos trouvées', (data.imageUrls || []).length],
-      ['Description brute', esc((data.rawDescription || '(aucune)').slice(0, 400))],
-    ].map(([k, v]) => '<div class="kv"><span>' + k + '</span><span>' + v + '</span></div>').join('');
-    renderImportPrice(data);
-    state.importDetails.set(String(data.id), data);
-    state.importImagesVerdict = null;
-    hideImportImagesVerdict();
-    renderImportImages(data);
-    await loadImports();
-    updateGenerateButton();
-    renderDashboard();
+    await applyImportData(data);
     finishStepper();
     return data;
   } catch (error) {
     failStepper();
+    // L'échec d'extraction n'est plus un cul-de-sac : le message de l'API dit ce
+    // qui a été tenté, et cette action ouvre la saisie manuelle pré-remplie avec
+    // l'URL tapée. C'est la promesse que l'ancien message faisait sans pouvoir
+    // la tenir (l'interface ne permettait pas de créer l'import autrement).
+    offerInlineErrorAction('Saisir la fiche à la main', () => openManualImportForm(url));
     throw error;
   }
 }, 'Fiche extraite. Tu peux maintenant générer les fiches.'));
