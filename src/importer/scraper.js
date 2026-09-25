@@ -1313,6 +1313,13 @@ function buildDirectStrategies(parsedUrl) {
   return strategies;
 }
 
+/* Marqueurs d'une page d'annuaire ou d'un mur, dans le titre comme dans le
+   corps. Volontairement étroits : « sign in » ou « directory » seuls
+   apparaissent sur des fiches produit légitimes, on ne garde donc que les
+   formulations qui n'ont aucun sens sur une vraie fiche. */
+const GENERIC_PAGE_MARKERS = /manufacturer directory|supplier directory|product directory|b2b directory|product listing|join free|unusual traffic|verify you are human|browser check|security check|please wait while|checking your browser/i;
+const ANTI_ROBOT_TITLE = /captcha|robot|just a moment|access denied|attention required|are you human/i;
+
 /** Motif lisible d'une page 200 inexploitable, pour le rapport final. */
 function classifyUnusablePage(fetched) {
   const body = String(fetched?.text || '').trim();
@@ -1320,7 +1327,33 @@ function classifyUnusablePage(fetched) {
   if (/captcha|robot check|are you a robot|just a moment|access denied|attention required|cf-error|enable javascript/i.test(body)) {
     return 'page anti-robot';
   }
+  if (GENERIC_PAGE_MARKERS.test(body)) return "page d'annuaire, pas une fiche produit";
   return 'aucune donnée produit';
+}
+
+/**
+ * Une page d'annuaire ou un mur anti-robot répond 200 avec un titre qui n'est
+ * PAS celui d'un produit : Alibaba renvoie « Alibaba Manufacturer Directory »
+ * répété deux fois, sans prix. Accepter ce résultat crée une fiche vide et
+ * surtout fait croire à une réussite — c'est pire qu'un échec franc, parce que
+ * l'utilisateur ne sait pas qu'il doit s'y prendre autrement. On préfère
+ * poursuivre l'échelle des stratégies, puis proposer la saisie manuelle, qui
+ * elle ne dépend d'aucun site.
+ */
+function looksLikeGenericPage(extracted) {
+  const title = String(extracted?.title || '').trim();
+  if (!title) return true;
+
+  // Titre visiblement doublé : « X » immédiatement suivi du même « X ».
+  const half = title.length / 2;
+  if (title.length >= 20 && Number.isInteger(half) && title.slice(0, half) === title.slice(half)) {
+    return true;
+  }
+
+  if (GENERIC_PAGE_MARKERS.test(title)) return true;
+  if (ANTI_ROBOT_TITLE.test(title)) return true;
+
+  return false;
 }
 
 /**
@@ -1627,8 +1660,18 @@ export async function scrapeProductFromUrl(url, { lookupHost = defaultLookup, ti
     }
 
     const extracted = extractFromHtml(fetched.text, fetched.finalUrl, patternSite);
-    if (extracted) return { ...extracted, strategy: strategy.name, attempts };
-    attempts.push({ strategy: strategy.name, status: fetched.status, note: classifyUnusablePage(fetched) });
+    /* Une extraction « réussie » peut n'être qu'une page d'annuaire : titre
+       générique, aucun prix. On la traite comme un échec et on poursuit
+       l'échelle — sinon l'import est créé avec un titre bidon, et l'utilisateur
+       croit que tout s'est bien passé alors qu'il n'a rien. */
+    if (extracted && !looksLikeGenericPage(extracted)) {
+      return { ...extracted, strategy: strategy.name, attempts };
+    }
+    attempts.push({
+      strategy: strategy.name,
+      status: fetched.status,
+      note: extracted ? 'page générique, pas une fiche produit' : classifyUnusablePage(fetched),
+    });
   }
 
   // 3) Lecteurs tiers — dernier recours. Sécurité : on re-valide la cible JUSTE
@@ -1639,13 +1682,23 @@ export async function scrapeProductFromUrl(url, { lookupHost = defaultLookup, ti
   const targetUrl = parsedUrl.toString();
   await assertHostIsPublic(new URL(targetUrl), lookupHost);
 
+  /* Le contrôle de page générique vaut aussi pour les lecteurs tiers : un
+     service qui renvoie fidèlement la même page d'annuaire ne rend pas le
+     résultat utilisable, et l'accepter recréerait exactement le faux succès
+     qu'on cherche à supprimer. */
   const wayback = await tryWaybackSnapshot(targetUrl, { lookupHost, budget, patternSite });
-  if (wayback) return { ...wayback, strategy: 'wayback', attempts };
-  attempts.push({ strategy: 'wayback', note: 'aucun instantané exploitable' });
+  if (wayback && !looksLikeGenericPage(wayback)) return { ...wayback, strategy: 'wayback', attempts };
+  attempts.push({
+    strategy: 'wayback',
+    note: wayback ? 'page générique, pas une fiche produit' : 'aucun instantané exploitable',
+  });
 
   const jina = await tryJinaReader(targetUrl, { lookupHost, budget, patternSite });
-  if (jina) return { ...jina, strategy: 'jina', attempts };
-  attempts.push({ strategy: 'jina', note: 'aucune donnée exploitable' });
+  if (jina && !looksLikeGenericPage(jina)) return { ...jina, strategy: 'jina', attempts };
+  attempts.push({
+    strategy: 'jina',
+    note: jina ? 'page générique, pas une fiche produit' : 'aucune donnée exploitable',
+  });
 
   // 4) Échec : le message dit exactement ce qui a été tenté et ce que chaque
   // tentative a répondu — et renvoie vers la saisie manuelle, qui, elle,
