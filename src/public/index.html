@@ -4,6 +4,13 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Megalomarket — AI Core</title>
+    <!-- Favicon : le même emblème que la barre latérale, en data URI pour que
+         le tableau de bord reste un fichier unique auto-contenu (aucune requête
+         réseau — contrainte vérifiée par tests/dashboard.test.js). Le fond
+         sombre arrondi n'est pas décoratif : une icône claire sur fond
+         transparent devient invisible dans la barre d'onglets d'un navigateur
+         en thème clair, et c'est justement là qu'on la voit le plus. -->
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 48 48%22%3E%3Cdefs%3E%3ClinearGradient id=%22g%22 x1=%227%22 y1=%2241%22 x2=%2241%22 y2=%227%22 gradientUnits=%22userSpaceOnUse%22%3E%3Cstop offset=%220%22 stop-color=%22%232ee6f5%22/%3E%3Cstop offset=%22.52%22 stop-color=%22%23ec3fbf%22/%3E%3Cstop offset=%221%22 stop-color=%22%238a4dff%22/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width=%2248%22 height=%2248%22 rx=%2211%22 fill=%22%2305060b%22/%3E%3Cg fill=%22none%22 stroke=%22url%28%23g%29%22 stroke-linecap=%22round%22 stroke-linejoin=%22round%22%3E%3Ccircle cx=%2224%22 cy=%2224%22 r=%2220.5%22 stroke-width=%222.3%22/%3E%3Cpath d=%22M15.8 34V15.2l6 8.2 6-8.6V34%22 stroke-width=%223.5%22/%3E%3Cpath d=%22M29.6 20.6 35.4 11.4%22 stroke-width=%223.1%22/%3E%3Cpath d=%22M35.4 11.4 28.9 12.4M35.4 11.4 34.4 17.9%22 stroke-width=%223.1%22/%3E%3C/g%3E%3C/svg%3E">
   <style>
     /* Polices auto-hébergées (base64) : mêmes familles que la maquette
        (Google Fonts), sans dépendance réseau externe — le tableau de bord
@@ -143,6 +150,11 @@
          d'état, pour rester lisible avec du texte blanc. */
       --bad-btn: #c23752;
       --bad-btn-hover: #a82c46;
+      /* Encre du bouton principal. Le bouton est cyan, donc son texte doit être
+         SOMBRE : du blanc sur #2ee6f5 ne donne qu'un contraste de 1,53:1, très
+         en dessous du minimum de 4,5:1. Avec cette encre on monte à 12,4:1, et
+         c'est aussi ce que montre la maquette (bouton « Principal »). */
+      --btn-primary-ink: #04121a;
       /* Bordure teintée de l'accent : la même valeur servait à six endroits. */
       --accent-line: rgba(46, 230, 245, .32);
       /* Deuxième teinte de marque, réservée au dégradé du logo et au curseur de
@@ -289,24 +301,38 @@
     /* Marque animée : un balancement lent de deux degrés, rien de plus. Elle
        signale que l'application est vivante sans jamais attirer l'attention sur
        elle — un back-office qu'on regarde travailler, pas un logo qu'on admire.
-       Le petit halo blanc en haut à gauche imite le reflet brillant de la
-       maquette (un sphère verre/chrome), superposé au halo cyan de fond. */
+
+       Le fond n'est plus un disque opaque mais un simple halo. L'ancien disque
+       (sphère « verre » + anneau incrusté) enfermait l'emblème et l'écrasait :
+       à la taille réelle de la barre latérale il ne restait qu'une pastille
+       sombre. Or l'emblème porte désormais son propre anneau et sa propre
+       lueur ; le halo ne sert qu'à le détacher du fond de la barre latérale. */
     .brand-mark {
       width: 46px; height: 46px; flex: none; border-radius: 50%; display: grid; place-items: center;
-      background:
-        radial-gradient(circle at 30% 22%, rgba(255, 255, 255, .55), rgba(255, 255, 255, 0) 32%),
-        radial-gradient(circle at 34% 30%, rgba(46, 230, 245, .32), rgba(9, 11, 20, .94) 74%);
-      box-shadow: 0 10px 24px -10px var(--accent), inset 0 0 0 1px rgba(255, 255, 255, .16);
+      background: radial-gradient(circle at 50% 50%, rgba(46, 230, 245, .1), rgba(46, 230, 245, 0) 70%);
+      filter: drop-shadow(0 0 10px rgba(46, 230, 245, .3));
       animation: brandSway 6.5s ease-in-out infinite;
     }
-    .brand-mark svg { width: 32px; height: 32px; }
+    .brand-mark svg { width: 38px; height: 38px; }
     @keyframes brandSway {
       0%, 100% { transform: rotate(0deg) translateY(0); }
       30% { transform: rotate(-2.2deg) translateY(-1px); }
       62% { transform: rotate(1.6deg) translateY(0); }
     }
     .brand-text { display: flex; flex-direction: column; line-height: 1.15; }
-    .brand-name { font-weight: 700; font-size: var(--fs-lg); }
+    .brand-name { font-weight: 700; font-size: var(--fs-lg); color: var(--ink); }
+    /* Nom en dégradé, comme sur la maquette : il se rattache ainsi à l'emblème
+       au lieu de flotter en blanc neutre. Sous `@supports` parce que la découpe
+       du fond par le texte n'est pas universelle : sans elle, le nom garde sa
+       couleur pleine et reste parfaitement lisible plutôt que de devenir
+       invisible (le piège classique de `color: transparent` non conditionné). */
+    @supports ((background-clip: text) or (-webkit-background-clip: text)) {
+      .brand-name {
+        background: linear-gradient(96deg, var(--cyan), #b6f6ff);
+        -webkit-background-clip: text; background-clip: text;
+        -webkit-text-fill-color: transparent; color: transparent;
+      }
+    }
     .brand-sub { color: var(--muted-2); font-size: var(--fs-2xs); text-transform: uppercase; letter-spacing: .11em; }
     /* Le curseur de navigation : UN SEUL trait, partagé par tous les éléments,
        qui glisse de l'ancienne section vers la nouvelle au lieu de disparaître
@@ -382,22 +408,35 @@
        l'action, qui reste le seul juge. */
     .btn {
       display: inline-flex; align-items: center; justify-content: center; gap: 7px;
-      background: var(--accent); color: #fff; border: 1px solid transparent; padding: 9px 15px;
+      /* Dégradé cyan (comme le bouton « Principal » de la maquette) et texte
+         sombre : c'est le contraste, pas le goût, qui l'impose — voir
+         --btn-primary-ink. La lueur cyan reprend l'aspect néon de la photo. */
+      background: linear-gradient(135deg, var(--cyan), var(--cyan-2));
+      color: var(--btn-primary-ink); border: 1px solid transparent; padding: 9px 15px;
       border-radius: var(--radius-xs); cursor: pointer; font-size: var(--fs-base); font-weight: 600;
       white-space: nowrap;
-      transition: background .16s var(--ease), transform .1s var(--ease), opacity .16s, box-shadow .16s;
+      box-shadow: 0 8px 20px -16px var(--cyan);
+      transition: filter .16s var(--ease), transform .1s var(--ease), opacity .16s, box-shadow .16s;
     }
-    .btn:hover:not(:disabled) { background: var(--accent-2); box-shadow: 0 8px 20px -14px var(--accent); }
+    /* Éclaircir plutôt que remplacer le fond : un second dégradé codé en dur
+       divergerait du premier à la première retouche de la palette. */
+    .btn:hover:not(:disabled) { filter: brightness(1.08); box-shadow: 0 10px 26px -14px var(--cyan); }
     .btn:active:not(:disabled) { transform: scale(.97); }
     .btn:disabled { opacity: .45; cursor: not-allowed; }
-    .btn.ghost, .btn-ghost { background: var(--panel-3); color: var(--text-2); border-color: var(--line); }
+    /* Les variantes ci-dessous neutralisent la lueur cyan du bouton principal :
+       elle n'a de sens que sous un bouton cyan, pas sous un bouton gris, doux
+       ou rouge — sous le rouge elle serait franchement fausse. */
+    .btn.ghost, .btn-ghost { background: var(--panel-3); color: var(--text-2); border-color: var(--line); box-shadow: none; }
     .btn.ghost:hover:not(:disabled), .btn-ghost:hover:not(:disabled) { background: var(--surface-4); color: #fff; box-shadow: none; }
     /* Variante « adoucie » : action fréquente mais non principale (enregistrer
        une fiche, confirmer une sélection). Elle se distingue de l'action
        principale sans crier. */
-    .btn-soft { background: var(--accent-soft); color: var(--accent-ink); border-color: var(--accent-line); }
+    .btn-soft { background: var(--accent-soft); color: var(--accent-ink); border-color: var(--accent-line); box-shadow: none; }
     .btn-soft:hover:not(:disabled) { background: rgba(46, 230, 245, .2); color: #fff; box-shadow: none; }
-    .btn.danger, .btn-danger { background: var(--bad-btn); }
+    /* Le texte du bouton rouge doit être REBASCULÉ en blanc : sans cela il
+       hériterait de l'encre sombre du bouton principal, et le contraste
+       tomberait à 3,58:1 (mesuré) au lieu des 5,30:1 actuels. */
+    .btn.danger, .btn-danger { background: var(--bad-btn); color: #fff; box-shadow: none; }
     .btn.danger:hover:not(:disabled), .btn-danger:hover:not(:disabled) { background: var(--bad-btn-hover); }
     .btn-danger-ghost { background: transparent; color: var(--bad-ink); border-color: var(--bad-line); }
     .btn-danger-ghost:hover:not(:disabled) { background: var(--bad-soft); color: #fff; box-shadow: none; }
@@ -1220,17 +1259,45 @@
   <aside class="sidebar" id="sidebar">
     <div class="brand">
       <div class="brand-mark" aria-hidden="true">
-        <svg viewBox="0 0 48 48" fill="none">
+        <!-- Emblème : un « M » prolongé d'une flèche montante, tracé en dégradé
+             cyan → magenta → violet sur un anneau du même dégradé, avec un halo
+             et une lueur néon.
+
+             Pourquoi ce dessin remplace le précédent : l'ancien glyphe était
+             trop fin (2,1 px) et posé sur un disque opaque, si bien qu'à la
+             taille réelle de la barre latérale il ne restait qu'une pastille
+             sombre — constaté au rendu, pas supposé. Ici le tracé est plus
+             épais, la flèche est courte et ne croise plus le « M » (elle le
+             prolonge), et surtout les couleurs sont en hexadécimal et non en
+             `var(--…)` : un SVG réutilisé comme favicon n'a aucune feuille de
+             style à sa disposition, les variables n'y seraient pas résolues. -->
+        <svg viewBox="0 0 48 48" fill="none" role="img" aria-label="Megalomarket">
           <defs>
-            <linearGradient id="mmLogoGrad" x1="6" y1="34" x2="40" y2="10" gradientUnits="userSpaceOnUse">
-              <stop offset="0" stop-color="var(--cyan)"/>
-              <stop offset=".55" stop-color="var(--pink)"/>
-              <stop offset="1" stop-color="var(--violet)"/>
+            <linearGradient id="mmLogoGrad" x1="7" y1="41" x2="41" y2="7" gradientUnits="userSpaceOnUse">
+              <stop offset="0" stop-color="#2ee6f5"/>
+              <stop offset=".52" stop-color="#ec3fbf"/>
+              <stop offset="1" stop-color="#8a4dff"/>
             </linearGradient>
+            <radialGradient id="mmLogoHalo" cx=".5" cy=".5" r=".5">
+              <stop offset=".4" stop-color="#2ee6f5" stop-opacity=".3"/>
+              <stop offset="1" stop-color="#2ee6f5" stop-opacity="0"/>
+            </radialGradient>
+            <filter id="mmLogoGlow" x="-50%" y="-50%" width="200%" height="200%">
+              <feGaussianBlur stdDeviation="1.3" result="mmBlur"/>
+              <feMerge>
+                <feMergeNode in="mmBlur"/>
+                <feMergeNode in="mmBlur"/>
+                <feMergeNode in="SourceGraphic"/>
+              </feMerge>
+            </filter>
           </defs>
-          <circle cx="24" cy="24" r="18.5" stroke="url(#mmLogoGrad)" stroke-width="2.1"/>
-          <path d="M14 31V17l7 8 7-9v15" stroke="url(#mmLogoGrad)" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>
-          <path d="M17 30 32 12M32 12l-7.5 1M32 12l-1 7.5" stroke="url(#mmLogoGrad)" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"/>
+          <circle cx="24" cy="24" r="23" fill="url(#mmLogoHalo)"/>
+          <g filter="url(#mmLogoGlow)" stroke="url(#mmLogoGrad)" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="24" cy="24" r="18.6" stroke-width="1.7" opacity=".85"/>
+            <path d="M16 33V16.5l5.6 7.4 5.6-7.8V33" stroke-width="3"/>
+            <path d="M28.5 21 34.2 12.4" stroke-width="2.6"/>
+            <path d="M34.2 12.4 28.2 13.3M34.2 12.4 33.3 18.4" stroke-width="2.6"/>
+          </g>
         </svg>
       </div>
       <div class="brand-text">

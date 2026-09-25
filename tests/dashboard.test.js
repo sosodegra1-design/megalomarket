@@ -83,9 +83,15 @@ test('le tableau de bord est en français et garde ses points d’entrée', () =
     'products', 'recommendations', 'activity', 'imports', 'listings']) {
     assert.ok(HTML.includes(`id="${id}"`), `le tableau de bord doit garder #${id}`);
   }
-  // Auto-contenu : aucune dépendance externe, donc rien à construire.
+  // Auto-contenu : le fichier ne doit RIEN charger sur le réseau, donc rien à
+  // construire. Le contrôle porte sur les ressources DISTANTES, pas sur la
+  // présence d'un `href` : le favicon et les polices sont encodés en `data:`,
+  // donc internes au fichier. Interdire tout `href` interdisait de fait un
+  // favicon embarqué — c'est la propriété visée qui est vérifiée ici.
   assert.ok(!/<script[^>]+src=/.test(HTML), 'aucun script externe');
-  assert.ok(!/<link[^>]+href=/.test(HTML), 'aucune feuille de style externe');
+  assert.ok(!/<link[^>]+href=["'](?!data:)/i.test(HTML), 'aucune ressource distante');
+  // Et le favicon doit bel et bien être là (il manquait complètement).
+  assert.match(HTML, /<link rel="icon"[^>]+href="data:image\/svg\+xml,/, 'le favicon doit être embarqué');
 });
 
 test('un réglage manquant est nommé, avec sa conséquence', () => {
