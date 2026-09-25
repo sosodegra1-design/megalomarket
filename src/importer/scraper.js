@@ -275,7 +275,7 @@ const MAX_GENERIC_IMAGES = 16;
  * pour que les tests puissent injecter une adresse publique sans toucher au
  * réseau : la protection SSRF doit rester vérifiable hors ligne.
  */
-async function defaultLookup(hostname) {
+export async function defaultLookup(hostname) {
   const records = await lookup(hostname, { all: true });
   return records.map((record) => record.address);
 }
@@ -394,7 +394,7 @@ function internalAddressError(hostname, address) {
  * n'existe pas) et n'étant ici qu'une dépendance transitive de cheerio, la
  * complexité n'est pas justifiée pour un outil d'import interne.
  */
-async function assertHostIsPublic(parsedUrl, lookupHost) {
+export async function assertHostIsPublic(parsedUrl, lookupHost) {
   if (parsedUrl.username || parsedUrl.password) {
     throw new Error(
       "URL refusée : identifiants intégrés (http://utilisateur:motdepasse@hôte) interdits à l'import.",
@@ -1340,7 +1340,7 @@ function classifyUnusablePage(fetched) {
  * poursuivre l'échelle des stratégies, puis proposer la saisie manuelle, qui
  * elle ne dépend d'aucun site.
  */
-function looksLikeGenericPage(extracted) {
+export function looksLikeGenericPage(extracted) {
   const title = String(extracted?.title || '').trim();
   if (!title) return true;
 

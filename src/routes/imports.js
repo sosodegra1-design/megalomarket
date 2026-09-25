@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { dbAll, dbGet, dbRun, logActivity } from '../db/database.js';
 import { scrapeProductFromUrl, detectSourceSite } from '../importer/scraper.js';
+import { readProductPageWithAgent } from '../importer/aiReader.js';
 import { generateListingsForImport, validateSitePayload } from '../importer/listingGenerator.js';
 import { publishListing, unpublishListing } from '../importer/publisher.js';
 import { connectors } from '../connectors/index.js';
@@ -146,7 +147,38 @@ importsRouter.post(
     // Validé AVANT l'extraction : inutile de scraper une page si le partenaire
     // choisi n'existe pas — l'erreur doit tomber tout de suite.
     const resolvedSupplierId = await resolveSupplierId(supplierId);
-    const data = await scrapeProductFromUrl(url);
+
+    /* Deux voies d'extraction, dans cet ordre :
+       1. le scraping (rapide, gratuit, exact — c'est la source de vérité quand
+          il aboutit) ;
+       2. si et seulement s'il échoue, la lecture de la page par l'agent web
+          Perplexity (voir importer/aiReader.js).
+       Cette seconde voie existe parce qu'Alibaba refuse les six couches de
+       scraping : insister davantage sur le scraping ne débloque rien, alors
+       qu'un agent qui ouvre réellement la page passe. Le résultat est marqué
+       comme lu par IA (`extractionMethod`) pour que l'interface avertisse au
+       lieu de faire passer les deux cas pour identiques. */
+    let data;
+    let extractionMethod = 'scrape';
+    try {
+      data = await scrapeProductFromUrl(url);
+    } catch (scrapeError) {
+      // Sans clé configurée, inutile de tenter : on remonte l'échec du scraping,
+      // dont le message détaille déjà toutes les tentatives.
+      if (!config.perplexity.ready) throw scrapeError;
+      try {
+        data = await readProductPageWithAgent({ url });
+        extractionMethod = 'agent';
+      } catch (agentError) {
+        /* Les deux voies ont échoué : on garde le message du scraping — c'est
+           lui qui décrit précisément ce que le site a répondu — et on y ajoute
+           la raison de l'échec de l'agent, pour que l'utilisateur sache que les
+           deux ont été tentées et pourquoi la saisie manuelle est la suite. */
+        throw new Error(
+          `${scrapeError.message} Lecture de la page par un agent web tentée ensuite : ${agentError.message}`,
+        );
+      }
+    }
     // Filet de sécurité : le scraper limite déjà son propre scan générique,
     // mais une fiche avec beaucoup de vraies variantes structurées (JSON-LD)
     // pourrait théoriquement dépasser la limite que /:id PATCH impose plus
@@ -155,8 +187,8 @@ importsRouter.post(
     // photos à la main.
     const imageUrls = data.imageUrls.slice(0, MAX_IMAGES);
     const info = await dbRun(
-      `INSERT INTO imports (source_url, source_site, title, raw_description, purchase_price, currency, image_urls, status, supplier_id, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, 'brouillon', ?, ?)`,
+      `INSERT INTO imports (source_url, source_site, title, raw_description, purchase_price, currency, image_urls, status, supplier_id, extraction_method, extraction_notes, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, 'brouillon', ?, ?, ?, ?)`,
       [
         url,
         data.sourceSite,
@@ -166,6 +198,8 @@ importsRouter.post(
         data.currency,
         JSON.stringify(imageUrls),
         resolvedSupplierId,
+        extractionMethod,
+        data.agentNotes || null,
         Date.now(),
       ],
     );
@@ -174,9 +208,14 @@ importsRouter.post(
       : withResolvedMargin(await dbGet('SELECT * FROM suppliers WHERE id = ?', [resolvedSupplierId]));
     await logActivity(
       'IMPORT_CREE',
-      `Produit importé depuis ${data.sourceSite} : ${data.title}${supplier ? ` (partenaire : ${supplier.name})` : ''}`,
+      extractionMethod === 'agent'
+        // Traçable dans le journal d'activité : une fiche lue par un agent n'a
+        // pas la même valeur de preuve qu'une fiche scrapée, l'historique doit
+        // le dire au lieu de les confondre.
+        ? `Produit importé depuis ${data.sourceSite} (page lue par un agent web, à vérifier) : ${data.title}${supplier ? ` (partenaire : ${supplier.name})` : ''}`
+        : `Produit importé depuis ${data.sourceSite} : ${data.title}${supplier ? ` (partenaire : ${supplier.name})` : ''}`,
     );
-    res.status(201).json({ id: info.lastInsertRowid, ...data, imageUrls, supplier });
+    res.status(201).json({ id: info.lastInsertRowid, ...data, imageUrls, supplier, extractionMethod });
   }),
 );
 

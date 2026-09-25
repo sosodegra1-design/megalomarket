@@ -209,6 +209,34 @@ async function migrateImportsSupplier() {
   return added;
 }
 
+/* Comment la fiche a été obtenue : 'scrape' (extraction depuis le code source
+   de la page) ou 'agent' (page lue par un agent web, voir importer/aiReader.js).
+   Cette distinction n'est pas cosmétique : une fiche lue par un agent peut
+   comporter une erreur de prix ou de variante, l'interface doit donc pouvoir
+   prévenir l'utilisateur au lieu de présenter les deux cas comme identiques.
+   Les imports déjà en base sont tous des scrapes : la valeur par défaut est
+   donc exacte pour l'historique, sans reprise de données à faire. */
+async function migrateImportsExtractionMethod() {
+  const addedMethod = await addColumnIfMissing(
+    'imports',
+    'extraction_method',
+    "TEXT NOT NULL DEFAULT 'scrape'",
+  );
+  /* La note de lecture garde la preuve : prix tel qu'affiché sur la page
+     (souvent une fourchette B2B « 1,20-1,50 US$ / pièce, min. 100 pièces ») et
+     la citation dont l'agent a tiré son prix. Sans elle, l'utilisateur devrait
+     rouvrir la page pour vérifier, et la fourchette serait perdue dès que
+     l'import est rechargé. */
+  const addedNotes = await addColumnIfMissing('imports', 'extraction_notes', 'TEXT');
+  if (addedMethod) {
+    await logActivity('MIGRATION', "Colonne imports.extraction_method ajoutée : distingue une fiche scrapée d'une fiche lue par un agent web.");
+  }
+  if (addedNotes) {
+    await logActivity('MIGRATION', "Colonne imports.extraction_notes ajoutée : conserve la preuve de lecture (prix affiché, citation) d'une fiche lue par un agent.");
+  }
+  return addedMethod || addedNotes;
+}
+
 /* Coût et délai d'expédition d'un transporteur, saisis à la main (aucune API
    de cotation en temps réel n'est branchée ici — voir src/services/shipping.js).
    NULL tant que non renseigné : un transporteur sans coût connu est ignoré par
@@ -378,6 +406,7 @@ export async function initDatabase() {
   await migrateTrendFindsSourcing();
   await migrateTrendFindsReview();
   await migrateImportListingsQuality();
+  await migrateImportsExtractionMethod();
 }
 
 export async function logActivity(kind, message) {
