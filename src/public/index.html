@@ -1429,6 +1429,10 @@
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17 20v-1.7a3.3 3.3 0 0 0-3.3-3.3H8.3A3.3 3.3 0 0 0 5 18.3V20"/><circle cx="10.7" cy="7.5" r="3.3"/><path d="M19 20v-1.7a3.3 3.3 0 0 0-2.2-3.1"/><path d="M15 4.2a3.3 3.3 0 0 1 0 6.4"/></svg>
         Partenaires
       </a>
+      <a class="nav-item" href="#/parametres" data-view="parametres">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-2.9 1.2v.2a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.6 1.7 1.7 0 0 0-1.9.4l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0-1.2-2.9H3a2 2 0 1 1 0-4h.1A1.7 1.7 0 0 0 4.7 8a1.7 1.7 0 0 0-.4-1.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.9.3H9a1.7 1.7 0 0 0 1-1.5V2a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 2.9 1.2l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.9V9a1.7 1.7 0 0 0 1.5 1H22a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1Z"/></svg>
+        Paramètres
+      </a>
       <span class="nav-label">Exploitation</span>
       <a class="nav-item" href="#/canaux" data-view="canaux">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="6" cy="12" r="2.6"/><circle cx="18" cy="5.5" r="2.6"/><circle cx="18" cy="18.5" r="2.6"/><path d="m8.3 10.8 7.4-3.9m0 10.2-7.4-3.9"/></svg>
@@ -2342,6 +2346,47 @@
         </div>
       </section>
 
+      <!-- ==================== VUE : PARAMÈTRES ==================== -->
+      <section class="view" id="view-parametres" data-view="parametres" hidden>
+        <div class="card reveal-in">
+          <div class="card-head card-head-line">
+            <div class="card-head-text">
+              <h2>Tableau des devises</h2>
+              <p>
+                Le taux est la <strong>valeur en euros d'une unité</strong> de la devise. Il sert à
+                convertir le prix d'achat fournisseur avant d'appliquer le coefficient de marge :
+                sans lui, un prix en dollars serait multiplié par un coefficient puis appelé des
+                euros. <strong>Aucun taux n'est deviné</strong> — une devise sans taux bloque le
+                calcul au lieu de produire un prix faux qui partirait en vente.
+              </p>
+            </div>
+          </div>
+          <p class="hint">
+            Les taux sont saisis à la main, sans API : une panne de service au moment de calculer un
+            prix serait pire qu'un taux un peu ancien. Pense à les revoir quand une devise bouge
+            nettement.
+          </p>
+          <div class="table-scroll">
+            <table class="table" id="currenciesTable">
+              <thead>
+                <tr>
+                  <th>Pays</th>
+                  <th>Devise</th>
+                  <th>Code</th>
+                  <th class="num">Taux → €</th>
+                  <th>Mis à jour</th>
+                  <th class="cell-actions">Actions</th>
+                </tr>
+              </thead>
+              <tbody id="currenciesBody">
+                <tr class="table-empty"><td colspan="6">Chargement des devises…</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div id="currenciesStatus" role="alert" hidden></div>
+        </div>
+      </section>
+
       <!-- ==================== VUE : CANAUX ==================== -->
       <section class="view" id="view-canaux" data-view="canaux" hidden>
         <div class="card reveal-in">
@@ -2836,6 +2881,7 @@ function esc(value) {
    et aux compteurs animés : ils n'inventent rien, ils agrègent ce que les routes
    existantes renvoient déjà. */
 const state = {
+  currencies: [],
   config: null,
   aiReady: false,
   importId: null,
@@ -7373,6 +7419,7 @@ const VIEWS = {
   transporteurs: { el: 'view-transporteurs', title: 'Transporteurs', group: 'Réglages', sub: "Familles d'expédition, coûts et délais" },
   'baremes-marge': { el: 'view-baremes-marge', title: 'Barèmes de marge', group: 'Réglages', sub: "Paliers de prix d'achat et coefficients appliqués" },
   partenaires: { el: 'view-partenaires', title: 'Partenaires', group: 'Réglages', sub: 'Tous les partenaires enregistrés, par type' },
+  parametres: { el: 'view-parametres', title: 'Paramètres', group: 'Réglages', sub: 'Taux de change des devises utilisées pour calculer les prix' },
   canaux: { el: 'view-canaux', title: 'Canaux', group: 'Exploitation', sub: 'Places de marché connectées et état de publication' },
   commandes: { el: 'view-commandes', title: 'Commandes', group: 'Exploitation', sub: 'Commandes reçues et suivi des expéditions' },
   distributeurs: { el: 'view-distributeurs', title: 'Distributeurs', group: 'Exploitation', sub: 'Clients B2B en aval du hub' },
@@ -7390,6 +7437,7 @@ const ROUTES = {
   '#/transporteurs': 'transporteurs',
   '#/baremes-marge': 'baremes-marge',
   '#/partenaires': 'partenaires',
+  '#/parametres': 'parametres',
   '#/canaux': 'canaux',
   '#/commandes': 'commandes',
   '#/distributeurs': 'distributeurs',
@@ -7587,12 +7635,87 @@ if (typeof document.addEventListener === 'function') {
 }
 
 /* ===================== DÉMARRAGE ===================== */
+/* ===================== TABLEAU DES DEVISES ===================== */
+
+/* Un taux peut être minuscule : 1 VND vaut 0,000036 EUR. Un arrondi à deux
+   décimales afficherait « 0,00 » et ferait croire à un taux nul — donc à une
+   devise inutilisable. On garde trois chiffres significatifs en dessous du
+   centième. */
+function formatRate(rate) {
+  const n = Number(rate);
+  if (!Number.isFinite(n) || n <= 0) return '—';
+  if (n >= 0.01) return String(Number(n.toFixed(4)));
+  return n.toPrecision(3);
+}
+
+async function loadCurrencies() {
+  const body = $('currenciesBody');
+  try {
+    state.currencies = await api('/api/currencies');
+  } catch (error) {
+    // Une erreur de chargement doit se voir dans la table, pas disparaître : sans
+    // taux, le hub ne peut calculer aucun prix.
+    if (body) body.innerHTML = '<tr class="table-empty"><td colspan="6">' + esc(error.message) + '</td></tr>';
+    return;
+  }
+  renderCurrencies();
+}
+
+function renderCurrencies() {
+  const body = $('currenciesBody');
+  if (!body) return;
+  const rows = Array.isArray(state.currencies) ? state.currencies : [];
+  if (!rows.length) {
+    body.innerHTML = '<tr class="table-empty"><td colspan="6">Aucune devise enregistrée.</td></tr>';
+    return;
+  }
+  body.innerHTML = rows.map((c) => (
+    '<tr class="row-in">'
+    + '<td data-label="Pays" class="cell-strong">' + esc(c.country) + '</td>'
+    + '<td data-label="Devise">' + esc(c.name) + '</td>'
+    + '<td data-label="Code" class="cell-muted"><code>' + esc(c.code) + '</code></td>'
+    // Identifiant stable par devise : le champ est retrouvé par `getElementById`,
+    // ce qui évite de dépendre d'un parcours du DOM (fragile, et absent des DOM
+    // de test).
+    + '<td data-label="Taux" class="num">'
+    + '<input type="number" step="0.000001" min="0.000001" id="rate-' + esc(c.code) + '" value="' + esc(String(c.rate_to_eur)) + '" aria-label="Taux de change ' + esc(c.code) + '"></td>'
+    + '<td data-label="Mis à jour" class="cell-muted">' + esc(when(c.updated_at)) + '</td>'
+    + '<td data-label="Actions" class="cell-actions"><div class="actions">'
+    + '<button class="btn btn-soft btn-xs" type="button" data-action="save-rate" data-code="' + esc(c.code) + '">Enregistrer</button>'
+    + '</div></td>'
+    + '</tr>'
+  )).join('');
+  stagger(body);
+}
+
+onAction($('currenciesBody'), {
+  'save-rate': (button) => action(button, async () => {
+    const code = button.dataset.code;
+    const input = $('rate-' + code);
+    if (!input) throw new Error('Champ de taux introuvable pour ' + code + '.');
+    const value = Number(input.value);
+    if (!Number.isFinite(value) || value <= 0) {
+      throw new Error('Taux invalide : un nombre strictement supérieur à 0 est attendu.');
+    }
+    const updated = await api('/api/currencies/' + encodeURIComponent(code), {
+      method: 'PATCH',
+      body: JSON.stringify({ rateToEur: value }),
+    });
+    // On remplace la ligne en place plutôt que de tout recharger : le tableau
+    // reste trié par pays et l'utilisateur ne perd pas sa position.
+    const index = (state.currencies || []).findIndex((c) => c.code === updated.code);
+    if (index !== -1) state.currencies[index] = updated;
+    renderCurrencies();
+    return updated;
+  }, 'Taux enregistré.'),
+});
+
 async function loadAll() {
   // La configuration d'abord : elle décide quelles actions restent bloquées.
   await loadConfig();
   // Chaque bloc est indépendant : une section en erreur ne doit pas vider les autres.
   const loadImportsAndDetails = async () => { await loadImports(); await hydrateImportDetails(); };
-  const blocks = [loadChannels, loadProducts, loadRecommendations, loadSuppliers, loadImportsAndDetails, loadActivity, loadDistributors, loadDenicheur, loadPipelineRuns, loadSiteProducts, loadSiteTaxonomy, loadCommandes];
+  const blocks = [loadChannels, loadProducts, loadRecommendations, loadSuppliers, loadImportsAndDetails, loadActivity, loadDistributors, loadDenicheur, loadPipelineRuns, loadSiteProducts, loadSiteTaxonomy, loadCommandes, loadCurrencies];
   const errors = [];
   await Promise.all(blocks.map((fn) => fn().catch((error) => { errors.push(fn.name + ' : ' + error.message); })));
   renderDashboard();
@@ -7617,6 +7740,7 @@ function boot() {
       // boucle : seule une VRAIE navigation (retour arrière, lien cliqué,
       // saisie manuelle de l'URL) entre ici.
       if (view === 'produits') { restoreProductsStateFromHash(); loadProductsFragment(); }
+      if (view === 'parametres') loadCurrencies();
     });
     if (typeof window.matchMedia === 'function') {
       const media = window.matchMedia('(prefers-reduced-motion: reduce)');
