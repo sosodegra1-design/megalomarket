@@ -140,6 +140,14 @@ export const config = {
     },
   },
 
+  lumivita: {
+    apiUrl: process.env.LUMIVITA_API_URL || null,
+    apiKey: process.env.LUMIVITA_API_KEY || null,
+    get ready() {
+      return has('LUMIVITA_API_URL', 'LUMIVITA_API_KEY');
+    },
+  },
+   
   ownSite: {
     apiUrl: process.env.OWN_SITE_API_URL || null,
     apiKey: process.env.OWN_SITE_API_KEY || null,
