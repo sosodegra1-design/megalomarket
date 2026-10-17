@@ -1,11 +1,12 @@
-import * as ebay from './ebay.js';
+```javascript
+import * as lumivita from './lumivita.js';
 import * as ownSite from './ownSite.js';
 import * as amazon from './amazon.js';
 import * as tiktokShop from './tiktokShop.js';
 import * as allegro from './allegro.js';
 
 export const connectors = {
-  ebay,
+  lumivita,
   own_site: ownSite,
   amazon,
   tiktok_shop: tiktokShop,
@@ -24,3 +25,4 @@ export function allChannelsStatus() {
     configured: connector.isConfigured(),
   }));
 }
+```
