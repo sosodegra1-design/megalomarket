@@ -10,6 +10,10 @@ import { loadCurrencyRates } from '../db/currency-catalogue.js';
 import { config } from '../config/env.js';
 import { withResolvedMargin } from './suppliers.js';
 import { inspectImages } from '../ai/visionInspector.js';
+import { detectCategory } from '../importer/categorizer.js';
+import { assertImportable } from '../importer/dedupe.js';
+import { normalizeTitleKey } from '../importer/categorizer.js';
+import { normalizeLinkKey } from '../services/bookmarks.js';
 
 export const importsRouter = Router();
 
@@ -74,11 +78,14 @@ importsRouter.get(
   asyncRoute(async (req, res) => {
     // Le partenaire est joint ici (et non rechargé ligne par ligne) pour que la
     // table des imports puisse dire d'où vient chaque extraction sans N+1.
+    const category = typeof req.query.category === 'string' && req.query.category ? req.query.category : null;
     res.json(await dbAll(
       `SELECT i.*, s.name AS supplier_name, s.kind AS supplier_kind
        FROM imports i
        LEFT JOIN suppliers s ON s.id = i.supplier_id
+       ${category ? 'WHERE i.category = ?' : ''}
        ORDER BY i.created_at DESC LIMIT 100`,
+      category ? [category] : [],
     ));
   }),
 );
@@ -119,6 +126,37 @@ importsRouter.get(
   '/cleanup/preview',
   asyncRoute(async (req, res) => {
     res.json({ imports: await findCleanupCandidates() });
+  }),
+);
+
+/*
+ * Suppression des DOUBLONS déjà importés : pour un même produit (même lien hors paramètres
+ * de suivi, ou même titre) on garde le plus ancien import et on supprime les suivants.
+ * Un import qui porte une fiche publiée est toujours épargné.
+ */
+importsRouter.delete(
+  '/duplicates',
+  asyncRoute(async (req, res) => {
+    const imports = await dbAll('SELECT id, source_url, title FROM imports ORDER BY id');
+    const published = new Set((await dbAll("SELECT DISTINCT import_id AS id FROM import_listings WHERE status = 'publie'")).map((r) => r.id));
+    const keepByKey = new Map();
+    const deleted = [];
+    for (const imp of imports) {
+      const keys = [
+        imp.source_url ? `l:${normalizeLinkKey(imp.source_url)}` : null,
+        normalizeTitleKey(imp.title) ? `t:${normalizeTitleKey(imp.title)}` : null,
+      ].filter(Boolean);
+      const first = keys.map((k) => keepByKey.get(k)).find((id) => id !== undefined);
+      if (first === undefined || published.has(imp.id)) {
+        for (const k of keys) if (!keepByKey.has(k)) keepByKey.set(k, imp.id);
+        continue;
+      }
+      await dbRun('DELETE FROM import_listings WHERE import_id = ?', [imp.id]);
+      await dbRun('DELETE FROM imports WHERE id = ?', [imp.id]);
+      deleted.push({ id: imp.id, title: imp.title, doublonDe: first });
+    }
+    if (deleted.length) await logActivity('IMPORT_DOUBLONS', `${deleted.length} doublon(s) supprimé(s) : n° ${deleted.map((d) => d.id).join(', ')}.`);
+    res.json({ deleted: deleted.length, imports: deleted });
   }),
 );
 
@@ -186,10 +224,12 @@ importsRouter.post(
     // tard (MAX_IMAGES). On tronque ici pour ne jamais enregistrer un import
     // que la suite du flux ne pourrait plus modifier sans d'abord retirer des
     // photos à la main.
+    await assertImportable({ url, title: data.title });
     const imageUrls = data.imageUrls.slice(0, MAX_IMAGES);
+    const category = detectCategory({ title: data.title, rawDescription: data.rawDescription });
     const info = await dbRun(
-      `INSERT INTO imports (source_url, source_site, title, raw_description, purchase_price, currency, image_urls, status, supplier_id, extraction_method, extraction_notes, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, 'brouillon', ?, ?, ?, ?)`,
+      `INSERT INTO imports (source_url, source_site, title, raw_description, purchase_price, currency, image_urls, status, supplier_id, extraction_method, extraction_notes, category, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, 'brouillon', ?, ?, ?, ?, ?)`,
       [
         url,
         data.sourceSite,
@@ -201,6 +241,7 @@ importsRouter.post(
         resolvedSupplierId,
         extractionMethod,
         data.agentNotes || null,
+        category,
         Date.now(),
       ],
     );
@@ -292,8 +333,8 @@ importsRouter.post(
     const images = imageUrls ? parseImageUrls(imageUrls) : [];
 
     const info = await dbRun(
-      `INSERT INTO imports (source_url, source_site, title, raw_description, purchase_price, currency, image_urls, status, supplier_id, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, 'brouillon', ?, ?)`,
+      `INSERT INTO imports (source_url, source_site, title, raw_description, purchase_price, currency, image_urls, status, supplier_id, category, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, 'brouillon', ?, ?, ?)`,
       [
         sourceUrl,
         sourceSite,
@@ -303,6 +344,7 @@ importsRouter.post(
         currency.trim().toUpperCase(),
         JSON.stringify(images),
         resolvedSupplierId,
+        detectCategory({ title, rawDescription }),
         Date.now(),
       ],
     );

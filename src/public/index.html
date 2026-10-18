@@ -5665,7 +5665,7 @@ const importsTable = createTable({
     { key: 'listings', value: (i) => importListingCount(i) ?? -1 },
     { key: 'created_at', value: (i) => Number(i.created_at) },
   ],
-  search: (i) => [i.title, i.source_site, i.status, i.currency, i.supplier_name].join(' '),
+  search: (i) => [i.title, i.source_site, i.status, i.currency, i.supplier_name, i.category].join(' '),
   row: (i) => {
     const id = esc(i.id);
     const count = importListingCount(i);
@@ -5681,6 +5681,7 @@ const importsTable = createTable({
       // Repère visible dans la liste, sans avoir à ouvrir la fiche : une page
       // lue par un agent doit se distinguer d'un scrape réussi.
       + (i.extraction_method === 'agent' ? '<div style="font-size:.75rem"><span class="pill off" title="Page lue par un agent web (site bloquant le scraping) — prix à vérifier">lue par IA</span></div>' : '')
+      + (i.category === 'lumivita' ? '<div style="font-size:.75rem"><span class="pill ok" title="Éclairage : classé automatiquement dans la catégorie LumiVita">LumiVita</span></div>' : '')
       + (i.supplier_name ? '<div style="font-size:.75rem">via ' + esc(i.supplier_name) + '</div>' : '') + '</td>'
       + '<td data-label="Statut"><span class="pill ' + (i.status === 'pret' ? 'ok' : 'off') + '">' + esc(i.status) + '</span></td>'
       + '<td data-label="Prix d\'achat" class="num">' + money(i.purchase_price) + ' ' + esc(i.currency) + '</td>'

@@ -135,3 +135,15 @@ test('the LumiVita catalogue is inscribed in the database', async () => {
   assert.equal(synced.body.total, 6);
   assert.equal((await dbAll("SELECT id FROM products WHERE sku LIKE 'LV-%'")).length, 6);
 });
+
+test('duplicates already imported are removed, keeping the oldest; a light is classified and gets a LumiVita sheet', async () => {
+  const make = (title, price = 4) => call('/api/imports/manual', { method: 'POST', body: { title, purchasePrice: price, currency: 'EUR', url: `https://www.alibaba.com/product-detail/${encodeURIComponent(title)}_1.html` } });
+  const a = await make('Veilleuse LED nuage');
+  const b = await make('veilleuse led nuage');
+  assert.equal(a.body.category ?? (await dbGet('SELECT category FROM imports WHERE id = ?', [a.body.id])).category, 'lumivita');
+  const removed = await call('/api/imports/duplicates', { method: 'DELETE' });
+  assert.equal(removed.status, 200);
+  assert.ok(removed.body.imports.some((d) => d.id === b.body.id && d.doublonDe === a.body.id));
+  assert.equal(await dbGet('SELECT id FROM imports WHERE id = ?', [b.body.id]), undefined);
+  assert.ok(await dbGet('SELECT id FROM imports WHERE id = ?', [a.body.id]), 'le plus ancien est conservé');
+});

@@ -43,6 +43,8 @@ export function buildReport({ now = new Date(), server, ollama, config, imports,
     lines.push(`- Total : ${imports.length} (brouillon : ${byStatus.brouillon || 0}, fiches générées : ${byStatus.pret || 0})`);
     const waiting = byStatus.brouillon || 0;
     if (waiting > 0) problems.push(`${waiting} import(s) sans fiches générées`);
+    const lights = imports.filter((i) => i.category === 'lumivita').length;
+    lines.push(`- Catégorie LumiVita (éclairage) : ${lights}`);
     for (const imp of imports.slice(0, 5)) {
       lines.push(`- #${imp.id} ${imp.title} — ${imp.source_site} — ${imp.status}`);
     }

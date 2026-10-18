@@ -71,6 +71,13 @@ async function saveRetries(retries) {
    on retente la génération, au plus MAX_RETRIES fois chacun. Les imports issus d'une page
    « barrière » (titre générique) sont supprimés : ils n'ont rien à générer. */
 async function repairPending(stamp) {
+  // Doublons déjà présents : on garde le plus ancien, on supprime les suivants.
+  try {
+    const dup = await api('/api/imports/duplicates', undefined, 'DELETE');
+    if (dup.deleted > 0) console.log(`[${stamp}] ${dup.deleted} doublon(s) supprimé(s) : ${dup.imports.map((d) => `#${d.id}`).join(', ')}`);
+  } catch (error) {
+    console.error(`[${stamp}] suppression des doublons impossible : ${error.message}`);
+  }
   let imports;
   try { imports = await api('/api/imports', undefined, 'GET'); } catch { return; }
   const retries = await loadRetries();
@@ -172,6 +179,13 @@ async function pass() {
       await api(`/api/imports/${imported.id}/generate`);
       console.log(`  ✓ import #${imported.id} « ${imported.title} » : fiches en brouillon, à valider dans le tableau de bord`);
     } catch (error) {
+      if (/^(Doublon|Page générique)/.test(error.message)) {
+        // Refus voulu du serveur : doublon (supprimé / non importé) ou page barrière du site.
+        console.log(`  ↷ ${error.message}`);
+        seen.add(entry.url);
+        await saveSeen(SEEN_PATH, seen);
+        continue;
+      }
       console.error(`  ✗ échec : ${error.message}`);
       if (imported) console.error(`    L'import #${imported.id} existe en brouillon : relance « Générer les fiches » depuis le tableau de bord (vérifie qu'Ollama tourne).`);
       // Le serveur est tombé en cours de route : ce n'est pas la faute du lien,

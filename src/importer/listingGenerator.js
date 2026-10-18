@@ -5,7 +5,13 @@ import { loadCurrencyRates } from '../db/currency-catalogue.js';
 import { config } from '../config/env.js';
 import { connectors } from '../connectors/index.js';
 
-const MARKETPLACES = ['amazon', 'tiktok_shop', 'allegro', 'lumivita'];
+const MARKETPLACES = ['amazon', 'tiktok_shop', 'allegro'];
+
+/* LumiVita est le catalogue professionnel d'ÉCLAIRAGE : seuls les imports classés
+   « lumivita » (lampes, luminaires, guirlandes…) reçoivent une fiche pour ce canal. */
+function marketplacesFor(imp) {
+  return imp.category === 'lumivita' ? [...MARKETPLACES, 'lumivita'] : MARKETPLACES;
+}
 
 /* Quand le scraper n'a pas lu le prix d'achat, le prix conseillé vaut 0 € et les
    fiches sont invendables (les canaux refusent un prix nul). Le texte reste
@@ -16,7 +22,7 @@ export const MISSING_PURCHASE_PRICE_WARNING =
   "Prix d'achat fournisseur introuvable : la page source n'exposait aucun prix lisible, le prix conseillé a donc été calculé à 0 €. "
   + "Les fiches texte restent utilisables, mais renseigne le prix d'achat réel via PATCH /api/imports/:id avant de publier — les canaux refusent une fiche à 0 €.";
 
-const SYSTEM_PROMPT = `Tu es un expert e-commerce multi-marketplaces pour Megalomarket, une boutique d'articles pour enfants.
+const BASE_SYSTEM_PROMPT = `Tu es un expert e-commerce multi-marketplaces pour Megalomarket, une boutique d'articles pour enfants.
 On te donne les informations brutes d'une fiche produit fournisseur (souvent en anglais ou chinois, parfois mal traduites).
 Réponds UNIQUEMENT avec un objet JSON valide, sans texte autour, au format exact :
 {
@@ -32,6 +38,14 @@ Règles :
 - Allegro : ton clair et rassurant, précis sur les caractéristiques.
 - LumiVita : catalogue professionnel pour distributeurs et revendeurs, ton sobre et factuel, sans prix ni promesse de stock.
 - Ne jamais inventer une caractéristique technique absente des données fournies.`;
+
+/* La fiche LumiVita n'est demandée à l'IA que pour un produit d'éclairage. */
+function buildSystemPrompt(imp) {
+  if (imp.category === 'lumivita') return BASE_SYSTEM_PROMPT;
+  return BASE_SYSTEM_PROMPT
+    .replace(',\n  "lumivita": {"title": "...", "description": "..."}', '')
+    .replace(/- LumiVita :[^\n]*\n/, '');
+}
 
 /* ===================== SITE PROPRE =====================
    Le site BBVOLTEX n'accepte pas le même format que les marketplaces : il lui
@@ -197,7 +211,7 @@ export async function generateListingsForImport(importId) {
   const imp = await dbGet('SELECT * FROM imports WHERE id = ?', [importId]);
   if (!imp) throw new Error(`Import introuvable (id=${importId}).`);
 
-  const raw = await askModel({ system: SYSTEM_PROMPT, prompt: buildPrompt(imp), maxTokens: 1800 });
+  const raw = await askModel({ system: buildSystemPrompt(imp), prompt: buildPrompt(imp), maxTokens: 1800 });
   let parsed;
   try {
     parsed = parseJsonFromModel(raw);
@@ -239,7 +253,7 @@ export async function generateListingsForImport(importId) {
   const now = Date.now();
   const saved = [];
 
-  for (const marketplace of MARKETPLACES) {
+  for (const marketplace of marketplacesFor(imp)) {
     const listing = parsed[marketplace];
     if (!listing?.title || !listing?.description) continue;
     await dbRun(

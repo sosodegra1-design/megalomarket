@@ -194,7 +194,7 @@ test('la marge du partenaire remplace le coefficient global pour cet import', as
   // Le prix est celui du partenaire, dans la réponse ET en base.
   assert.ok(result.body.listings.every((l) => l.suggestedPrice === expected));
   const rows = await dbAll('SELECT suggested_price FROM import_listings WHERE import_id = ?', [importId]);
-  assert.equal(rows.length, 4, 'les quatre marketplaces');
+  assert.equal(rows.length, 3, 'trois marketplaces : pas de fiche LumiVita pour un jouet');
   assert.ok(rows.every((row) => row.suggested_price === expected), 'la marge partenaire est bien persistée');
 });
 

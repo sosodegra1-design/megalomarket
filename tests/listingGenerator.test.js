@@ -91,7 +91,7 @@ test('a 0 purchase price still generates the text sheets but returns an explicit
 
   // Le texte reste généré : la génération n'est pas perdue, seulement signalée.
   assert.ok(Array.isArray(result.listings));
-  assert.equal(result.listings.length, 4, 'les quatre marketplaces');
+  assert.equal(result.listings.length, 3, 'trois marketplaces : un jouet n\'a pas de fiche LumiVita (éclairage seulement)');
   assert.ok(result.listings.every((l) => l.suggestedPrice === 0));
 
   // Le prix est nul, mais plus jamais en silence.
@@ -102,7 +102,7 @@ test('a 0 purchase price still generates the text sheets but returns an explicit
   assert.match(result.warning, /publier/);
 
   const rows = await dbAll('SELECT suggested_price FROM import_listings WHERE import_id = ?', [id]);
-  assert.equal(rows.length, 4);
+  assert.equal(rows.length, 3);
   assert.ok(rows.every((row) => row.suggested_price === 0), 'le prix stocké reste celui du calcul, inchangé');
 });
 

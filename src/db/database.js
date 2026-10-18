@@ -421,6 +421,23 @@ async function assertSchemaIsOurs() {
    il n'y a plus rien à faire. */
 const EBAY_COLUMN = { channel_listings: 'channel', import_listings: 'marketplace' };
 
+/* Catégorie d'un import (tri automatique : « lumivita » pour tout ce qui est éclairage).
+   Les imports déjà présents sont classés à l'ajout de la colonne. */
+async function migrateImportsCategory() {
+  const added = await addColumnIfMissing('imports', 'category', 'TEXT');
+  const { detectCategory } = await import('../importer/categorizer.js');
+  const rows = await dbAll('SELECT id, title, raw_description FROM imports WHERE category IS NULL');
+  let classified = 0;
+  for (const row of rows) {
+    const category = detectCategory({ title: row.title, rawDescription: row.raw_description });
+    if (category) {
+      await dbRun('UPDATE imports SET category = ? WHERE id = ?', [category, row.id]);
+      classified += 1;
+    }
+  }
+  if (added || classified) await logActivity('MIGRATION', `Imports : colonne category${added ? ' ajoutée' : ''}, ${classified} import(s) classé(s) en lumivita.`);
+}
+
 async function migrateLumivitaChannel() {
   let migrated = false;
   for (const [table, column] of Object.entries(EBAY_COLUMN)) {
@@ -477,6 +494,7 @@ export async function initDatabase() {
   await migrateImportsExtractionMethod();
   await migrateImportsLandedCost();
   await migrateLumivitaChannel();
+  await migrateImportsCategory();
   await seedCurrenciesIfEmpty();
 }
 
