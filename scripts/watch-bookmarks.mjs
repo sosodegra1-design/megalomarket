@@ -52,8 +52,23 @@ async function api(path, body) {
   return data;
 }
 
+async function serverIsUp() {
+  try {
+    const response = await fetch(`${SERVER}/api/health`, { signal: AbortSignal.timeout(5000) });
+    return response.ok;
+  } catch {
+    return false;
+  }
+}
+
 async function pass() {
   const stamp = new Date().toLocaleTimeString('fr-FR');
+  // Au démarrage du Mac, ce script peut partir avant le serveur : on attend le
+  // prochain passage SANS toucher aux liens, sinon ils seraient mémorisés en échec.
+  if (!(await serverIsUp())) {
+    console.log(`[${stamp}] serveur Megalomarket injoignable (${SERVER}) — nouvel essai dans ${INTERVAL_MIN} min`);
+    return;
+  }
   let result;
   try {
     result = extractBookmarkUrls(await readBookmarksFile(BOOKMARKS_PATH), FOLDER, { extraHosts: EXTRA_HOSTS });
@@ -72,12 +87,17 @@ async function pass() {
 
   for (const entry of fresh) {
     console.log(`[${stamp}] nouveau lien : ${entry.url}`);
+    let imported = null;
     try {
-      const imported = await api('/api/imports', { url: entry.url });
+      imported = await api('/api/imports', { url: entry.url });
       await api(`/api/imports/${imported.id}/generate`);
       console.log(`  ✓ import #${imported.id} « ${imported.title} » : fiches en brouillon, à valider dans le tableau de bord`);
     } catch (error) {
       console.error(`  ✗ échec : ${error.message}`);
+      if (imported) console.error(`    L'import #${imported.id} existe en brouillon : relance « Générer les fiches » depuis le tableau de bord (vérifie qu'Ollama tourne).`);
+      // Le serveur est tombé en cours de route : ce n'est pas la faute du lien,
+      // on ne le mémorise pas (il sera repris au prochain passage).
+      if (!(await serverIsUp())) break;
     }
     // Réussi ou non, le lien est mémorisé : pas de boucle de nouvelles tentatives
     // (retire-le du dossier puis remets-le, ou supprime data/bookmarks-seen.json).

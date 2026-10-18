@@ -140,6 +140,17 @@ Aucune clé Anthropic n'est nécessaire. Pour le contrôle visuel des photos, t�
 qui lit les images (`ollama pull llama3.2-vision`) et ajoute `AI_VISION_MODEL=llama3.2-vision` ;
 sans cette variable, `AI_MODEL` est utilisé et doit lui-même savoir lire des images.
 
+## Installation complète sur Mac (automatique, gratuit, local)
+
+1. `git pull`, puis `npm install`.
+2. `cp .env.example .env` et remplis au minimum les blocs IA et `ADMIN_API_KEY` (voir la section Ollama ci-dessus).
+3. Dans Chrome, crée le dossier de favoris `Megalomarket` et dépose-y tes liens Alibaba, AliExpress, Showroomprivé, Veepee.
+4. Dans l'application Ollama, active « Ouvrir à la connexion » (Settings), puis `ollama pull qwen3:8b` et `ollama pull llama3.2-vision`.
+5. `npm run autostart:install` : le serveur et le surveillant de favoris démarrent à chaque ouverture de session et redémarrent s'ils s'arrêtent (journaux dans `~/Library/Logs/Megalomarket/`). `npm run autostart:uninstall` les retire.
+6. `npm run doctor` (ou `npm run doctor -- --deep` pour tester aussi la lecture d'image) : contrôle complet de l'installation, avec la correction à faire pour chaque point KO.
+7. Ouvre `http://localhost:3000` (mot de passe = `ADMIN_API_KEY`). Les fiches générées sont « à valider » : rien n'est publié sans ton clic.
+8. Catalogue LumiVita : `POST /api/lumivita/sync` l'inscrit en base (6 produits, prix d'achat à saisir).
+
 ## Tests
 
 ```bash
