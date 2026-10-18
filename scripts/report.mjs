@@ -7,7 +7,7 @@
  */
 
 import 'dotenv/config';
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync, writeFileSync, readFileSync } from 'node:fs';
 import { config } from '../src/config/env.js';
 import { buildReport, publishReport } from '../src/services/report.js';
 import { loadSeen } from '../src/services/bookmarks.js';
@@ -43,6 +43,13 @@ if (config.ai.ready && config.ai.provider === 'openai') {
   };
 }
 data.watcher = { seen: (await loadSeen(process.env.BOOKMARKS_STATE_PATH || './data/bookmarks-seen.json')).size };
+
+try {
+  const quotes = JSON.parse(readFileSync(process.env.QUOTES_STATE_PATH || './data/devis-suivi.json', 'utf8'));
+  if (Array.isArray(quotes)) data.quotes = quotes;
+} catch {
+  // Pas encore de suivi de devis : la section est simplement omise.
+}
 
 const { text } = buildReport(data);
 mkdirSync('./data', { recursive: true });

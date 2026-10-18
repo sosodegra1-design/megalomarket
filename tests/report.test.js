@@ -55,3 +55,18 @@ test('publishReport pushes a single orphan commit to the rapports branch without
   assert.equal(run(remote, 'rev-list', '--count', 'rapports'), '1', 'un seul commit, remplacé à chaque fois');
   assert.equal(run(work, 'status', '--porcelain'), '', 'l\'arbre de travail est intact');
 });
+
+test('buildReport résume les devis fournisseurs et signale les retards', () => {
+  const { text, problems } = buildReport({
+    now: new Date('2026-10-20T12:00:00Z'),
+    server: { up: true },
+    quotes: [
+      { importId: 1, title: 'Lampe A', sentAt: '2026-10-18T10:00:00Z', reply: { moq: '50 pcs', shipping: '120 USD', delay: '12 j' } },
+      { importId: 2, title: 'Lampe B', sentAt: '2026-10-17T10:00:00Z', reply: null },
+    ],
+  });
+  assert.match(text, /Demandes envoyées : 2, réponses reçues : 1/);
+  assert.match(text, /MOQ : 50 pcs/);
+  assert.match(text, /Sans réponse depuis plus de 2 j : #2/);
+  assert.ok(problems.some((p) => /sans réponse/.test(p)));
+});

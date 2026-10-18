@@ -2,3 +2,6 @@ node_modules
 .env
 data/*.db
 *.log
+data/devis-suivi.json
+data/devis-alibaba.md
+data/rapport.md

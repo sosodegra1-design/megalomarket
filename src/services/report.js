@@ -13,7 +13,7 @@ function countBy(items, key) {
   return counts;
 }
 
-export function buildReport({ now = new Date(), server, ollama, config, imports, activity, watcher }) {
+export function buildReport({ now = new Date(), server, ollama, config, imports, activity, watcher, quotes, devisReplyDays = 2 }) {
   const lines = [`# Rapport Megalomarket — ${now.toLocaleString('fr-FR')}`, ''];
   const problems = [];
 
@@ -53,6 +53,18 @@ export function buildReport({ now = new Date(), server, ollama, config, imports,
   if (watcher) {
     lines.push('', '## Surveillance des favoris');
     lines.push(`- Liens déjà traités : ${watcher.seen}`);
+  }
+
+  if (quotes) {
+    const replied = quotes.filter((q) => q.reply);
+    const late = quotes.filter((q) => !q.reply && q.sentAt && now - new Date(q.sentAt) > devisReplyDays * 86400000);
+    lines.push('', '## Devis fournisseurs');
+    lines.push(`- Demandes envoyées : ${quotes.length}, réponses reçues : ${replied.length}, sans réponse : ${quotes.length - replied.length}`);
+    for (const q of replied) {
+      lines.push(`- #${q.importId} ${String(q.title).slice(0, 70)} — MOQ : ${q.reply.moq ?? '?'} ; transport : ${q.reply.shipping ?? '?'} ; délai : ${q.reply.delay ?? '?'}`);
+    }
+    for (const q of late) lines.push(`- Sans réponse depuis plus de ${devisReplyDays} j : #${q.importId} ${String(q.title).slice(0, 70)}`);
+    if (late.length > 0) problems.push(`${late.length} fournisseur(s) sans réponse à la demande de devis`);
   }
 
   if (activity) {
