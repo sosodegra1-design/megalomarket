@@ -136,8 +136,9 @@ Le tableau de bord est servi sur `http://localhost:3000`.
 3. Contrôle le branchement : `npm run verify:ollama` (Ollama répond, modèle installé, appel réel).
 4. Lance `npm run dev`.
 
-Limite : l'analyse visuelle des photos exige toujours `ANTHROPIC_API_KEY` ; sans elle, ce
-contrôle échoue clairement au lieu de simuler une vérification.
+Aucune clé Anthropic n'est nécessaire. Pour le contrôle visuel des photos, télécharge un modèle
+qui lit les images (`ollama pull llama3.2-vision`) et ajoute `AI_VISION_MODEL=llama3.2-vision` ;
+sans cette variable, `AI_MODEL` est utilisé et doit lui-même savoir lire des images.
 
 ## Tests
 

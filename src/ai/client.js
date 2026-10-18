@@ -45,9 +45,26 @@ async function askAnthropic({ system, prompt, maxTokens }) {
  * clairement plutôt que de laisser croire qu'une vérification a eu lieu.
  */
 export async function askVision({ system, prompt, images, maxTokens = 1024 }) {
+  // Fournisseur « compatible OpenAI » (Ollama, Gemini, Groq, OpenRouter…) : les
+  // images partent en `image_url` (data URL base64), au format que ces API
+  // acceptent. Le modèle doit savoir lire des images (ex. llama3.2-vision ou
+  // llava chez Ollama) : c'est AI_VISION_MODEL, à défaut AI_MODEL.
+  if (config.ai.provider === 'openai') {
+    if (!config.ai.ready) throw new Error(config.ai.reason);
+    const userContent = [
+      ...images.map((image) => ({
+        type: 'image_url',
+        image_url: { url: `data:${image.source.media_type};base64,${image.source.data}` },
+      })),
+      { type: 'text', text: prompt },
+    ];
+    return askOpenAiCompatible({ system, prompt, maxTokens, userContent, model: config.ai.visionModel, vision: true });
+  }
+
   if (!config.anthropicApiKey) {
     throw new Error(
-      "Analyse visuelle indisponible : ANTHROPIC_API_KEY n'est pas configurée. Seul Claude (Anthropic) sait analyser des images ici — un autre fournisseur IA (AI_PROVIDER=openai) ne suffit pas pour ce contrôle.",
+      "Analyse visuelle indisponible : aucun fournisseur IA configuré. Renseigne AI_BASE_URL + AI_API_KEY + AI_MODEL " +
+      "(et AI_VISION_MODEL si ton modèle de texte ne lit pas les images), ou ANTHROPIC_API_KEY.",
     );
   }
   const anthropic = getAnthropicClient();
@@ -71,7 +88,7 @@ export async function askVision({ system, prompt, images, maxTokens = 1024 }) {
  * POST /chat/completions avec le même format de requête et de réponse. Le SDK
  * Anthropic ne sert donc plus qu'au chemin Anthropic.
  */
-async function askOpenAiCompatible({ system, prompt, maxTokens }) {
+async function askOpenAiCompatible({ system, prompt, maxTokens, userContent, model, vision = false }) {
   // Une base terminée par un slash (fréquent dans une variable recopiée)
   // produirait « //chat/completions » ; on la normalise ici.
   const baseUrl = String(config.ai.baseUrl).replace(/\/+$/, '');
@@ -86,14 +103,14 @@ async function askOpenAiCompatible({ system, prompt, maxTokens }) {
         Authorization: `Bearer ${config.ai.apiKey}`,
       },
       body: JSON.stringify({
-        model: config.ai.model,
+        model: model || config.ai.model,
         max_tokens: maxTokens,
         // Le message système précède toujours le message utilisateur : les
         // fournisseurs compatibles suivent cette convention pour appliquer les
         // consignes (répondre en JSON, ne rien inventer…).
         messages: [
           { role: 'system', content: system },
-          { role: 'user', content: prompt },
+          { role: 'user', content: userContent ?? prompt },
         ],
       }),
       signal: AbortSignal.timeout(config.ai.timeoutMs),
@@ -132,7 +149,10 @@ async function askOpenAiCompatible({ system, prompt, maxTokens }) {
       );
     }
 
-    throw new Error(`Erreur du fournisseur IA « ${provider} » (HTTP ${response.status}) : ${detail.slice(0, 300)}`);
+    const visionHint = vision
+      ? ' — si le modèle ne lit pas les images, indique un modèle « vision » dans AI_VISION_MODEL (ex. llama3.2-vision ou llava avec Ollama).'
+      : '';
+    throw new Error(`Erreur du fournisseur IA « ${provider} » (HTTP ${response.status}) : ${detail.slice(0, 300)}${visionHint}`);
   }
 
   let payload;

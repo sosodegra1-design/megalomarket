@@ -109,6 +109,11 @@ export const config = {
     // Délai maximal d'un appel IA. 30 s convient aux services hébergés ; un
     // modèle local (Ollama) charge son modèle au premier appel et génère plus
     // lentement : AI_TIMEOUT_MS permet de l'allonger sans toucher au code.
+    // Modèle utilisé pour lire les images (contrôle visuel des photos). Facultatif :
+    // à défaut on réutilise AI_MODEL, qui doit alors savoir lire des images.
+    get visionModel() {
+      return process.env.AI_VISION_MODEL || process.env.AI_MODEL || null;
+    },
     get timeoutMs() {
       const value = Number(process.env.AI_TIMEOUT_MS);
       return Number.isFinite(value) && value >= 1000 ? value : 30000;
