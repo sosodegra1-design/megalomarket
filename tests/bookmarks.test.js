@@ -125,3 +125,28 @@ test('barrier pages are recognised as generic titles', () => {
   assert.equal(isGenericSourceTitle('Balle Magique Électrique Intelligente Pour Chat'), false);
   assert.equal(isGenericSourceTitle(''), false);
 });
+
+import { isProductLink } from '../src/services/bookmarks.js';
+
+test('only product pages are importable on Alibaba and AliExpress', () => {
+  assert.equal(isProductLink('https://www.alibaba.com/product-detail/Balle_16000.html?spm=a'), true);
+  assert.equal(isProductLink('https://fr.aliexpress.com/item/1005.html'), true);
+  assert.equal(isProductLink('https://www.alibaba.com/search/page?productId=1&imagePath=x'), false);
+  assert.equal(isProductLink('https://www.alibaba.com/'), false);
+  assert.equal(isProductLink('https://www.veepee.fr/gr/ventes/1'), true);
+});
+
+test('a removed listing is a generic title', () => {
+  assert.equal(isGenericSourceTitle('Product Not Available'), true);
+  assert.equal(isGenericSourceTitle('Page Not Found'), true);
+});
+
+test('image-search pages from the bookmarks bar are ignored, not imported', () => {
+  const json = { roots: { bookmark_bar: { type: 'folder', name: 'x', children: [
+    { type: 'url', name: 'a', url: 'https://www.alibaba.com/search/page?imagePath=1' },
+    { type: 'url', name: 'b', url: 'https://www.alibaba.com/product-detail/X_1.html' },
+  ] } } };
+  const { accepted, ignored } = extractBookmarkUrls(json, 'Barre de favoris');
+  assert.equal(accepted.length, 1);
+  assert.equal(ignored.length, 1);
+});

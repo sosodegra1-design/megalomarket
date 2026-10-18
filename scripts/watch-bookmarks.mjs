@@ -82,16 +82,18 @@ async function repairPending(stamp) {
   try { imports = await api('/api/imports', undefined, 'GET'); } catch { return; }
   const retries = await loadRetries();
   let attempts = 0;
-  for (const imp of imports.filter((i) => i.status === 'brouillon')) {
-    if (isGenericSourceTitle(imp.title)) {
-      try {
-        await api(`/api/imports/${imp.id}`, undefined, 'DELETE');
-        console.log(`[${stamp}] import #${imp.id} supprimé : page générique (le site a bloqué la lecture), pas un vrai produit`);
-      } catch (error) {
-        console.error(`[${stamp}] suppression de #${imp.id} impossible : ${error.message}`);
-      }
-      continue;
+  // Pages génériques / annonces retirées : supprimées quel que soit leur statut (le serveur
+  // refuse de supprimer un import qui porte une fiche déjà publiée).
+  for (const imp of imports.filter((i) => isGenericSourceTitle(i.title))) {
+    try {
+      await api(`/api/imports/${imp.id}`, undefined, 'DELETE');
+      console.log(`[${stamp}] import #${imp.id} supprimé : « ${String(imp.title).slice(0, 40)} » n'est pas un vrai produit`);
+    } catch (error) {
+      console.error(`[${stamp}] suppression de #${imp.id} impossible : ${error.message}`);
     }
+  }
+  imports = imports.filter((i) => !isGenericSourceTitle(i.title));
+  for (const imp of imports.filter((i) => i.status === 'brouillon')) {
     if (attempts >= MAX_PER_PASS || (retries[imp.id] || 0) >= MAX_RETRIES) continue;
     attempts += 1;
     retries[imp.id] = (retries[imp.id] || 0) + 1;

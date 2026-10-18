@@ -22,6 +22,24 @@ export const ALLOWED_SOURCE_HOSTS = [
   'veepee.com',
 ];
 
+/**
+ * Sur Alibaba et AliExpress, seules les pages PRODUIT sont importables. Les pages de
+ * recherche par image (/search/page?…imagePath=…), de catégorie ou d'accueil n'ont pas
+ * de fiche : elles sont ignorées sans même être lues.
+ */
+export function isProductLink(url) {
+  try {
+    const { hostname, pathname } = new URL(url);
+    const host = hostname.toLowerCase();
+    if (/(^|\.)(alibaba|aliexpress)\.(com|us)$/.test(host)) {
+      return /\/product-detail\//.test(pathname) || /\/item\//.test(pathname) || /\/i\/\d+/.test(pathname);
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export function isAllowedSource(url, extraHosts = []) {
   let hostname;
   try {
@@ -83,7 +101,7 @@ export function extractBookmarkUrls(bookmarksJson, folderName, { extraHosts = []
     for (const entry of collectUrls(folder)) {
       if (seen.has(entry.url)) continue;
       seen.add(entry.url);
-      (isAllowedSource(entry.url, extraHosts) ? accepted : ignored).push(entry);
+      (isAllowedSource(entry.url, extraHosts) && isProductLink(entry.url) ? accepted : ignored).push(entry);
     }
   }
   return { accepted, ignored };
@@ -197,5 +215,7 @@ export function isGenericSourceTitle(title) {
   const text = String(title || '').trim();
   return /manufacturers,\s*suppliers,\s*exporters/i.test(text)
     || /largest online b2b marketplace/i.test(text)
-    || /^(captcha|access denied|just a moment|robot check)/i.test(text);
+    || /^(captcha|access denied|just a moment|robot check)/i.test(text)
+    // Annonce retirée ou page introuvable : rien à importer.
+    || /^(product not available|page not found|404|item not found|this (product|item) (is )?(no longer|not) available)/i.test(text);
 }
