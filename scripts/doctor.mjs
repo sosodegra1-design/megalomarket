@@ -153,6 +153,10 @@ try {
     extraHosts: (process.env.BOOKMARKS_EXTRA_HOSTS || '').split(',').map((h) => h.trim()).filter(Boolean),
   });
   ok(`dossier « ${folder} » trouvé : ${result.accepted.length} lien(s) autorisé(s), ${result.ignored.length} ignoré(s)`);
+  const seenPath = process.env.BOOKMARKS_STATE_PATH || './data/bookmarks-seen.json';
+  if (result.accepted.length > 0 && !existsSync(seenPath)) {
+    note(`${result.accepted.length} lien(s) déjà présent(s) seraient tous importés au premier passage → lance d'abord « npm run watch:bookmarks -- --baseline » pour ne traiter que les NOUVEAUX liens`);
+  }
 } catch (error) {
   bad(error.message);
 }

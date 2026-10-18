@@ -32,9 +32,23 @@ export function isAllowedSource(url, extraHosts = []) {
   return [...ALLOWED_SOURCE_HOSTS, ...extraHosts].some((host) => hostname === host || hostname.endsWith(`.${host}`));
 }
 
+/* La barre de favoris n'est pas un dossier comme les autres : Chrome la range sous
+   la racine `bookmark_bar`, avec un nom qui reste souvent en anglais
+   (« Bookmarks bar ») même si l'interface est en français. On la reconnaît donc
+   par tous ses noms usuels, sans tenir compte des accents ni de la casse. */
+const BAR_ALIASES = ['barre de favoris', 'barre de signets', 'bookmarks bar', 'bookmark bar', 'bookmark_bar', 'favorites bar'];
+
+function normalizeName(value) {
+  return String(value).trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+}
+
+export function isBookmarkBarName(folderName) {
+  return BAR_ALIASES.includes(normalizeName(folderName));
+}
+
 function findFolders(node, folderName, found = []) {
   if (!node || typeof node !== 'object') return found;
-  if (node.type === 'folder' && String(node.name).trim().toLowerCase() === folderName.trim().toLowerCase()) {
+  if (node.type === 'folder' && normalizeName(node.name) === normalizeName(folderName)) {
     found.push(node);
   }
   for (const child of node.children || []) findFolders(child, folderName, found);
@@ -54,7 +68,9 @@ function collectUrls(node, urls = []) {
  */
 export function extractBookmarkUrls(bookmarksJson, folderName, { extraHosts = [] } = {}) {
   const roots = Object.values(bookmarksJson?.roots || {});
-  const folders = roots.flatMap((root) => findFolders(root, folderName));
+  const folders = isBookmarkBarName(folderName) && bookmarksJson?.roots?.bookmark_bar
+    ? [bookmarksJson.roots.bookmark_bar]
+    : roots.flatMap((root) => findFolders(root, folderName));
   if (folders.length === 0) {
     throw new Error(`Dossier de favoris « ${folderName} » introuvable dans Chrome. Crée-le dans la barre de favoris, ou change BOOKMARKS_FOLDER dans .env.`);
   }

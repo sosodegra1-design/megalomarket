@@ -12,6 +12,8 @@
  *
  *   npm run watch:bookmarks          boucle (Ctrl+C pour arrêter)
  *   npm run watch:bookmarks -- --once   un seul passage
+ *   npm run watch:bookmarks -- --baseline   ignore les liens déjà présents (à faire AVANT
+ *                                      la première surveillance d'un dossier déjà rempli)
  *
  * Le serveur doit tourner (npm run dev) : ce script lui parle en HTTP.
  */
@@ -32,6 +34,10 @@ const SEEN_PATH = process.env.BOOKMARKS_STATE_PATH || './data/bookmarks-seen.jso
 const EXTRA_HOSTS = (process.env.BOOKMARKS_EXTRA_HOSTS || '').split(',').map((h) => h.trim()).filter(Boolean);
 const INTERVAL_MIN = Number(process.env.WATCH_INTERVAL_MINUTES) || 5;
 const ONCE = process.argv.includes('--once');
+const BASELINE = process.argv.includes('--baseline');
+// Garde-fou : au plus N nouveaux liens par passage (le reste attend le passage suivant),
+// pour ne pas saturer Ollama si beaucoup de favoris arrivent d'un coup.
+const MAX_PER_PASS = Number(process.env.BOOKMARKS_MAX_PER_PASS) || 5;
 
 if (!KEY) {
   console.error('ADMIN_API_KEY manquante dans .env : le serveur refuse toute requête sans elle.');
@@ -78,7 +84,18 @@ async function pass() {
   }
 
   const seen = await loadSeen(SEEN_PATH);
-  const fresh = result.accepted.filter((entry) => !seen.has(entry.url));
+  if (BASELINE) {
+    // Marque tous les liens ACTUELS comme déjà vus, sans rien importer : seuls ceux
+    // ajoutés ensuite seront traités. À faire avant la première surveillance d'un
+    // dossier qui contient déjà des favoris (ex. la barre de favoris entière).
+    for (const entry of [...result.accepted, ...result.ignored]) seen.add(entry.url);
+    await saveSeen(SEEN_PATH, seen);
+    console.log(`[${stamp}] état de départ enregistré : ${seen.size} lien(s) existant(s) ne seront pas importés`);
+    return;
+  }
+  const pending = result.accepted.filter((entry) => !seen.has(entry.url));
+  const fresh = pending.slice(0, MAX_PER_PASS);
+  if (pending.length > fresh.length) console.log(`[${stamp}] ${pending.length} nouveaux liens : ${fresh.length} traités maintenant, le reste au prochain passage`);
   for (const entry of result.ignored.filter((e) => !seen.has(e.url))) {
     console.log(`[${stamp}] ignoré (site non autorisé) : ${entry.url}`);
     seen.add(entry.url);
@@ -109,6 +126,6 @@ async function pass() {
 
 console.log(`Surveillance du dossier « ${FOLDER} » (${BOOKMARKS_PATH}) vers ${SERVER}`);
 await pass();
-if (!ONCE) {
+if (!ONCE && !BASELINE) {
   setInterval(() => pass().catch((error) => console.error(error.message)), INTERVAL_MIN * 60 * 1000);
 }

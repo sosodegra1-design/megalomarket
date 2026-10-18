@@ -144,7 +144,7 @@ sans cette variable, `AI_MODEL` est utilisé et doit lui-même savoir lire des i
 
 1. `git pull`, puis `npm install`.
 2. `cp .env.example .env` et remplis au minimum les blocs IA et `ADMIN_API_KEY` (voir la section Ollama ci-dessus).
-3. Dans Chrome, crée le dossier de favoris `Megalomarket` et dépose-y tes liens Alibaba, AliExpress, Showroomprivé, Veepee.
+3. Dans Chrome, choisis où déposer tes liens Alibaba, AliExpress, Showroomprivé, Veepee : un dossier `Megalomarket` (`BOOKMARKS_FOLDER=Megalomarket`) ou toute la barre de favoris (`BOOKMARKS_FOLDER=Barre de favoris`). Si le dossier contient déjà des favoris, lance une fois `npm run watch:bookmarks -- --baseline` : les liens existants ne seront pas importés, seuls les nouveaux le seront.
 4. Dans l'application Ollama, active « Ouvrir à la connexion » (Settings), puis `ollama pull qwen3:8b` et `ollama pull llama3.2-vision`.
 5. `npm run autostart:install` : le serveur et le surveillant de favoris démarrent à chaque ouverture de session et redémarrent s'ils s'arrêtent (journaux dans `~/Library/Logs/Megalomarket/`). `npm run autostart:uninstall` les retire.
 6. `npm run doctor` (ou `npm run doctor -- --deep` pour tester aussi la lecture d'image) : contrôle complet de l'installation, avec la correction à faire pour chaque point KO.

@@ -57,3 +57,14 @@ test('seen links survive a restart', async () => {
   await saveSeen(path, new Set(['https://a.example/1']));
   assert.deepEqual([...(await loadSeen(path))], ['https://a.example/1']);
 });
+
+test('the bookmarks bar is found under any of its usual names, accents and case ignored', () => {
+  for (const name of ['Barre de favoris', 'barre de favoris', 'Bookmarks bar', 'BARRE DE SIGNETS']) {
+    const { accepted } = extractBookmarkUrls(CHROME_JSON, name);
+    assert.equal(accepted.length, 5, `${name} : toute la barre, sous-dossiers compris`);
+  }
+});
+
+test('folder names match without accents or case', () => {
+  assert.equal(extractBookmarkUrls(CHROME_JSON, 'MEGALOMARKET').accepted.length, 4);
+});
