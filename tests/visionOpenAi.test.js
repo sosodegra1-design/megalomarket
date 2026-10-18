@@ -77,3 +77,32 @@ test('a reasoning model\'s <think> block is stripped from the answer', async () 
     mock.restore();
   }
 });
+
+test('a reasoning model that never closes <think> gives a clear error instead of garbage', async () => {
+  const { askModel } = await import('../src/ai/client.js');
+  const mock = stubFetch(() => ({ ok: true, status: 200, json: async () => ({ choices: [{ message: { content: '<think>\nOkay, the user wants me to' } }] }) }));
+  try {
+    await assert.rejects(() => askModel({ system: 's', prompt: 'p' }), /AI_NO_THINK/);
+  } finally {
+    mock.restore();
+  }
+});
+
+test('AI_NO_THINK appends /no_think for qwen3 text calls only', async () => {
+  const { askModel } = await import('../src/ai/client.js');
+  const saved = { model: process.env.AI_MODEL, flag: process.env.AI_NO_THINK };
+  process.env.AI_MODEL = 'qwen3:8b';
+  process.env.AI_NO_THINK = 'true';
+  const mock = stubFetch(okReply);
+  try {
+    await askModel({ system: 's', prompt: 'bonjour' });
+    assert.equal(mock.calls[0].body.messages[1].content, 'bonjour\n\n/no_think');
+    process.env.AI_MODEL = 'llama3.1:8b';
+    await askModel({ system: 's', prompt: 'bonjour' });
+    assert.equal(mock.calls[1].body.messages[1].content, 'bonjour', 'autre modèle : prompt inchangé');
+  } finally {
+    process.env.AI_MODEL = saved.model;
+    if (saved.flag === undefined) delete process.env.AI_NO_THINK; else process.env.AI_NO_THINK = saved.flag;
+    mock.restore();
+  }
+});

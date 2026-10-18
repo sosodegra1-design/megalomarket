@@ -80,7 +80,7 @@ if (!config.ai.ready) {
     }
     try {
       const started = Date.now();
-      const reply = await askModel({ system: 'Réponds UNIQUEMENT avec un objet JSON valide.', prompt: 'Renvoie {"ok": true}.', maxTokens: 50 });
+      const reply = await askModel({ system: 'Réponds UNIQUEMENT avec un objet JSON valide.', prompt: 'Renvoie {"ok": true}.', maxTokens: 300 });
       ok(`appel texte réussi en ${((Date.now() - started) / 1000).toFixed(1)} s : ${reply.trim().slice(0, 60)}`);
     } catch (error) {
       bad(`appel texte en échec : ${error.message}`, 'si c\'est un délai dépassé, augmente AI_TIMEOUT_MS');

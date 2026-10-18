@@ -88,6 +88,14 @@ export async function askVision({ system, prompt, images, maxTokens = 1024 }) {
  * POST /chat/completions avec le même format de requête et de réponse. Le SDK
  * Anthropic ne sert donc plus qu'au chemin Anthropic.
  */
+/* qwen3 comprend « /no_think » en fin de message : il saute alors sa phase de
+   réflexion. Réservé aux modèles qwen3 et au texte (jamais aux images). */
+function withNoThink(content, model, vision) {
+  if (vision || !config.ai.noThink || !/qwen3/i.test(String(model))) return content;
+  if (typeof content === 'string') return `${content}\n\n/no_think`;
+  return content;
+}
+
 async function askOpenAiCompatible({ system, prompt, maxTokens, userContent, model, vision = false }) {
   // Une base terminée par un slash (fréquent dans une variable recopiée)
   // produirait « //chat/completions » ; on la normalise ici.
@@ -110,7 +118,7 @@ async function askOpenAiCompatible({ system, prompt, maxTokens, userContent, mod
         // consignes (répondre en JSON, ne rien inventer…).
         messages: [
           { role: 'system', content: system },
-          { role: 'user', content: userContent ?? prompt },
+          { role: 'user', content: withNoThink(userContent ?? prompt, model || config.ai.model, vision) },
         ],
       }),
       signal: AbortSignal.timeout(config.ai.timeoutMs),
@@ -174,7 +182,18 @@ async function askOpenAiCompatible({ system, prompt, maxTokens, userContent, mod
   }
   // Les modèles « raisonneurs » (qwen3, deepseek-r1…) peuvent faire précéder leur
   // réponse d'un bloc <think>…</think> : il casserait la lecture du JSON attendu.
-  return content.replace(/<think>[\s\S]*?<\/think>/g, '').trim();
+  const answer = content
+    .replace(/<think>[\s\S]*?<\/think>/g, '')
+    // Réflexion jamais refermée : la réponse a été coupée avant d'être écrite.
+    .replace(/<think>[\s\S]*$/, '')
+    .trim();
+  if (!answer && /<think>/.test(content)) {
+    throw new Error(
+      'Le modèle a épuisé sa limite de mots dans sa phase de réflexion (<think>) sans écrire de réponse. ' +
+      'Ajoute AI_NO_THINK=true dans .env (modèles qwen3), ou choisis un modèle sans réflexion (ex. llama3.1:8b).',
+    );
+  }
+  return answer;
 }
 
 /**

@@ -114,6 +114,12 @@ export const config = {
     get visionModel() {
       return process.env.AI_VISION_MODEL || process.env.AI_MODEL || null;
     },
+    // Modèles « raisonneurs » (qwen3…) : AI_NO_THINK=true leur demande de répondre
+    // sans phase de réflexion. Sans cela ils peuvent épuiser leur limite de mots
+    // dans <think> et ne jamais écrire la réponse attendue.
+    get noThink() {
+      return ['1', 'true', 'yes', 'oui'].includes(String(process.env.AI_NO_THINK || '').trim().toLowerCase());
+    },
     get timeoutMs() {
       const value = Number(process.env.AI_TIMEOUT_MS);
       return Number.isFinite(value) && value >= 1000 ? value : 30000;
