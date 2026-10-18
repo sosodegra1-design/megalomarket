@@ -17,7 +17,7 @@ import { dbAll, dbRun, logActivity } from '../db/database.js';
 
 const RANK_COUNT = 20;
 
-const SYSTEM_PROMPT = `Tu es un chasseur de tendances e-commerce pour Megalomarket, spécialisé dans la recherche de produits à fort potentiel pour l'import et la revente multicanale (eBay, Amazon, TikTok Shop, Allegro, site propre).
+const SYSTEM_PROMPT = `Tu es un chasseur de tendances e-commerce pour Megalomarket, spécialisé dans la recherche de produits à fort potentiel pour l'import et la revente multicanale (Amazon, TikTok Shop, Allegro, site propre).
 Réponds UNIQUEMENT avec un objet JSON valide, sans texte autour, au format exact :
 {"finds": [{"rank": 1, "title": "...", "category": "...", "rationale": "...", "targetAudience": "...", "priceRange": "...", "sourcingHint": "..."}]}
 Règles :

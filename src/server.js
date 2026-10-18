@@ -130,7 +130,7 @@ function logConfigurationSummary() {
     ['tarifs Sendcloud', state(config.sendcloud.ready)],
     ['e-mails post-achat (Brevo)', state(config.brevo.ready)],
     ['recherche fournisseur (Perplexity)', state(config.perplexity.ready)],
-    ['eBay', state(config.ebay.ready)],
+    ['LumiVita', state(config.lumivita.ready)],
   ];
 
   console.log('Configuration :');

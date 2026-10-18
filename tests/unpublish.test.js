@@ -112,11 +112,11 @@ test('unpublishing a listing that is not published is refused', async () => {
   assert.match(body.error, /n'est pas publiée/);
 });
 
-test('unpublishing on a channel without deleteListing (eBay today) fails clearly, not silently', async () => {
-  const { importId } = await createImportWithListing({ marketplace: 'ebay', externalId: 'offer-1' });
-  const { status, body } = await call(`/api/imports/${importId}/listings/ebay/publish`, { method: 'DELETE' });
+test('unpublishing on the read-only LumiVita channel fails clearly, not silently', async () => {
+  const { importId } = await createImportWithListing({ marketplace: 'lumivita', externalId: 'offer-1' });
+  const { status, body } = await call(`/api/imports/${importId}/listings/lumivita/publish`, { method: 'DELETE' });
   assert.equal(status, 400);
-  assert.match(body.error, /non supporté/);
+  assert.match(body.error, /lecture seule/);
 });
 
 test('unpublishing an unknown listing is refused', async () => {

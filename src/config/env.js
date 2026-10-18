@@ -1,4 +1,6 @@
 import 'dotenv/config';
+import { existsSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 
 function has(...keys) {
   return keys.every((k) => !!process.env[k]);
@@ -127,27 +129,18 @@ export const config = {
     },
   },
 
-  ebay: {
-    env: process.env.EBAY_ENV || 'production',
-    appId: process.env.EBAY_APP_ID || null,
-    certId: process.env.EBAY_CERT_ID || null,
-    devId: process.env.EBAY_DEV_ID || null,
-    refreshToken: process.env.EBAY_REFRESH_TOKEN || null,
-    // Optionnel : requis par certains comptes eBay pour la création d'offre (createListing).
-    merchantLocationKey: process.env.EBAY_MERCHANT_LOCATION_KEY || null,
+  /* LumiVita : site statique sans API. Le canal lit un fichier catalogue local
+     (voir connectors/lumivita.js) ; il est « configuré » quand ce fichier existe. */
+  lumivita: {
+    get catalogPath() {
+      return process.env.LUMIVITA_CATALOG_PATH
+        || fileURLToPath(new URL('../../data/lumivita-catalogue.json', import.meta.url));
+    },
     get ready() {
-      return has('EBAY_APP_ID', 'EBAY_CERT_ID', 'EBAY_DEV_ID', 'EBAY_REFRESH_TOKEN');
+      return existsSync(this.catalogPath);
     },
   },
 
-  lumivita: {
-    apiUrl: process.env.LUMIVITA_API_URL || null,
-    apiKey: process.env.LUMIVITA_API_KEY || null,
-    get ready() {
-      return has('LUMIVITA_API_URL', 'LUMIVITA_API_KEY');
-    },
-  },
-   
   ownSite: {
     apiUrl: process.env.OWN_SITE_API_URL || null,
     apiKey: process.env.OWN_SITE_API_KEY || null,

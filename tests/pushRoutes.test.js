@@ -20,10 +20,6 @@ const ADMIN_KEY = 'cle-de-test-push-routes';
 process.env.ADMIN_API_KEY = ADMIN_KEY;
 
 // config/env.js lit ces variables à l'import : elles doivent exister avant.
-process.env.EBAY_APP_ID = 'app-id';
-process.env.EBAY_CERT_ID = 'cert-id';
-process.env.EBAY_DEV_ID = 'dev-id';
-process.env.EBAY_REFRESH_TOKEN = 'refresh-token';
 process.env.OWN_SITE_API_URL = 'https://bbhappy.example.com';
 process.env.OWN_SITE_API_KEY = 'site-admin-key';
 
@@ -39,7 +35,7 @@ let base;
 const realFetch = global.fetch;
 
 /** Même stub que pushSync.test.js : les connecteurs réels, aucune socket ouverte. */
-function stubFetch({ offers = [], fail = () => false } = {}) {
+function stubFetch({ fail = () => false } = {}) {
   const calls = [];
   const original = global.fetch;
   global.fetch = async (url, options = {}) => {
@@ -49,14 +45,7 @@ function stubFetch({ offers = [], fail = () => false } = {}) {
 
     let status = 200;
     let json = {};
-    if (parsed.pathname.includes('/identity/v1/oauth2/token')) {
-      json = { access_token: 'access-token', expires_in: 3600 };
-    } else if (parsed.pathname === '/sell/inventory/v1/offer') {
-      const sku = parsed.searchParams.get('sku');
-      json = { offers: offers.filter((offer) => offer.sku === sku) };
-    } else if (parsed.pathname.startsWith('/sell/inventory/v1/offer/')) {
-      json = {};
-    } else if (parsed.pathname.startsWith('/api/admin/products/')) {
+    if (parsed.pathname.startsWith('/api/admin/products/')) {
       json = { id: parsed.pathname.split('/').pop() };
     } else {
       status = 404;
@@ -128,42 +117,42 @@ after(async () => {
 
 test('a price recommendation is only marked applied once the channel accepted it', async () => {
   const productId = await createProduct('SKU-APPLY', 5);
-  await createListing(productId, 'ebay', 'SKU-APPLY', 12);
-  const recommendationId = await createPriceRecommendation(productId, 'ebay', 24.9);
+  await createListing(productId, 'own_site', 'p-apply', 12);
+  const recommendationId = await createPriceRecommendation(productId, 'own_site', 24.9);
 
-  const mock = stubFetch({ offers: [{ sku: 'SKU-APPLY', offerId: 'offer-apply', marketplaceId: 'EBAY_FR', status: 'PUBLISHED' }] });
+  const mock = stubFetch();
   try {
     const { status, body } = await call(`/api/recommendations/${recommendationId}/apply`, { method: 'POST' });
     assert.equal(status, 200);
     assert.equal(body.ok, true);
     assert.equal(body.price, 24.9);
-    assert.equal(body.channel, 'ebay');
+    assert.equal(body.channel, 'own_site');
 
     const recommendation = await dbGet('SELECT * FROM recommendations WHERE id = ?', [recommendationId]);
     assert.equal(recommendation.status, 'applied');
 
-    const listing = await dbGet('SELECT * FROM channel_listings WHERE product_id = ? AND channel = ?', [productId, 'ebay']);
+    const listing = await dbGet('SELECT * FROM channel_listings WHERE product_id = ? AND channel = ?', [productId, 'own_site']);
     assert.equal(listing.price, 24.9, 'le prix est réellement parti et la vue locale suit');
 
-    const put = mock.calls.find((call) => call.method === 'PUT');
-    assert.equal(put.path, '/sell/inventory/v1/offer/offer-apply');
+    const patch = mock.calls.find((call) => call.method === 'PATCH');
+    assert.equal(patch.path, '/api/admin/products/p-apply');
   } finally {
     mock.restore();
   }
 });
 
 test('a failed push leaves the recommendation pending and reports the error', async () => {
-  // Le connecteur eBay ne retrouve aucune offre pour ce SKU : le push échoue.
+  // Le site propre répond 500 : le push échoue.
   const productId = await createProduct('SKU-FAIL', 5);
-  await createListing(productId, 'ebay', 'SKU-FAIL', 12);
-  const recommendationId = await createPriceRecommendation(productId, 'ebay', 24.9);
+  await createListing(productId, 'own_site', 'p-fail', 12);
+  const recommendationId = await createPriceRecommendation(productId, 'own_site', 24.9);
 
-  const mock = stubFetch({ offers: [] });
+  const mock = stubFetch({ fail: (call) => call.path.startsWith('/api/admin/products/') });
   try {
     const { status, body } = await call(`/api/recommendations/${recommendationId}/apply`, { method: 'POST' });
     assert.equal(status, 400);
-    assert.match(body.error, /Échec de l'application de la recommandation/);
-    assert.match(body.error, /Aucune offre eBay/);
+    assert.match(body.error, /non appliquée sur own_site/);
+    assert.match(body.error, /500/);
 
     const recommendation = await dbGet('SELECT * FROM recommendations WHERE id = ?', [recommendationId]);
     assert.equal(recommendation.status, 'pending', 'l’utilisateur doit pouvoir réessayer');
@@ -174,10 +163,10 @@ test('a failed push leaves the recommendation pending and reports the error', as
 
 test('a price below cost_price is refused and the recommendation stays pending', async () => {
   const productId = await createProduct('SKU-APPLY-PERTE', 30);
-  await createListing(productId, 'ebay', 'SKU-APPLY-PERTE', 39);
-  const recommendationId = await createPriceRecommendation(productId, 'ebay', 10);
+  await createListing(productId, 'own_site', 'p-perte', 39);
+  const recommendationId = await createPriceRecommendation(productId, 'own_site', 10);
 
-  const mock = stubFetch({ offers: [{ sku: 'SKU-APPLY-PERTE', offerId: 'offer-x', marketplaceId: 'EBAY_FR', status: 'PUBLISHED' }] });
+  const mock = stubFetch();
   try {
     const { status, body } = await call(`/api/recommendations/${recommendationId}/apply`, { method: 'POST' });
     assert.equal(status, 400);
@@ -193,7 +182,7 @@ test('a non-price recommendation keeps its old behaviour: nothing to push, statu
   const productId = await createProduct('SKU-DESC', 5);
   const info = await dbRun(
     'INSERT INTO recommendations (type, channel, product_id, payload, status, created_at) VALUES (?, ?, ?, ?, ?, ?)',
-    ['description', 'ebay', productId, JSON.stringify({ description: 'Un texte' }), 'pending', Date.now()],
+    ['description', 'own_site', productId, JSON.stringify({ description: 'Un texte' }), 'pending', Date.now()],
   );
 
   const mock = stubFetch();
@@ -212,7 +201,7 @@ test('an already applied recommendation is refused', async () => {
   const productId = await createProduct('SKU-DEJA', 5);
   const info = await dbRun(
     'INSERT INTO recommendations (type, channel, product_id, payload, status, created_at) VALUES (?, ?, ?, ?, ?, ?)',
-    ['description', 'ebay', productId, JSON.stringify({}), 'applied', Date.now()],
+    ['description', 'own_site', productId, JSON.stringify({}), 'applied', Date.now()],
   );
   const { status, body } = await call(`/api/recommendations/${info.lastInsertRowid}/apply`, { method: 'POST' });
   assert.equal(status, 400);
@@ -223,19 +212,19 @@ test('an already applied recommendation is refused', async () => {
 
 test('POST /api/products/:id/price pushes to one named channel', async () => {
   const productId = await createProduct('SKU-ROUTE-UN', 5);
-  await createListing(productId, 'ebay', 'SKU-ROUTE-UN', 12);
+  await createListing(productId, 'own_site', 'p-route', 12);
 
-  const mock = stubFetch({ offers: [{ sku: 'SKU-ROUTE-UN', offerId: 'offer-route', marketplaceId: 'EBAY_FR', status: 'PUBLISHED' }] });
+  const mock = stubFetch();
   try {
     const { status, body } = await call(`/api/products/${productId}/price`, {
       method: 'POST',
-      body: { price: 26.5, channel: 'ebay' },
+      body: { price: 26.5, channel: 'own_site' },
     });
     assert.equal(status, 200);
-    assert.equal(body.channel, 'ebay');
+    assert.equal(body.channel, 'own_site');
     assert.equal(body.ok, true);
     assert.equal(body.price, 26.5);
-    assert.equal((await dbGet('SELECT price FROM channel_listings WHERE product_id = ? AND channel = ?', [productId, 'ebay'])).price, 26.5);
+    assert.equal((await dbGet('SELECT price FROM channel_listings WHERE product_id = ? AND channel = ?', [productId, 'own_site'])).price, 26.5);
   } finally {
     mock.restore();
   }
@@ -245,22 +234,22 @@ test('POST /api/products/:id/price without channel returns the per-channel resul
   const productId = await createProduct('SKU-ROUTE-TOUS', 5);
   await createListing(productId, 'own_site', 'site-42', 12);
 
-  const mock = stubFetch({ offers: [{ sku: 'SKU-ROUTE-TOUS', offerId: 'offer-tous', marketplaceId: 'EBAY_FR', status: 'PUBLISHED' }] });
+  const mock = stubFetch();
   try {
     const { status, body } = await call(`/api/products/${productId}/price`, { method: 'POST', body: { price: 21 } });
     assert.equal(status, 200);
     assert.ok(Array.isArray(body), 'un résultat par canal, y compris les canaux ignorés');
 
     const own = body.find((r) => r.channel === 'own_site');
-    const ebay = body.find((r) => r.channel === 'ebay');
+    const lumivita = body.find((r) => r.channel === 'lumivita');
     const amazon = body.find((r) => r.channel === 'amazon');
     assert.equal(own.ok, true);
-    assert.equal(ebay.ok, true);
+    assert.equal(lumivita.ok, false, 'LumiVita est en lecture seule : le refus est rapporté, rien n’est simulé');
+    assert.match(lumivita.error, /lecture seule/);
     assert.equal(amazon.ok, false);
     assert.equal(amazon.skipped, true, 'canal non pris en charge : signalé, pas fatal');
 
     assert.equal((await dbGet('SELECT price FROM channel_listings WHERE product_id = ? AND channel = ?', [productId, 'own_site'])).price, 21);
-    assert.equal((await dbGet('SELECT price FROM channel_listings WHERE product_id = ? AND channel = ?', [productId, 'ebay'])).price, 21);
   } finally {
     mock.restore();
   }
@@ -269,7 +258,7 @@ test('POST /api/products/:id/price without channel returns the per-channel resul
 test('POST /api/products/:id/price refuses an invalid price and an unknown product', async () => {
   const productId = await createProduct('SKU-ROUTE-INVALIDE', 5);
   assert.equal((await call(`/api/products/${productId}/price`, { method: 'POST', body: { price: -1 } })).status, 400);
-  assert.equal((await call('/api/products/999999/price', { method: 'POST', body: { price: 10, channel: 'ebay' } })).status, 400);
+  assert.equal((await call('/api/products/999999/price', { method: 'POST', body: { price: 10, channel: 'own_site' } })).status, 400);
 
   // Sans canal nommé, l'erreur est rapportée par canal plutôt que d'interrompre
   // la boucle : aucun canal n'a de produit à mettre à jour.

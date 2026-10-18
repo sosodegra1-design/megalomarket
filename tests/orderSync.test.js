@@ -14,10 +14,10 @@ function makeHarness({ fail = false, orders = [] } = {}) {
   const calls = [];
   const logged = [];
   const registry = {
-    ebay: {
+    lumivita: {
       listOrders: async (options) => {
         calls.push(options);
-        if (fail) throw new Error('eBay injoignable');
+        if (fail) throw new Error('LumiVita injoignable');
         return orders;
       },
     },
@@ -32,7 +32,7 @@ function makeHarness({ fail = false, orders = [] } = {}) {
 
 function run(harness, at, extra = {}) {
   return syncOrdersFromAllChannels({
-    channels: ['ebay'],
+    channels: ['lumivita'],
     registry: harness.registry,
     db: harness.db,
     log: harness.log,
@@ -93,12 +93,12 @@ test('a channel without listOrders is skipped without blocking the cursor', asyn
   const state = {};
   const calls = [];
   const registry = {
-    ebay: { listOrders: async (options) => { calls.push(options); return []; } },
+    lumivita: { listOrders: async (options) => { calls.push(options); return []; } },
     // Canal configuré mais sans route de commandes : il est ignoré, pas en échec.
     own_site: {},
   };
   const result = await syncOrdersFromAllChannels({
-    channels: ['ebay', 'own_site'],
+    channels: ['lumivita', 'own_site'],
     registry,
     db: { get: async () => null, run: async () => ({ changes: 0 }) },
     log: async () => {},

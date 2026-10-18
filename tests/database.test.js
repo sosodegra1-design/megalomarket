@@ -28,13 +28,13 @@ test('channel_listings enforces one row per product/channel pair', async () => {
 
   await dbRun(
     'INSERT INTO channel_listings (product_id, channel, price, stock, updated_at) VALUES (?, ?, ?, ?, ?)',
-    [productId, 'ebay', 12.9, 10, Date.now()],
+    [productId, 'lumivita', 12.9, 10, Date.now()],
   );
 
   await assert.rejects(() =>
     dbRun(
       'INSERT INTO channel_listings (product_id, channel, price, stock, updated_at) VALUES (?, ?, ?, ?, ?)',
-      [productId, 'ebay', 13.9, 5, Date.now()],
+      [productId, 'lumivita', 13.9, 5, Date.now()],
     ),
   );
 });
@@ -55,14 +55,14 @@ test('import_listings enforces one row per import/marketplace pair', async () =>
 
   await dbRun(
     `INSERT INTO import_listings (import_id, marketplace, title, description, suggested_price, status, created_at, updated_at)
-     VALUES (?, 'ebay', 'Titre', 'Description', 9.9, 'a_valider', ?, ?)`,
+     VALUES (?, 'lumivita', 'Titre', 'Description', 9.9, 'a_valider', ?, ?)`,
     [importId, Date.now(), Date.now()],
   );
 
   await assert.rejects(() =>
     dbRun(
       `INSERT INTO import_listings (import_id, marketplace, title, description, suggested_price, status, created_at, updated_at)
-       VALUES (?, 'ebay', 'Autre titre', 'Autre description', 12, 'a_valider', ?, ?)`,
+       VALUES (?, 'lumivita', 'Autre titre', 'Autre description', 12, 'a_valider', ?, ?)`,
       [importId, Date.now(), Date.now()],
     ),
   );

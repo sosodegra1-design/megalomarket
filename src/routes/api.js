@@ -69,13 +69,9 @@ export function missingConfiguration() {
     missing.push(['OWN_SITE_API_URL', 'OWN_SITE_API_KEY'].filter((key) => !process.env[key]).join(' + '));
   }
 
-  /* eBay est volontairement exclu de cette liste. C'est un canal optionnel,
-     dont les clés dépendent d'un compte vendeur et d'une inscription
-     développeur : on peut parfaitement ne jamais le configurer. L'y inclure
-     rendrait le bandeau d'état définitivement orange, y compris quand tout ce
-     dont on a besoin est en place — et un avertissement qu'on ne peut pas faire
-     disparaître finit par ne plus être lu. Son état reste visible dans
-     `channels.ebay` : c'est une information, pas une alerte. */
+  /* LumiVita est volontairement exclu de cette liste : c'est un canal optionnel
+     en lecture seule, dont l'état reste visible dans `channels.lumivita`
+     (une information, pas une alerte). */
   return missing;
 }
 

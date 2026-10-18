@@ -1,4 +1,3 @@
-```javascript
 import * as lumivita from './lumivita.js';
 import * as ownSite from './ownSite.js';
 import * as amazon from './amazon.js';
@@ -25,4 +24,3 @@ export function allChannelsStatus() {
     configured: connector.isConfigured(),
   }));
 }
-```

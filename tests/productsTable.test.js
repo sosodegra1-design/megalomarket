@@ -112,8 +112,8 @@ test('les boutons IA sont désactivés quand aiReady est faux', () => {
 });
 
 test('les fiches canaux publiées apparaissent dans la colonne dédiée', () => {
-  const products = [product({ listings: [{ channel: 'ebay', price: 12.5 }, { channel: 'own_site', price: 14.9 }] })];
+  const products = [product({ listings: [{ channel: 'lumivita', price: 12.5 }, { channel: 'own_site', price: 14.9 }] })];
   const result = buildProductsFragment({ products });
-  assert.match(result.html, /ebay 12,50 €/);
+  assert.match(result.html, /lumivita 12,50 €/);
   assert.match(result.html, /own_site 14,90 €/);
 });

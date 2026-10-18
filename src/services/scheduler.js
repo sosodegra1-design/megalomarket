@@ -108,7 +108,7 @@ export async function startScheduler({
    * Le stock est la seule valeur qui dérive toute seule, mais aucun canal ne
    * sait encore la recevoir : le site propre n'a aucune notion de stock (voir
    * ownSite.js) et `listInventoryItems` y renvoie une liste vide, tandis
-   * qu'ebay.js n'expose pas de mise à jour de quantité. Une tâche planifiée
+   * qu'aucun connecteur actif n'expose de mise à jour de quantité. Une tâche planifiée
    * n'aurait donc rien à pousser et se contenterait d'écrire un journal
    * « ignoré » toutes les 15 minutes — du bruit qui masquerait les vraies
    * erreurs. Le push reste déclenché par une action explicite (bouton

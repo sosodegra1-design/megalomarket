@@ -1,0 +1,48 @@
+{
+  "source": "https://lumivita-design.ch/#catalogue",
+  "note": "Catalogue professionnel LumiVita. Aucun prix : devis sur demande, le prix d'achat doit être saisi avant toute publication. Références, coloris et caractéristiques à confirmer par le fournisseur.",
+  "products": [
+    {
+      "sku": "LV-001",
+      "name": "Sapin de Noël",
+      "description": "Lampe LED 3D en acrylique. Silhouette de sapin étoilée, effet lumineux chaleureux. Format standard : 1,50 m de hauteur.",
+      "colors": ["Or", "Bleu", "Vert", "Rouge", "Blanc"],
+      "image": "assets/sapin-noel.webp"
+    },
+    {
+      "sku": "LV-002",
+      "name": "Père Noël",
+      "description": "Lampe LED 3D en acrylique. Le personnage incontournable, un clin d'œil festif pour vitrines et comptoirs. Format standard : 1,50 m de hauteur.",
+      "colors": ["Rouge", "Vert", "Bleu", "Blanc"],
+      "image": "assets/pere-noel.webp"
+    },
+    {
+      "sku": "LV-003",
+      "name": "Renne",
+      "description": "Lampe LED 3D en acrylique. Silhouette élégante et festive, parfaite pour une ambiance hivernale raffinée. Format standard : 1,50 m de hauteur.",
+      "colors": ["Or", "Bleu", "Blanc"],
+      "image": "assets/renne.webp"
+    },
+    {
+      "sku": "LV-004",
+      "name": "Bonhomme de neige",
+      "description": "Lampe LED 3D en acrylique. Un modèle doux et lumineux, idéal pour les espaces familiaux et les vitrines. Format standard : 1,50 m de hauteur.",
+      "colors": ["Bleu", "Blanc", "Violet"],
+      "image": "assets/bonhomme-neige.webp"
+    },
+    {
+      "sku": "LV-005",
+      "name": "Flocon de neige",
+      "description": "Lampe LED 3D en acrylique. Une géométrie fine et lumineuse, qui apporte une touche hivernale délicate. Format standard : 1,50 m de hauteur.",
+      "colors": ["Blanc", "Bleu", "Violet"],
+      "image": "assets/flocon-neige.webp"
+    },
+    {
+      "sku": "LV-006",
+      "name": "Cadeau de Noël",
+      "description": "Lampe LED 3D en acrylique. Le symbole des fêtes, parfait en vitrine pour annoncer les promotions de fin d'année. Format standard : 1,50 m de hauteur.",
+      "colors": ["Vert", "Rouge", "Or"],
+      "image": "assets/cadeau-noel.webp"
+    }
+  ]
+}

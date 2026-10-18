@@ -93,23 +93,11 @@ async function requireProduct(productId) {
 }
 
 /**
- * Identifiant attendu par le connecteur pour CE canal.
- *
- * `external_id` est le plus souvent le SKU posé par la synchro de stock, ce que
- * les connecteurs attendent — sauf eBay, dont les méthodes d'écriture exigent
- * un offerId distinct du SKU. On ne résout l'offerId que dans ce cas précis,
- * pour ne pas payer un appel réseau inutile sur les autres canaux.
+ * Identifiant attendu par le connecteur pour CE canal : `external_id` (le plus
+ * souvent le SKU posé par la synchro de stock), à défaut le SKU du produit.
  */
 async function channelIdentifier(channel, product, listing) {
-  const externalId = listing?.external_id || null;
-  if (channel !== 'ebay') return externalId || product.sku || null;
-
-  const looksLikeSku = !externalId || externalId === product.sku;
-  if (!looksLikeSku) return externalId;
-
-  const ebay = connectors.ebay;
-  if (!supports(ebay, 'getOfferIdForSku')) return product.sku || null;
-  return ebay.getOfferIdForSku(product.sku);
+  return listing?.external_id || product.sku || null;
 }
 
 /** Reflète côté hub ce qui vient d'être accepté par le canal (prix et/ou stock). */
@@ -208,7 +196,7 @@ function stockMethod(connector) {
 
 /**
  * Pousse une quantité vers un canal qui gère le stock. Le site propre n'a
- * aucune notion de stock et eBay n'expose pas de route de quantité dans ce
+ * aucune notion de stock et aucun connecteur n'expose de route de quantité dans ce
  * connecteur : ces canaux sont ignorés, pas mis en erreur.
  */
 export async function pushStockToChannel(productId, channel, quantity) {

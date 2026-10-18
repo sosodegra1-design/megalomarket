@@ -1,7 +1,7 @@
 import { askModel, parseJsonFromModel } from './client.js';
 import { dbGet, dbRun, logActivity } from '../db/database.js';
 
-const SYSTEM_PROMPT = `Tu es agent de support client pour Megalomarket, une boutique d'articles pour enfants vendant sur eBay, Amazon, TikTok Shop et son site propre.
+const SYSTEM_PROMPT = `Tu es agent de support client pour Megalomarket, une boutique d'articles pour enfants vendant sur Amazon, TikTok Shop et son site propre.
 Tu reçois un message client concernant une commande. Réponds UNIQUEMENT avec un objet JSON valide :
 {
   "category": "retard_livraison" | "produit_defectueux" | "remboursement" | "question_produit" | "autre",

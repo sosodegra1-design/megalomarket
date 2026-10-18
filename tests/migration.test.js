@@ -216,3 +216,19 @@ test('both rebuilt tables carry the widened constraint, with no leftovers', asyn
     [],
   );
 });
+
+test('both tables accept the lumivita channel after migration, and keep ebay history', async () => {
+  for (const table of ['channel_listings', 'import_listings']) {
+    const definition = await dbGet("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = ?", [table]);
+    assert.equal(definition.sql.includes("'lumivita'"), true, `${table} autorise lumivita`);
+    assert.equal(definition.sql.includes("'ebay'"), true, `${table} garde ebay pour l'historique`);
+  }
+
+  const product = await dbGet('SELECT id FROM products WHERE sku = ?', ['SKU-MIG']);
+  await dbRun(
+    'INSERT INTO channel_listings (product_id, channel, price, stock, updated_at) VALUES (?, ?, ?, ?, ?)',
+    [product.id, 'lumivita', 0.01, 0, Date.now()],
+  );
+  const history = await dbAll('SELECT id FROM import_listings');
+  assert.equal(history.length, 2, 'les fiches historiques sont conservées');
+});

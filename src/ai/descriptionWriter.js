@@ -2,7 +2,7 @@ import { askModel, parseJsonFromModel } from './client.js';
 import { dbGet, dbRun, logActivity } from '../db/database.js';
 
 const CHANNEL_GUIDANCE = {
-  ebay: 'Description eBay : orientée mots-clés de recherche, liste les caractéristiques techniques en points courts, ton factuel.',
+  lumivita: 'Description catalogue LumiVita : ton professionnel pour distributeurs et revendeurs, caractéristiques factuelles, sans prix ni promesse de stock.',
   amazon: "Description Amazon : structure en avantages clients, respecte les conventions Amazon (pas de promotions, pas de coordonnées de contact).",
   tiktok_shop: 'Description TikTok Shop : ton jeune et dynamique, phrases courtes, orientée émotion et usage au quotidien.',
   own_site: 'Description site propre : ton chaleureux et rassurant pour des parents, peut être plus longue et storytelling.',

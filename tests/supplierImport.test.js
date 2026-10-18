@@ -41,7 +41,7 @@ const AI_REPLY = JSON.stringify({
   amazon: { title: 'Peluche renard 30cm', description: 'Douce et robuste.' },
   tiktok_shop: { title: 'Peluche renard', description: 'Trop mignonne !' },
   allegro: { title: 'Peluche renard 30cm', description: 'Douce et rassurante.' },
-  ebay: { title: 'Peluche renard 30 cm', description: 'Peluché douce.' },
+  lumivita: { title: 'Peluche renard 30 cm', description: 'Peluché douce.' },
 });
 
 let server;

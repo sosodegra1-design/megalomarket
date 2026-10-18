@@ -411,6 +411,40 @@ async function assertSchemaIsOurs() {
   }
 }
 
+/* LumiVita remplace eBay comme canal actif. 'ebay' reste toléré dans les contraintes
+   CHECK : les fiches historiques déjà en base ne doivent pas être perdues.
+   La reconstruction reprend la définition RÉELLE de la table (toutes ses colonnes,
+   y compris celles ajoutées par les migrations précédentes) au lieu d'une liste
+   figée, pour ne rien effacer. Le marqueur 'lumivita' rend l'opération idempotente. */
+async function migrateLumivitaChannel() {
+  let migrated = false;
+  for (const table of ['channel_listings', 'import_listings']) {
+    const existing = await dbGet("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = ?", [table]);
+    if (!existing?.sql || existing.sql.includes("'lumivita'")) continue;
+    if (!existing.sql.includes("'ebay'")) continue;
+
+    const target = `${table}_migrated`;
+    const createTarget = existing.sql
+      .replace(/^CREATE TABLE\s+(IF NOT EXISTS\s+)?["`]?\w+["`]?/i, `CREATE TABLE ${target}`)
+      .replace("'ebay'", "'lumivita', 'ebay'");
+    await client.batch(
+      [
+        `DROP TABLE IF EXISTS ${target}`,
+        createTarget,
+        `INSERT INTO ${target} SELECT * FROM ${table}`,
+        `DROP TABLE ${table}`,
+        `ALTER TABLE ${target} RENAME TO ${table}`,
+      ],
+      'write',
+    );
+    await logActivity('MIGRATION', `Table ${table} reconstruite : canal 'lumivita' autorisé.`);
+    migrated = true;
+  }
+  // La reconstruction emporte les index de la table : le schéma les recrée.
+  if (migrated) await client.executeMultiple(readFileSync(`${__dirname}/schema.sql`, 'utf8'));
+  return migrated;
+}
+
 export async function initDatabase() {
   await client.execute('PRAGMA foreign_keys = ON');
   const schemaSql = readFileSync(`${__dirname}/schema.sql`, 'utf8');
@@ -430,6 +464,7 @@ export async function initDatabase() {
   await migrateImportListingsQuality();
   await migrateImportsExtractionMethod();
   await migrateImportsLandedCost();
+  await migrateLumivitaChannel();
   await seedCurrenciesIfEmpty();
 }
 

@@ -16,16 +16,6 @@ services:
       # le service refuse tout sauf /api/health : échec en fermé.
       - key: ADMIN_API_KEY
         sync: false
-      - key: EBAY_ENV
-        value: production
-      - key: EBAY_APP_ID
-        sync: false
-      - key: EBAY_CERT_ID
-        sync: false
-      - key: EBAY_DEV_ID
-        sync: false
-      - key: EBAY_REFRESH_TOKEN
-        sync: false
       - key: OWN_SITE_API_URL
         sync: false
       - key: OWN_SITE_API_KEY
@@ -51,8 +41,6 @@ services:
       - key: ALLEGRO_CLIENT_SECRET
         sync: false
       - key: ALLEGRO_REFRESH_TOKEN
-        sync: false
-      - key: EBAY_MERCHANT_LOCATION_KEY
         sync: false
       - key: PRICING_MARGIN_COEFFICIENT
         value: "1.8"

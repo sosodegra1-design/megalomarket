@@ -71,7 +71,7 @@ const BASELINE = {
   database: { persistent: true, host: 'megalomarket-production.turso.io' },
   access: { protected: true },
   ai: { configured: false, provider: null, model: null },
-  channels: { ebay: false, own_site: false, amazon: false, tiktok_shop: false, allegro: false },
+  channels: { lumivita: false, own_site: false, amazon: false, tiktok_shop: false, allegro: false },
 };
 
 test('le tableau de bord est en français et garde ses points d’entrée', () => {
@@ -117,7 +117,7 @@ test('tout configuré : le bandeau passe au vert, en version compacte', () => {
   sandbox.renderBanner({
     ...BASELINE,
     ai: { configured: true, provider: 'anthropic', model: 'claude-sonnet-5' },
-    channels: { ebay: true, own_site: true, amazon: false, tiktok_shop: false, allegro: false },
+    channels: { lumivita: true, own_site: true, amazon: false, tiktok_shop: false, allegro: false },
     missing: [],
   });
 

@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Megalomarket AI Core — moteur de recommandations et de synchronisation omnicanale (eBay, site propre, Amazon/TikTok Shop à venir).",
+  "description": "Megalomarket AI Core — moteur de recommandations et de synchronisation omnicanale (LumiVita, site propre, Amazon, TikTok Shop, Allegro).",
   "scripts": {
     "start": "node src/server.js",
     "dev": "node --watch src/server.js",

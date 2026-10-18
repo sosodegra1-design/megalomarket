@@ -70,9 +70,9 @@ after(async () => {
 test('preview and cleanup pick up a pending import (still brouillon) and a broken one (fiche en échec)', async () => {
   const pendingId = await createImport({ title: 'Import jamais terminé' });
   const brokenId = await createImport({ title: 'Import cassé', status: 'pret' });
-  await createListing(brokenId, { marketplace: 'ebay', status: 'echec' });
+  await createListing(brokenId, { marketplace: 'lumivita', status: 'echec' });
   const healthyId = await createImport({ title: 'Import sain', status: 'pret' });
-  await createListing(healthyId, { marketplace: 'ebay', status: 'valide' });
+  await createListing(healthyId, { marketplace: 'lumivita', status: 'valide' });
 
   const preview = await call('/api/imports/cleanup/preview');
   assert.equal(preview.status, 200);
@@ -92,7 +92,7 @@ test('preview and cleanup pick up a pending import (still brouillon) and a broke
 
 test('an import with a published listing is always spared, even if it is also broken or still pending', async () => {
   const publishedButBrokenId = await createImport({ title: 'Publié ailleurs, cassé sur un autre canal', status: 'pret' });
-  await createListing(publishedButBrokenId, { marketplace: 'ebay', status: 'publie' });
+  await createListing(publishedButBrokenId, { marketplace: 'lumivita', status: 'publie' });
   await createListing(publishedButBrokenId, { marketplace: 'amazon', status: 'echec' });
 
   const stillPendingButPublishedId = await createImport({ title: 'Publié malgré le statut brouillon' });

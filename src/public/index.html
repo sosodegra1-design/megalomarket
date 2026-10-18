@@ -1835,7 +1835,7 @@
         <!-- Fiches de l'import courant : édition par marketplace puis publication. -->
         <div class="card reveal-in" id="listingsCard" style="display:none">
           <h2>Fiches générées pour l'import</h2>
-          <p class="hint">Corrige ce qui doit l'être, puis publie. La publication envoie réellement sur le canal — sur eBay comme sur ton site.</p>
+          <p class="hint">Corrige ce qui doit l'être, puis publie. La publication envoie réellement sur le canal — sur Amazon, TikTok, Allegro comme sur ton site.</p>
           <div class="list" id="listings"></div>
         </div>
 
@@ -3495,8 +3495,8 @@ function explainMissing(entry) {
   if (/OWN_SITE_/.test(entry)) {
     return 'Site propre non configuré — impossible de publier sur ta boutique.';
   }
-  if (/EBAY_/.test(entry)) {
-    return 'eBay non configuré — publication et synchronisation eBay impossibles.';
+  if (/LUMIVITA_/.test(entry)) {
+    return 'LumiVita non configuré — fichier catalogue introuvable.';
   }
   return 'Réglage manquant.';
 }
@@ -3599,7 +3599,7 @@ function updateGenerateButton() {
    un calcul local — et on force l'état final dès la réponse. */
 const STAGES = [
   { key: 'extraction', label: 'Extraction de la page', note: 'lit la fiche fournisseur' },
-  { key: 'marketplaces', label: 'Fiches marketplaces', note: 'Amazon · TikTok · Allegro · eBay' },
+  { key: 'marketplaces', label: 'Fiches marketplaces', note: 'Amazon · TikTok · Allegro' },
   { key: 'site', label: 'Fiche du site', note: 'catégorie, âge, icône — 2ᵉ appel IA' },
   { key: 'prix', label: 'Prix conseillé', note: 'calcul local, sans appel réseau' },
 ];
@@ -6285,7 +6285,7 @@ onAction($('products'), {
   }, 'Suggestions de prix générées.'),
 
   describe: (button) => {
-    const channel = prompt('Canal visé (ebay, amazon, tiktok_shop, own_site) :', 'ebay');
+    const channel = prompt('Canal visé (lumivita, amazon, tiktok_shop, own_site) :', 'own_site');
     if (!channel) return;
     action(button, async () => {
       const result = await api(

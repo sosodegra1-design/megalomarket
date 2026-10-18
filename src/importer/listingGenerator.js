@@ -5,7 +5,7 @@ import { loadCurrencyRates } from '../db/currency-catalogue.js';
 import { config } from '../config/env.js';
 import { connectors } from '../connectors/index.js';
 
-const MARKETPLACES = ['amazon', 'tiktok_shop', 'allegro', 'ebay'];
+const MARKETPLACES = ['amazon', 'tiktok_shop', 'allegro', 'lumivita'];
 
 /* Quand le scraper n'a pas lu le prix d'achat, le prix conseillé vaut 0 € et les
    fiches sont invendables (les canaux refusent un prix nul). Le texte reste
@@ -23,14 +23,14 @@ Réponds UNIQUEMENT avec un objet JSON valide, sans texte autour, au format exac
   "amazon": {"title": "...", "description": "..."},
   "tiktok_shop": {"title": "...", "description": "..."},
   "allegro": {"title": "...", "description": "..."},
-  "ebay": {"title": "...", "description": "..."}
+  "lumivita": {"title": "...", "description": "..."}
 }
 Règles :
 - Traduis systématiquement en français, y compris pour la fiche Allegro (l'équipe travaille en français en interne).
 - Amazon : titre orienté mots-clés sans majuscules abusives, description structurée en avantages, conforme aux règles Amazon (pas de coordonnées de contact, pas de promotion).
 - TikTok Shop : ton jeune et dynamique, phrases courtes, orienté usage au quotidien.
 - Allegro : ton clair et rassurant, précis sur les caractéristiques.
-- eBay : orienté mots-clés de recherche, caractéristiques techniques en points courts.
+- LumiVita : catalogue professionnel pour distributeurs et revendeurs, ton sobre et factuel, sans prix ni promesse de stock.
 - Ne jamais inventer une caractéristique technique absente des données fournies.`;
 
 /* ===================== SITE PROPRE =====================

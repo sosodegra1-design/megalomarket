@@ -18,10 +18,6 @@ process.env.DATABASE_PATH = join(mkdtempSync(join(tmpdir(), 'megalomarket-push-'
 process.env.ADMIN_API_KEY = 'cle-de-test-push';
 
 // config/env.js lit ces variables à l'import : elles doivent exister avant.
-process.env.EBAY_APP_ID = 'app-id';
-process.env.EBAY_CERT_ID = 'cert-id';
-process.env.EBAY_DEV_ID = 'dev-id';
-process.env.EBAY_REFRESH_TOKEN = 'refresh-token';
 process.env.OWN_SITE_API_URL = 'https://bbhappy.example.com';
 process.env.OWN_SITE_API_KEY = 'site-admin-key';
 
@@ -32,11 +28,11 @@ await initDatabase();
 
 /*
  * Stub réseau : il connaît les routes réellement appelées par les connecteurs
- * (OAuth eBay, recherche d'offre par SKU, PUT d'offre, PATCH produit du site).
+ * (PATCH produit du site).
  * `fail` permet de faire tomber un canal précis — pour vérifier qu'un échec
  * n'emporte pas les autres — sans introduire d'erreur dans les tests voisins.
  */
-function stubFetch({ offers = [], fail = () => false } = {}) {
+function stubFetch({ fail = () => false } = {}) {
   const calls = [];
   const original = global.fetch;
   global.fetch = async (url, options = {}) => {
@@ -52,14 +48,7 @@ function stubFetch({ offers = [], fail = () => false } = {}) {
 
     let status = 200;
     let json = {};
-    if (parsed.pathname.includes('/identity/v1/oauth2/token')) {
-      json = { access_token: 'access-token', expires_in: 3600 };
-    } else if (parsed.pathname === '/sell/inventory/v1/offer') {
-      const sku = parsed.searchParams.get('sku');
-      json = { offers: offers.filter((offer) => offer.sku === sku) };
-    } else if (parsed.pathname.startsWith('/sell/inventory/v1/offer/')) {
-      json = {};
-    } else if (parsed.pathname.startsWith('/api/admin/products/')) {
+    if (parsed.pathname.startsWith('/api/admin/products/')) {
       json = { id: parsed.pathname.split('/').pop() };
     } else {
       status = 404;
@@ -94,31 +83,30 @@ async function listingFor(productId, channel) {
 }
 
 test('a successful price push updates channel_listings and writes an activity log', async () => {
-  const productId = await createProduct('SKU-EBAY-OK', 5);
+  const productId = await createProduct('SKU-SITE-OK', 5);
   await dbRun(
     'INSERT INTO channel_listings (product_id, channel, external_id, price, stock, updated_at) VALUES (?, ?, ?, ?, ?, ?)',
-    [productId, 'ebay', 'SKU-EBAY-OK', 12, 3, Date.now()],
+    [productId, 'own_site', 'p1', 12, 3, Date.now()],
   );
 
-  const mock = stubFetch({ offers: [{ sku: 'SKU-EBAY-OK', offerId: 'offer-1', marketplaceId: 'EBAY_FR', status: 'PUBLISHED' }] });
+  const mock = stubFetch();
   try {
-    const result = await pushPriceToChannel(productId, 'ebay', 24.9);
+    const result = await pushPriceToChannel(productId, 'own_site', 24.9);
     assert.equal(result.ok, true);
-    assert.equal(result.channel, 'ebay');
+    assert.equal(result.channel, 'own_site');
     assert.equal(result.price, 24.9);
-    // Le SKU n'est PAS l'offerId : le connecteur doit avoir résolu l'offre.
-    assert.equal(result.externalId, 'offer-1');
+    assert.equal(result.externalId, 'p1');
 
-    const listing = await listingFor(productId, 'ebay');
+    const listing = await listingFor(productId, 'own_site');
     assert.equal(listing.price, 24.9, 'la vue locale du hub reste cohérente');
     assert.equal(listing.stock, 3, 'un push de prix ne touche pas au stock');
 
     const logs = await dbAll('SELECT * FROM activity_log ORDER BY id DESC LIMIT 5');
-    assert.ok(logs.some((log) => log.kind === 'PUSH_PRIX' && log.message.includes('ebay')));
+    assert.ok(logs.some((log) => log.kind === 'PUSH_PRIX' && log.message.includes('own_site')));
 
-    const put = mock.calls.find((call) => call.method === 'PUT');
-    assert.equal(put.path, '/sell/inventory/v1/offer/offer-1');
-    assert.equal(JSON.parse(put.body).pricingSummary.price.value, '24.90');
+    const patch = mock.calls.find((call) => call.method === 'PATCH');
+    assert.equal(patch.path, '/api/admin/products/p1');
+    assert.equal(JSON.parse(patch.body).price, 24.9);
   } finally {
     mock.restore();
   }
@@ -165,27 +153,29 @@ test('a connector that throws is reported per channel without aborting the other
     [productId, 'own_site', 'p1', 10, 0, Date.now()],
   );
 
-  // Le site propre tombe, eBay répond : l'échec de l'un ne doit pas empêcher
-  // l'autre d'être mis à jour.
-  const mock = stubFetch({
-    offers: [{ sku: 'SKU-MIXTE', offerId: 'offer-2', marketplaceId: 'EBAY_FR', status: 'PUBLISHED' }],
-    fail: (call) => call.path.startsWith('/api/admin/products/'),
-  });
+  // Le site propre tombe, un autre canal répond : l'échec de l'un ne doit pas
+  // empêcher l'autre d'être mis à jour. LumiVita est en lecture seule : on
+  // lui substitue un connecteur de test pour ce scénario.
+  const { connectors } = await import('../src/connectors/index.js');
+  const saved = connectors.lumivita;
+  connectors.lumivita = { isConfigured: () => true, updateOfferPrice: async () => ({}) };
+  const mock = stubFetch({ fail: (call) => call.path.startsWith('/api/admin/products/') });
   try {
     const results = await pushPriceToAllChannels(productId, 22);
     const own = results.find((r) => r.channel === 'own_site');
-    const ebay = results.find((r) => r.channel === 'ebay');
+    const other = results.find((r) => r.channel === 'lumivita');
 
     assert.equal(own.ok, false);
     assert.match(own.error, /500/);
-    assert.equal(ebay.ok, true, 'eBay a bien été poussé malgré la panne du site');
+    assert.equal(other.ok, true, 'l\'autre canal a bien été poussé malgré la panne du site');
 
-    assert.equal((await listingFor(productId, 'ebay')).price, 22);
+    assert.equal((await listingFor(productId, 'lumivita')).price, 22);
     assert.equal((await listingFor(productId, 'own_site')).price, 10, 'le canal en panne garde son ancien prix');
 
     const logs = await dbAll('SELECT * FROM activity_log ORDER BY id DESC LIMIT 10');
     assert.ok(logs.some((log) => log.kind === 'ERREUR_PUSH' && log.message.includes('own_site')));
   } finally {
+    connectors.lumivita = saved;
     mock.restore();
   }
 });
@@ -194,17 +184,17 @@ test('a price below cost_price is refused and never pushed', async () => {
   const productId = await createProduct('SKU-PERTE', 30);
   await dbRun(
     'INSERT INTO channel_listings (product_id, channel, external_id, price, stock, updated_at) VALUES (?, ?, ?, ?, ?, ?)',
-    [productId, 'ebay', 'SKU-PERTE', 39, 1, Date.now()],
+    [productId, 'own_site', 'p9', 39, 1, Date.now()],
   );
 
-  const mock = stubFetch({ offers: [{ sku: 'SKU-PERTE', offerId: 'offer-3', marketplaceId: 'EBAY_FR', status: 'PUBLISHED' }] });
+  const mock = stubFetch();
   try {
     await assert.rejects(
-      () => pushPriceToChannel(productId, 'ebay', 19.9),
+      () => pushPriceToChannel(productId, 'own_site', 19.9),
       /inférieur au prix de revient.*Vente à perte/s,
     );
     assert.equal(mock.calls.length, 0, 'le refus a lieu avant tout appel réseau');
-    assert.equal((await listingFor(productId, 'ebay')).price, 39, 'le prix local ne bouge pas');
+    assert.equal((await listingFor(productId, 'own_site')).price, 39, 'le prix local ne bouge pas');
   } finally {
     mock.restore();
   }
@@ -233,7 +223,7 @@ test('a stock push is skipped on every channel, since none handles stock yet', a
     assert.match(result.reason, /ne permet pas la mise à jour de stock/);
     assert.equal(mock.calls.length, 0);
 
-    await assert.rejects(() => pushStockToChannel(productId, 'ebay', -1), /Quantité de stock invalide/);
+    await assert.rejects(() => pushStockToChannel(productId, 'own_site', -1), /Quantité de stock invalide/);
   } finally {
     mock.restore();
   }
@@ -241,24 +231,6 @@ test('a stock push is skipped on every channel, since none handles stock yet', a
 
 test('an unknown channel or a missing product is a real error, not a silent skip', async () => {
   await assert.rejects(() => pushPriceToChannel(1, 'leboncoin', 10), /Canal inconnu/);
-  await assert.rejects(() => pushPriceToChannel(999999, 'ebay', 10), /Produit introuvable/);
-  await assert.rejects(() => pushPriceToChannel(1, 'ebay', 0), /Prix invalide/);
-});
-
-test('ebay resolves the offerId from the SKU, preferring the EBAY_FR offer', async () => {
-  const productId = await createProduct('SKU-MULTI', 5);
-  const mock = stubFetch({
-    offers: [
-      { sku: 'SKU-MULTI', offerId: 'offer-de', marketplaceId: 'EBAY_DE', status: 'PUBLISHED' },
-      { sku: 'SKU-MULTI', offerId: 'offer-fr', marketplaceId: 'EBAY_FR', status: 'PUBLISHED' },
-    ],
-  });
-  try {
-    const result = await pushPriceToChannel(productId, 'ebay', 25);
-    assert.equal(result.externalId, 'offer-fr', 'la place de marché française prime');
-    const lookup = mock.calls.find((call) => call.path === '/sell/inventory/v1/offer');
-    assert.equal(lookup.query.get('sku'), 'SKU-MULTI');
-  } finally {
-    mock.restore();
-  }
+  await assert.rejects(() => pushPriceToChannel(999999, 'own_site', 10), /Produit introuvable/);
+  await assert.rejects(() => pushPriceToChannel(1, 'own_site', 0), /Prix invalide/);
 });

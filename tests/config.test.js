@@ -25,10 +25,9 @@ process.env.ADMIN_API_KEY = ADMIN_KEY;
    avant l'import, sinon un « rien de configuré » dépendrait de l'environnement. */
 const AI_KEYS = ['AI_PROVIDER', 'ANTHROPIC_API_KEY', 'ANTHROPIC_MODEL', 'AI_BASE_URL', 'AI_API_KEY', 'AI_MODEL'];
 const OWN_SITE_KEYS = ['OWN_SITE_API_URL', 'OWN_SITE_API_KEY'];
-const EBAY_KEYS = ['EBAY_ENV', 'EBAY_APP_ID', 'EBAY_CERT_ID', 'EBAY_DEV_ID', 'EBAY_REFRESH_TOKEN', 'EBAY_MERCHANT_LOCATION_KEY'];
 
 function resetEnv() {
-  for (const key of [...AI_KEYS, ...OWN_SITE_KEYS, ...EBAY_KEYS]) delete process.env[key];
+  for (const key of [...AI_KEYS, ...OWN_SITE_KEYS]) delete process.env[key];
 }
 
 // La base doit rester locale : on ne teste jamais sur la production.
@@ -73,7 +72,8 @@ test('sans aucune variable, chaque variable manquante est nommée', async () => 
   assert.deepEqual(body.database, { persistent: false, host: null }, 'la base de test est un fichier local');
   assert.equal(body.access.protected, true);
   assert.deepEqual(body.channels, {
-    ebay: false,
+    lumivita: true, // lit le catalogue local : configuré dès que le fichier existe
+
     own_site: false,
     amazon: false,
     tiktok_shop: false,
@@ -91,14 +91,12 @@ test('sans aucune variable, chaque variable manquante est nommée', async () => 
     body.missing.some((entry) => entry.includes('OWN_SITE_API_URL') && entry.includes('OWN_SITE_API_KEY')),
     'le canal site propre doit nommer ses deux variables',
   );
-  // eBay est un canal optionnel : son absence ne doit PAS figurer parmi les
-  // manques, sinon le bandeau d'état resterait orange à jamais, y compris quand
-  // tout ce dont on a besoin est en place. Son état reste lisible dans
-  // channels.ebay, qui est une information et non une alerte.
-  assert.equal(body.channels.ebay, false, 'eBay non configuré reste visible comme information');
+  // LumiVita est un canal optionnel en lecture seule : il ne doit PAS figurer
+  // parmi les manques. Son état reste lisible dans channels.lumivita.
+  assert.equal(body.channels.lumivita, true, 'LumiVita reste visible comme information');
   assert.ok(
-    !body.missing.some((entry) => /EBAY_/.test(entry)),
-    'eBay ne doit pas compter parmi les manques bloquants',
+    !body.missing.some((entry) => /LUMIVITA_/.test(entry)),
+    'LumiVita ne doit pas compter parmi les manques bloquants',
   );
 });
 
@@ -154,12 +152,8 @@ test('site propre configuré : le canal passe à vrai et sa variable quitte la l
   try {
     const { body } = await getConfig();
     assert.equal(body.channels.own_site, true);
-    assert.equal(body.channels.ebay, false);
     assert.ok(!body.missing.some((entry) => entry.includes('OWN_SITE_')), 'plus rien à signaler pour le site');
-    // eBay est optionnel : il n'apparaît pas dans les manques, seulement comme
-    // canal non configuré.
-    assert.equal(body.channels.ebay, false);
-    assert.ok(!body.missing.some((entry) => entry.includes('EBAY_')), 'eBay est un canal optionnel');
+    assert.ok(!body.missing.some((entry) => entry.includes('LUMIVITA_')), 'LumiVita est un canal optionnel');
   } finally {
     resetEnv();
   }
@@ -199,10 +193,6 @@ test('aucune valeur secrète n’apparaît, même quand tout est configuré', as
     ANTHROPIC_API_KEY: 'sk-ant-secret-aaaaaaaaaaaaaaaa',
     OWN_SITE_API_URL: 'https://boutique.example.com',
     OWN_SITE_API_KEY: 'site-secret-bbbbbbbbbbbbbb',
-    EBAY_APP_ID: 'ebay-app-cccccccc',
-    EBAY_CERT_ID: 'ebay-cert-secret-dddddddd',
-    EBAY_DEV_ID: 'ebay-dev-eeeeeeee',
-    EBAY_REFRESH_TOKEN: 'ebay-refresh-secret-ffffffff',
   };
   Object.assign(process.env, secrets);
   try {
@@ -211,7 +201,7 @@ test('aucune valeur secrète n’apparaît, même quand tout est configuré', as
     assert.equal(body.missing.length, 0, 'tout est configuré : la liste des manques doit être vide');
     assert.equal(body.ai.configured, true);
     assert.equal(body.channels.own_site, true);
-    assert.equal(body.channels.ebay, true);
+    assert.equal(body.channels.lumivita, true);
 
     for (const [key, value] of Object.entries(secrets)) {
       assert.ok(!text.includes(value), `la valeur de ${key} ne doit jamais apparaître dans la réponse`);

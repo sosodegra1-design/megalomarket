@@ -1,7 +1,7 @@
 # Megalomarket — AI Core
 
 Service central de recommandations IA et de synchronisation omnicanale pour Megalomarket
-(eBay, site propre, Amazon et TikTok Shop à venir).
+(LumiVita, site propre, Amazon, TikTok Shop et Allegro).
 
 ## Ce que ça fait aujourd'hui
 
@@ -61,7 +61,7 @@ tourner quand le hub est hébergé.
 
 | Canal | État | Fichier |
 |---|---|---|
-| eBay | Implémenté (OAuth2 + Sell API), y compris la publication de nouvelles fiches | `src/connectors/ebay.js` |
+| LumiVita | Catalogue statique en lecture seule (6 produits, sans prix ni stock) lu depuis `data/lumivita-catalogue.json` ; toute écriture est refusée | `src/connectors/lumivita.js` |
 | Site propre | Implémenté (contrat vérifié contre l'API réelle de BBVOLTEX) | `src/connectors/ownSite.js` |
 | Amazon | En attente d'approbation SP-API — squelette prêt | `src/connectors/amazon.js` |
 | TikTok Shop | En attente d'approbation Partner API — squelette prêt | `src/connectors/tiktokShop.js` |
@@ -77,15 +77,15 @@ Permet de créer une fiche produit prête à vendre à partir d'une simple URL f
    signale clairement plutôt que de renvoyer une fiche vide.
 2. **`POST /api/imports/:id/generate`** — envoie les données brutes à Claude, qui génère une fiche
    (titre + description en français) adaptée à chaque marketplace (Amazon, TikTok Shop, Allegro,
-   eBay) et calcule le prix de vente conseillé (`src/importer/pricing.js` : prix d'achat × coefficient
+   LumiVita) et calcule le prix de vente conseillé (`src/importer/pricing.js` : prix d'achat × coefficient
    de marge + frais fixes, jamais en dessous du prix d'achat — verrou anti-vente à perte).
 3. **`GET /api/imports/:id`** — récupère l'import et toutes ses fiches par marketplace (statut
    `a_valider`, `valide`, `publie` ou `echec`).
 4. **Option A (validation manuelle)** : `PATCH /api/imports/:id/listings/:marketplace` `{ title?,
    description?, suggestedPrice? }` pour corriger une fiche avant publication.
 5. **Option B (publication directe)** : `POST /api/imports/:id/listings/:marketplace/publish` —
-   publie réellement sur la marketplace via son connecteur (`src/importer/publisher.js`). eBay et le
-   site propre sont pris en charge ; les autres renvoient une erreur claire "pas encore actif" tant
+   publie réellement sur la marketplace via son connecteur (`src/importer/publisher.js`). Le site
+   propre est pris en charge ; LumiVita est en lecture seule et les autres renvoient une erreur claire "pas encore actif" tant
    que leurs clés API ne sont pas renseignées.
 
 Un connecteur non configuré (clés manquantes dans `.env`) est automatiquement ignoré par
@@ -143,7 +143,7 @@ bancaire requise). La base de données ne vit donc pas sur un disque Render (pay
 3. Sur Render, "New" → "Blueprint" → sélectionne ce dépôt. Render détecte `render.yaml`.
 4. Renseigne les variables secrètes demandées : `TURSO_DATABASE_URL`, `TURSO_AUTH_TOKEN`,
    `ANTHROPIC_API_KEY` (ou les variables `AI_*` d'un fournisseur compatible OpenAI), puis les clés
-   eBay si tu les as déjà.
+   du site propre si tu les as déjà.
 5. Déploie.
 
 ### Le service gratuit se met en veille — comment le garder actif
@@ -194,7 +194,7 @@ Génère une clé solide avec `openssl rand -hex 32`.
 2. Une fois les accès Amazon SP-API et TikTok Shop Partner API approuvés, implémenter
    `src/connectors/amazon.js` et `src/connectors/tiktokShop.js` en suivant exactement
    le même contrat (`listOrders`, `listInventoryItems`, `updateOfferPrice`, `isConfigured`)
-   que `ebay.js` — aucun autre fichier n'a besoin de changer. Un canal qui n'implémente pas une
+   que `ownSite.js` — aucun autre fichier n'a besoin de changer. Un canal qui n'implémente pas une
    méthode est simplement ignoré par les synchronisations.
 3. Réparer le tableau de bord (`src/public/index.html`), aujourd'hui tronqué en pleine instruction
    et sans aucun appel à l'API.

@@ -12,7 +12,7 @@ import { askModel, parseJsonFromModel } from './client.js';
  * silence — pour qu'il garde la main sur ce qui est réellement demandé.
  */
 
-const COACH_SYSTEM_PROMPT = `Tu prépares une recherche de produits tendance pour un e-commerce qui importe et revend sur plusieurs canaux (eBay, Amazon, TikTok Shop, Allegro, site propre). Un second agent IA va générer 20 idées de produits à partir de l'axe que tu vas produire — ton seul rôle est de rendre cet axe plus précis et actionnable, pas de proposer toi-même des produits.
+const COACH_SYSTEM_PROMPT = `Tu prépares une recherche de produits tendance pour un e-commerce qui importe et revend sur plusieurs canaux (Amazon, TikTok Shop, Allegro, site propre). Un second agent IA va générer 20 idées de produits à partir de l'axe que tu vas produire — ton seul rôle est de rendre cet axe plus précis et actionnable, pas de proposer toi-même des produits.
 Réponds UNIQUEMENT avec un objet JSON valide, au format exact :
 {"refinedFocus": "...", "reasoning": "..."}
 - "refinedFocus" : une à trois phrases en français, concrètes (catégories visées, saisonnalité si pertinente, type de clientèle, contrainte de sourcing si utile) — jamais une simple reformulation vague de ce qui a été donné.
