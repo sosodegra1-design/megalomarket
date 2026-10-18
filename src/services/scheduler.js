@@ -5,6 +5,7 @@ import { huntNiches } from '../ai/nicheHunter.js';
 import { processPendingReturns } from './returnFulfillment.js';
 import { runQualitySupervision } from './qualitySupervisor.js';
 import { logActivity } from '../db/database.js';
+import { connectors } from '../connectors/index.js';
 
 /**
  * Journalise sans jamais laisser remonter l'échec de la journalisation.
@@ -38,6 +39,17 @@ export async function runSafely(label, fn, logger = logActivity) {
 }
 
 /**
+ * Retours planifiés : sans site propre configuré il n'y a aucune demande à
+ * lire, donc le cycle est ignoré en silence au lieu de journaliser une erreur
+ * toutes les 10 minutes. L'appel direct à processPendingReturns() continue de
+ * lever l'erreur explicite.
+ */
+async function processReturnsIfConfigured() {
+  if (!connectors.own_site?.isConfigured?.()) return;
+  await processPendingReturns();
+}
+
+/**
  * Démarre les tâches périodiques. Ne fait rien si aucun canal n'est configuré (rien à synchroniser).
  *
  * Les dépendances sont injectables — mêmes raisons que le `logger` de `runSafely` :
@@ -52,7 +64,7 @@ export async function startScheduler({
   stockJob = syncStockFromAllChannels,
   ordersJob = syncOrdersFromAllChannels,
   nicheJob = huntNiches,
-  returnsJob = processPendingReturns,
+  returnsJob = processReturnsIfConfigured,
   qualityJob = runQualitySupervision,
   logger = logActivity,
 } = {}) {
