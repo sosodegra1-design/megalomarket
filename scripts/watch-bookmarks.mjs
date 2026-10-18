@@ -19,17 +19,11 @@
  */
 
 import 'dotenv/config';
-import { homedir } from 'node:os';
-import { join } from 'node:path';
-import {
-  extractBookmarkUrls, readBookmarksFile, loadSeen, saveSeen,
-} from '../src/services/bookmarks.js';
+import { collectBookmarks, resolveBookmarkFiles, loadSeen, saveSeen } from '../src/services/bookmarks.js';
 
 const SERVER = (process.env.MEGALOMARKET_URL || `http://localhost:${process.env.PORT || 3000}`).replace(/\/+$/, '');
 const KEY = process.env.ADMIN_API_KEY;
 const FOLDER = process.env.BOOKMARKS_FOLDER || 'Megalomarket';
-const BOOKMARKS_PATH = process.env.CHROME_BOOKMARKS_PATH
-  || join(homedir(), 'Library/Application Support/Google/Chrome/Default/Bookmarks');
 const SEEN_PATH = process.env.BOOKMARKS_STATE_PATH || './data/bookmarks-seen.json';
 const EXTRA_HOSTS = (process.env.BOOKMARKS_EXTRA_HOSTS || '').split(',').map((h) => h.trim()).filter(Boolean);
 const INTERVAL_MIN = Number(process.env.WATCH_INTERVAL_MINUTES) || 5;
@@ -75,12 +69,15 @@ async function pass() {
     console.log(`[${stamp}] serveur Megalomarket injoignable (${SERVER}) — nouvel essai dans ${INTERVAL_MIN} min`);
     return;
   }
-  let result;
-  try {
-    result = extractBookmarkUrls(await readBookmarksFile(BOOKMARKS_PATH), FOLDER, { extraHosts: EXTRA_HOSTS });
-  } catch (error) {
-    console.error(`[${stamp}] ${error.message}`);
+  const files = await resolveBookmarkFiles();
+  if (files.length === 0) {
+    console.error(`[${stamp}] aucun fichier de favoris Chrome trouvé. Renseigne CHROME_BOOKMARKS_PATH dans .env.`);
     return;
+  }
+  const result = await collectBookmarks({ files, folderName: FOLDER, extraHosts: EXTRA_HOSTS });
+  if (result.accepted.length + result.ignored.length === 0) {
+    const reasons = result.perFile.map((f) => `${f.path} : ${f.error || 'aucun lien'}`).join('\n  ');
+    console.log(`[${stamp}] aucun lien trouvé dans « ${FOLDER} » :\n  ${reasons}`);
   }
 
   const seen = await loadSeen(SEEN_PATH);
@@ -124,7 +121,7 @@ async function pass() {
   await saveSeen(SEEN_PATH, seen);
 }
 
-console.log(`Surveillance du dossier « ${FOLDER} » (${BOOKMARKS_PATH}) vers ${SERVER}`);
+console.log(`Surveillance du dossier « ${FOLDER} » (tous les profils Chrome, ou CHROME_BOOKMARKS_PATH) vers ${SERVER}`);
 await pass();
 if (!ONCE && !BASELINE) {
   setInterval(() => pass().catch((error) => console.error(error.message)), INTERVAL_MIN * 60 * 1000);

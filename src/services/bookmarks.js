@@ -1,4 +1,6 @@
-import { readFile, writeFile, mkdir } from 'node:fs/promises';
+import { readFile, writeFile, mkdir, readdir, access } from 'node:fs/promises';
+import { homedir } from 'node:os';
+import { join } from 'node:path';
 import { dirname } from 'node:path';
 
 /**
@@ -110,4 +112,63 @@ export async function loadSeen(path) {
 export async function saveSeen(path, seen) {
   await mkdir(dirname(path), { recursive: true });
   await writeFile(path, JSON.stringify({ urls: [...seen] }, null, 2));
+}
+
+/**
+ * Fichiers de favoris de TOUS les profils Chrome.
+ *
+ * Chrome range les favoris dans le dossier de chaque profil (« Default »,
+ * « Profile 1 », « Profile 2 »…), et, pour un compte Google connecté, parfois
+ * dans un second fichier (`AccountBookmarks`). Lire un seul chemin à l'aveugle
+ * passe à côté des liens dès que l'utilisateur n'est pas dans le profil
+ * « Default » : on les parcourt donc tous et on fusionne.
+ */
+export async function listChromeBookmarkFiles(baseDir = join(homedir(), 'Library/Application Support/Google/Chrome')) {
+  let entries;
+  try {
+    entries = await readdir(baseDir);
+  } catch {
+    return [];
+  }
+  const files = [];
+  for (const name of entries.sort()) {
+    if (name !== 'Default' && !/^Profile \d+$/.test(name)) continue;
+    for (const file of ['Bookmarks', 'AccountBookmarks']) {
+      const path = join(baseDir, name, file);
+      try {
+        await access(path);
+        files.push(path);
+      } catch { /* ce profil n'a pas ce fichier */ }
+    }
+  }
+  return files;
+}
+
+/** CHROME_BOOKMARKS_PATH (plusieurs chemins séparés par « | ») ou détection automatique. */
+export async function resolveBookmarkFiles(explicit = process.env.CHROME_BOOKMARKS_PATH, baseDir) {
+  const given = String(explicit || '').split('|').map((p) => p.trim()).filter(Boolean);
+  return given.length > 0 ? given : listChromeBookmarkFiles(baseDir);
+}
+
+/**
+ * Liens du dossier surveillé, tous fichiers confondus, dédoublonnés.
+ * Un fichier illisible, ou où le dossier n'existe pas, n'empêche pas les autres :
+ * il est rapporté dans `perFile`.
+ */
+export async function collectBookmarks({ files, folderName, extraHosts = [] }) {
+  const accepted = [];
+  const ignored = [];
+  const perFile = [];
+  const seen = new Set();
+  for (const path of files) {
+    try {
+      const result = extractBookmarkUrls(await readBookmarksFile(path), folderName, { extraHosts });
+      perFile.push({ path, accepted: result.accepted.length, ignored: result.ignored.length });
+      for (const entry of result.accepted) if (!seen.has(entry.url)) { seen.add(entry.url); accepted.push(entry); }
+      for (const entry of result.ignored) if (!seen.has(entry.url)) { seen.add(entry.url); ignored.push(entry); }
+    } catch (error) {
+      perFile.push({ path, error: error.message });
+    }
+  }
+  return { accepted, ignored, perFile };
 }

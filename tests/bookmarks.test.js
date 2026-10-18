@@ -68,3 +68,44 @@ test('the bookmarks bar is found under any of its usual names, accents and case 
 test('folder names match without accents or case', () => {
   assert.equal(extractBookmarkUrls(CHROME_JSON, 'MEGALOMARKET').accepted.length, 4);
 });
+
+import { mkdirSync, writeFileSync } from 'node:fs';
+import { listChromeBookmarkFiles, resolveBookmarkFiles, collectBookmarks } from '../src/services/bookmarks.js';
+
+function fakeChrome() {
+  const base = mkdtempSync(join(tmpdir(), 'chrome-'));
+  const bar = (urls) => JSON.stringify({ roots: { bookmark_bar: { type: 'folder', name: 'Bookmarks bar', children: urls.map((url, i) => ({ type: 'url', name: `n${i}`, url })) } } });
+  for (const [profile, urls] of [['Default', []], ['Profile 1', ['https://www.alibaba.com/product-detail/a.html', 'https://fr.aliexpress.com/item/1.html']], ['Profile 2', ['https://www.alibaba.com/product-detail/a.html']]]) {
+    mkdirSync(join(base, profile), { recursive: true });
+    writeFileSync(join(base, profile, 'Bookmarks'), bar(urls));
+  }
+  mkdirSync(join(base, 'Crashpad'), { recursive: true });
+  writeFileSync(join(base, 'Crashpad', 'Bookmarks'), '{}');
+  return base;
+}
+
+test('every Chrome profile is found, other folders are ignored', async () => {
+  const files = await listChromeBookmarkFiles(fakeChrome());
+  assert.deepEqual(files.map((f) => f.split('/').slice(-2, -1)[0]), ['Default', 'Profile 1', 'Profile 2']);
+});
+
+test('links are merged across profiles even when Default is empty', async () => {
+  const files = await listChromeBookmarkFiles(fakeChrome());
+  const result = await collectBookmarks({ files, folderName: 'Barre de favoris' });
+  assert.equal(result.accepted.length, 2, 'dédoublonné : le lien commun à deux profils compte une fois');
+  assert.equal(result.perFile.length, 3);
+  assert.equal(result.perFile[0].accepted, 0);
+});
+
+test('an unreadable file does not stop the others', async () => {
+  const base = fakeChrome();
+  const files = [...(await listChromeBookmarkFiles(base)), join(base, 'absent', 'Bookmarks')];
+  const result = await collectBookmarks({ files, folderName: 'Barre de favoris' });
+  assert.equal(result.accepted.length, 2);
+  assert.ok(result.perFile.at(-1).error);
+});
+
+test('CHROME_BOOKMARKS_PATH wins over auto-detection and accepts several paths', async () => {
+  assert.deepEqual(await resolveBookmarkFiles('/a/Bookmarks | /b/Bookmarks'), ['/a/Bookmarks', '/b/Bookmarks']);
+  assert.ok((await resolveBookmarkFiles('', fakeChrome())).length === 3);
+});

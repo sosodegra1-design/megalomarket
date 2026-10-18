@@ -19,7 +19,7 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { config } from '../src/config/env.js';
 import { askModel, askVision } from '../src/ai/client.js';
-import { extractBookmarkUrls, readBookmarksFile } from '../src/services/bookmarks.js';
+import { collectBookmarks, resolveBookmarkFiles } from '../src/services/bookmarks.js';
 import { SERVER_LABEL, WATCHER_LABEL, REPORT_LABEL } from '../src/services/autostart.js';
 
 const DEEP = process.argv.includes('--deep');
@@ -146,19 +146,28 @@ if (!serverUp) {
 
 /* ---------- 5. Favoris Chrome ---------- */
 section('5. Favoris Chrome');
-const bookmarksPath = process.env.CHROME_BOOKMARKS_PATH || join(homedir(), 'Library/Application Support/Google/Chrome/Default/Bookmarks');
 const folder = process.env.BOOKMARKS_FOLDER || 'Megalomarket';
-try {
-  const result = extractBookmarkUrls(await readBookmarksFile(bookmarksPath), folder, {
+const bookmarkFiles = await resolveBookmarkFiles();
+if (bookmarkFiles.length === 0) {
+  bad('aucun fichier de favoris Chrome trouvé', 'renseigne CHROME_BOOKMARKS_PATH dans .env');
+} else {
+  const result = await collectBookmarks({
+    files: bookmarkFiles,
+    folderName: folder,
     extraHosts: (process.env.BOOKMARKS_EXTRA_HOSTS || '').split(',').map((h) => h.trim()).filter(Boolean),
   });
-  ok(`dossier « ${folder} » trouvé : ${result.accepted.length} lien(s) autorisé(s), ${result.ignored.length} ignoré(s)`);
-  const seenPath = process.env.BOOKMARKS_STATE_PATH || './data/bookmarks-seen.json';
-  if (result.accepted.length > 0 && !existsSync(seenPath)) {
-    note(`${result.accepted.length} lien(s) déjà présent(s) seraient tous importés au premier passage → lance d'abord « npm run watch:bookmarks -- --baseline » pour ne traiter que les NOUVEAUX liens`);
+  for (const file of result.perFile) {
+    console.log(`    ${file.path.replace(homedir(), '~')} : ${file.error ? file.error : `${file.accepted} lien(s) autorisé(s), ${file.ignored} ignoré(s)`}`);
   }
-} catch (error) {
-  bad(error.message);
+  if (result.accepted.length + result.ignored.length === 0) {
+    bad(`aucun favori trouvé dans « ${folder} » (tous profils confondus)`, 'vérifie BOOKMARKS_FOLDER, ou le profil Chrome utilisé (CHROME_BOOKMARKS_PATH)');
+  } else {
+    ok(`dossier « ${folder} » : ${result.accepted.length} lien(s) autorisé(s), ${result.ignored.length} ignoré(s)`);
+    const seenPath = process.env.BOOKMARKS_STATE_PATH || './data/bookmarks-seen.json';
+    if (result.accepted.length > 0 && !existsSync(seenPath)) {
+      note(`${result.accepted.length} lien(s) déjà présent(s) seraient tous importés au premier passage → lance d'abord « npm run watch:bookmarks -- --baseline » pour ne traiter que les NOUVEAUX liens`);
+    }
+  }
 }
 
 /* ---------- 6. Démarrage automatique ---------- */
