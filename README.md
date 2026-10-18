@@ -149,7 +149,8 @@ sans cette variable, `AI_MODEL` est utilisé et doit lui-même savoir lire des i
 5. `npm run autostart:install` : le serveur et le surveillant de favoris démarrent à chaque ouverture de session et redémarrent s'ils s'arrêtent (journaux dans `~/Library/Logs/Megalomarket/`). `npm run autostart:uninstall` les retire.
 6. `npm run doctor` (ou `npm run doctor -- --deep` pour tester aussi la lecture d'image) : contrôle complet de l'installation, avec la correction à faire pour chaque point KO.
 7. Ouvre `http://localhost:3000` (mot de passe = `ADMIN_API_KEY`). Les fiches générées sont « à valider » : rien n'est publié sans ton clic.
-8. Catalogue LumiVita : `POST /api/lumivita/sync` l'inscrit en base (6 produits, prix d'achat à saisir).
+8. Rapport : `npm run report` affiche l'état (services, imports, journal). `npm run autostart:install` installe aussi un agent horaire qui publie ce rapport sur la branche `rapports` du dépôt (aucun secret dedans) ; `npm run report:push` le fait à la main.
+9. Catalogue LumiVita : `POST /api/lumivita/sync` l'inscrit en base (6 produits, prix d'achat à saisir).
 
 ## Tests
 

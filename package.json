@@ -13,7 +13,9 @@
     "watch:bookmarks": "node scripts/watch-bookmarks.mjs",
     "autostart:install": "node scripts/install-autostart.mjs",
     "autostart:uninstall": "node scripts/install-autostart.mjs --uninstall",
-    "doctor": "node scripts/doctor.mjs"
+    "doctor": "node scripts/doctor.mjs",
+    "report": "node scripts/report.mjs",
+    "report:push": "node scripts/report.mjs --push"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.32.1",

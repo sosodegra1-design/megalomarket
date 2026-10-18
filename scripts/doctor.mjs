@@ -20,7 +20,7 @@ import { join } from 'node:path';
 import { config } from '../src/config/env.js';
 import { askModel, askVision } from '../src/ai/client.js';
 import { extractBookmarkUrls, readBookmarksFile } from '../src/services/bookmarks.js';
-import { SERVER_LABEL, WATCHER_LABEL } from '../src/services/autostart.js';
+import { SERVER_LABEL, WATCHER_LABEL, REPORT_LABEL } from '../src/services/autostart.js';
 
 const DEEP = process.argv.includes('--deep');
 const SERVER = (process.env.MEGALOMARKET_URL || `http://localhost:${process.env.PORT || 3000}`).replace(/\/+$/, '');
@@ -166,7 +166,7 @@ section('6. Démarrage automatique (macOS)');
 if (process.platform !== 'darwin') {
   console.log('    non applicable (ce n\'est pas un Mac)');
 } else {
-  for (const label of [SERVER_LABEL, WATCHER_LABEL]) {
+  for (const label of [SERVER_LABEL, WATCHER_LABEL, REPORT_LABEL]) {
     try {
       execFileSync('launchctl', ['print', `gui/${process.getuid()}/${label}`], { stdio: 'pipe' });
       ok(`${label} chargé`);
