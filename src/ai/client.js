@@ -172,7 +172,9 @@ async function askOpenAiCompatible({ system, prompt, maxTokens, userContent, mod
       `Vérifie que AI_BASE_URL et AI_MODEL correspondent bien à une API compatible OpenAI.`,
     );
   }
-  return content;
+  // Les modèles « raisonneurs » (qwen3, deepseek-r1…) peuvent faire précéder leur
+  // réponse d'un bloc <think>…</think> : il casserait la lecture du JSON attendu.
+  return content.replace(/<think>[\s\S]*?<\/think>/g, '').trim();
 }
 
 /**

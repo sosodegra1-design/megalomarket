@@ -67,3 +67,13 @@ test('a provider error on vision tells the user to set AI_VISION_MODEL', async (
     mock.restore();
   }
 });
+
+test('a reasoning model\'s <think> block is stripped from the answer', async () => {
+  const { askModel } = await import('../src/ai/client.js');
+  const mock = stubFetch(() => ({ ok: true, status: 200, json: async () => ({ choices: [{ message: { content: '<think>je réfléchis…\n{"x":0}</think>\n{"ok": true}' } }] }) }));
+  try {
+    assert.equal(await askModel({ system: 's', prompt: 'p' }), '{"ok": true}');
+  } finally {
+    mock.restore();
+  }
+});
