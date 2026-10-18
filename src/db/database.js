@@ -411,34 +411,46 @@ async function assertSchemaIsOurs() {
   }
 }
 
-/* LumiVita remplace eBay comme canal actif. 'ebay' reste toléré dans les contraintes
-   CHECK : les fiches historiques déjà en base ne doivent pas être perdues.
+/* LumiVita prend la place d'eBay : les anciennes fiches eBay sont supprimées et la
+   valeur 'ebay' quitte les contraintes CHECK, ce qui libère la case du canal.
+   Les commandes déjà reçues (table orders) sont de l'historique de vente et ne sont
+   PAS touchées ; les recommandations eBay encore en attente sont retirées.
    La reconstruction reprend la définition RÉELLE de la table (toutes ses colonnes,
    y compris celles ajoutées par les migrations précédentes) au lieu d'une liste
-   figée, pour ne rien effacer. Le marqueur 'lumivita' rend l'opération idempotente. */
+   figée, pour ne rien effacer d'autre. Idempotent : sans 'ebay' dans la définition,
+   il n'y a plus rien à faire. */
+const EBAY_COLUMN = { channel_listings: 'channel', import_listings: 'marketplace' };
+
 async function migrateLumivitaChannel() {
   let migrated = false;
-  for (const table of ['channel_listings', 'import_listings']) {
+  for (const [table, column] of Object.entries(EBAY_COLUMN)) {
     const existing = await dbGet("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = ?", [table]);
-    if (!existing?.sql || existing.sql.includes("'lumivita'")) continue;
-    if (!existing.sql.includes("'ebay'")) continue;
+    if (!existing?.sql || !existing.sql.includes("'ebay'")) continue;
 
-    const target = `${table}_migrated`;
-    const createTarget = existing.sql
-      .replace(/^CREATE TABLE\s+(IF NOT EXISTS\s+)?["`]?\w+["`]?/i, `CREATE TABLE ${target}`)
-      .replace("'ebay'", "'lumivita', 'ebay'");
-    await client.batch(
+    let definition = existing.sql
+      .replace(/^CREATE TABLE\s+(IF NOT EXISTS\s+)?["`]?\w+["`]?/i, `CREATE TABLE ${table}_migrated`)
+      .replace("'ebay', ", '')
+      .replace(", 'ebay'", '');
+    if (!definition.includes("'lumivita'")) definition = definition.replace("'allegro'", "'allegro', 'lumivita'");
+
+    const removed = await client.batch(
       [
-        `DROP TABLE IF EXISTS ${target}`,
-        createTarget,
-        `INSERT INTO ${target} SELECT * FROM ${table}`,
+        `DELETE FROM ${table} WHERE ${column} = 'ebay'`,
+        `DROP TABLE IF EXISTS ${table}_migrated`,
+        definition,
+        `INSERT INTO ${table}_migrated SELECT * FROM ${table}`,
         `DROP TABLE ${table}`,
-        `ALTER TABLE ${target} RENAME TO ${table}`,
+        `ALTER TABLE ${table}_migrated RENAME TO ${table}`,
       ],
       'write',
     );
-    await logActivity('MIGRATION', `Table ${table} reconstruite : canal 'lumivita' autorisé.`);
+    await logActivity('MIGRATION', `Table ${table} : fiches eBay supprimées (${removed[0].rowsAffected}), canal 'lumivita' autorisé.`);
     migrated = true;
+  }
+  const stale = await dbGet("SELECT COUNT(*) AS n FROM recommendations WHERE channel = 'ebay' AND status = 'pending'");
+  if (stale?.n) {
+    await dbRun("DELETE FROM recommendations WHERE channel = 'ebay' AND status = 'pending'");
+    await logActivity('MIGRATION', `${stale.n} recommandation(s) eBay en attente supprimée(s).`);
   }
   // La reconstruction emporte les index de la table : le schéma les recrée.
   if (migrated) await client.executeMultiple(readFileSync(`${__dirname}/schema.sql`, 'utf8'));

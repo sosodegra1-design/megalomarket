@@ -10,7 +10,7 @@ CREATE TABLE IF NOT EXISTS products (
 CREATE TABLE IF NOT EXISTS channel_listings (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   product_id INTEGER NOT NULL REFERENCES products(id) ON DELETE CASCADE,
-  channel TEXT NOT NULL CHECK (channel IN ('lumivita', 'ebay', 'own_site', 'amazon', 'tiktok_shop', 'allegro')),
+  channel TEXT NOT NULL CHECK (channel IN ('lumivita', 'own_site', 'amazon', 'tiktok_shop', 'allegro')),
   external_id TEXT,
   price REAL NOT NULL DEFAULT 0,
   description TEXT NOT NULL DEFAULT '',
@@ -126,7 +126,7 @@ CREATE TABLE IF NOT EXISTS imports (
 CREATE TABLE IF NOT EXISTS import_listings (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   import_id INTEGER NOT NULL REFERENCES imports(id) ON DELETE CASCADE,
-  marketplace TEXT NOT NULL CHECK (marketplace IN ('amazon', 'tiktok_shop', 'allegro', 'lumivita', 'ebay', 'own_site')),
+  marketplace TEXT NOT NULL CHECK (marketplace IN ('amazon', 'tiktok_shop', 'allegro', 'lumivita', 'own_site')),
   title TEXT NOT NULL,
   description TEXT NOT NULL,
   suggested_price REAL NOT NULL,

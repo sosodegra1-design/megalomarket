@@ -120,6 +120,25 @@ npm run dev
 
 Le tableau de bord est servi sur `http://localhost:3000`.
 
+### Tout en local avec Ollama (gratuit, rien ne quitte ta machine)
+
+1. Installe Ollama (https://ollama.com) puis télécharge un modèle : `ollama pull llama3.1`
+2. Dans `.env` :
+   ```
+   AI_PROVIDER=openai
+   AI_BASE_URL=http://localhost:11434/v1
+   AI_API_KEY=ollama
+   AI_MODEL=llama3.1
+   AI_TIMEOUT_MS=180000
+   ADMIN_API_KEY=<une clé de ton choix : openssl rand -hex 32>
+   ```
+   Sans `TURSO_DATABASE_URL`, la base est un fichier local (`data/megalomarket.db`).
+3. Contrôle le branchement : `npm run verify:ollama` (Ollama répond, modèle installé, appel réel).
+4. Lance `npm run dev`.
+
+Limite : l'analyse visuelle des photos exige toujours `ANTHROPIC_API_KEY` ; sans elle, ce
+contrôle échoue clairement au lieu de simuler une vérification.
+
 ## Tests
 
 ```bash

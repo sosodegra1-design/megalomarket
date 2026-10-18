@@ -106,6 +106,13 @@ export const config = {
     },
     // Modèle effectif. En Anthropic on retombe sur le modèle historique ; en
     // compatible OpenAI il n'y a pas de défaut universel possible.
+    // Délai maximal d'un appel IA. 30 s convient aux services hébergés ; un
+    // modèle local (Ollama) charge son modèle au premier appel et génère plus
+    // lentement : AI_TIMEOUT_MS permet de l'allonger sans toucher au code.
+    get timeoutMs() {
+      const value = Number(process.env.AI_TIMEOUT_MS);
+      return Number.isFinite(value) && value >= 1000 ? value : 30000;
+    },
     get model() {
       return resolveAiProvider() === 'anthropic'
         ? process.env.ANTHROPIC_MODEL || DEFAULT_ANTHROPIC_MODEL

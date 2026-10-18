@@ -3,13 +3,13 @@ import { config } from '../config/env.js';
 
 let client = null;
 
+// Délai par défaut (surchargeable via AI_TIMEOUT_MS, voir config.ai.timeoutMs).
 // Au-delà de ce délai, le fournisseur est considéré comme injoignable. Les
 // paliers gratuits saturent et laissent parfois la connexion ouverte sans
 // jamais répondre : sans borne, la requête Express (import, support) resterait
 // bloquée indéfiniment. 30 s couvre les générations les plus longues (la fiche
 // du site propre demande jusqu'à 2500 jetons) tout en libérant l'appelant dans
 // un délai acceptable. Même approche que le connecteur site et le scraper.
-const AI_TIMEOUT_MS = 30000;
 
 export function getAnthropicClient() {
   if (!config.anthropicApiKey) {
@@ -96,12 +96,12 @@ async function askOpenAiCompatible({ system, prompt, maxTokens }) {
           { role: 'user', content: prompt },
         ],
       }),
-      signal: AbortSignal.timeout(AI_TIMEOUT_MS),
+      signal: AbortSignal.timeout(config.ai.timeoutMs),
     });
   } catch (error) {
     if (error?.name === 'TimeoutError' || error?.name === 'AbortError') {
       throw new Error(
-        `Fournisseur IA « ${provider} » injoignable (${baseUrl}) : aucune réponse en ${AI_TIMEOUT_MS / 1000} s. ` +
+        `Fournisseur IA « ${provider} » injoignable (${baseUrl}) : aucune réponse en ${config.ai.timeoutMs / 1000} s. ` +
         'Vérifie AI_BASE_URL et que le service est bien en ligne.',
       );
     }

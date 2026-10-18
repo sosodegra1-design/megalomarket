@@ -8,7 +8,8 @@
     "start": "node src/server.js",
     "dev": "node --watch src/server.js",
     "test": "node --test",
-    "verify:turso": "node scripts/verify-turso.mjs"
+    "verify:turso": "node scripts/verify-turso.mjs",
+    "verify:ollama": "node scripts/verify-ollama.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.32.1",

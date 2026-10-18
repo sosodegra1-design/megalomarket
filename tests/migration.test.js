@@ -120,16 +120,22 @@ after(async () => {
   await client.close();
 });
 
-test('the migration rebuilds import_listings and preserves existing rows', async () => {
+test('the migration rebuilds import_listings and removes the old eBay listing', async () => {
   await initDatabase();
 
   const rows = await dbAll('SELECT * FROM import_listings ORDER BY id');
-  assert.equal(rows.length, 1, 'la fiche existante est conservée');
-  assert.equal(rows[0].marketplace, 'ebay');
-  assert.equal(rows[0].title, 'Ancienne fiche');
-  assert.equal(rows[0].suggested_price, 12.9);
-  assert.equal(rows[0].status, 'valide');
-  assert.equal(rows[0].site_payload, null, 'la nouvelle colonne arrive à NULL');
+  assert.equal(rows.length, 0, 'la fiche eBay a été supprimée');
+  const columns = await dbAll('PRAGMA table_info(import_listings)');
+  assert.ok(columns.some((column) => column.name === 'site_payload'), 'la colonne site_payload existe');
+  await assert.rejects(
+    () => dbRun(
+      `INSERT INTO import_listings (import_id, marketplace, title, description, suggested_price, created_at, updated_at)
+       VALUES (1, 'ebay', 'x', 'y', 1, ?, ?)`,
+      [Date.now(), Date.now()],
+    ),
+    /CHECK constraint failed/,
+    'la case du canal eBay est libérée',
+  );
 });
 
 test('after the migration the own_site channel is accepted', async () => {
@@ -147,7 +153,7 @@ test('the UNIQUE(import_id, marketplace) constraint survives the rebuild', async
   await assert.rejects(
     () => dbRun(
       `INSERT INTO import_listings (import_id, marketplace, title, description, suggested_price, created_at, updated_at)
-       VALUES (1, 'ebay', 'doublon', 'x', 1, ?, ?)`,
+       VALUES (1, 'own_site', 'doublon', 'x', 1, ?, ?)`,
       [Date.now(), Date.now()],
     ),
     /UNIQUE constraint failed/,
@@ -158,7 +164,7 @@ test('running initDatabase again is a no-op, not a second rebuild', async () => 
   await initDatabase();
   await initDatabase();
   const rows = await dbAll('SELECT id FROM import_listings ORDER BY id');
-  assert.equal(rows.length, 2, 'aucune ligne perdue ni dupliquée');
+  assert.equal(rows.length, 1, 'aucune ligne perdue ni dupliquée');
   const table = await dbGet("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'import_listings'");
   assert.equal(table.sql.includes('own_site'), true);
   assert.equal(table.sql.includes('site_payload'), true);
@@ -177,12 +183,9 @@ test('the other tables are created alongside and stay usable', async () => {
   );
 });
 
-test('channel_listings keeps its rows and now accepts allegro', async () => {
+test('channel_listings drops the old eBay row and now accepts allegro', async () => {
   const rows = await dbAll('SELECT * FROM channel_listings WHERE channel = ?', ['ebay']);
-  assert.equal(rows.length, 1, 'la ligne existante est conservée');
-  assert.equal(rows[0].external_id, 'EXT-1');
-  assert.equal(rows[0].price, 19.9);
-  assert.equal(rows[0].stock, 4);
+  assert.equal(rows.length, 0, 'la ligne eBay a été supprimée');
 
   // Le registre des connecteurs expose allegro et import_listings l'acceptait
   // déjà : sans cette migration, chaque synchronisation de stock aurait échoué
@@ -217,18 +220,33 @@ test('both rebuilt tables carry the widened constraint, with no leftovers', asyn
   );
 });
 
-test('both tables accept the lumivita channel after migration, and keep ebay history', async () => {
+test('both tables accept lumivita and no longer accept ebay', async () => {
   for (const table of ['channel_listings', 'import_listings']) {
     const definition = await dbGet("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = ?", [table]);
     assert.equal(definition.sql.includes("'lumivita'"), true, `${table} autorise lumivita`);
-    assert.equal(definition.sql.includes("'ebay'"), true, `${table} garde ebay pour l'historique`);
+    assert.equal(definition.sql.includes("'ebay'"), false, `${table} n'autorise plus ebay`);
   }
 
-  const product = await dbGet('SELECT id FROM products WHERE sku = ?', ['SKU-MIG']);
   await dbRun(
     'INSERT INTO channel_listings (product_id, channel, price, stock, updated_at) VALUES (?, ?, ?, ?, ?)',
-    [product.id, 'lumivita', 0.01, 0, Date.now()],
+    [1, 'lumivita', 0.01, 0, Date.now()],
   );
-  const history = await dbAll('SELECT id FROM import_listings');
-  assert.equal(history.length, 2, 'les fiches historiques sont conservées');
+  await assert.rejects(
+    () => dbRun(
+      'INSERT INTO channel_listings (product_id, channel, price, stock, updated_at) VALUES (?, ?, ?, ?, ?)',
+      [1, 'ebay', 1, 0, Date.now()],
+    ),
+    /CHECK constraint failed/,
+  );
+});
+
+test('pending eBay recommendations are removed, orders history is kept', async () => {
+  await dbRun("INSERT INTO recommendations (type, channel, payload, status, created_at) VALUES ('price', 'ebay', '{}', 'pending', ?)", [Date.now()]);
+  await dbRun("INSERT INTO recommendations (type, channel, payload, status, created_at) VALUES ('price', 'ebay', '{}', 'applied', ?)", [Date.now()]);
+  await dbRun("INSERT INTO orders (channel, external_order_id, quantity, amount, status, created_at) VALUES ('ebay', 'ORD-1', 1, 10, 'pending', ?)", [Date.now()]);
+  await initDatabase();
+  const pending = await dbAll("SELECT id FROM recommendations WHERE channel = 'ebay' AND status = 'pending'");
+  assert.equal(pending.length, 0);
+  assert.equal((await dbAll("SELECT id FROM recommendations WHERE channel = 'ebay' AND status = 'applied'")).length, 1);
+  assert.equal((await dbAll("SELECT id FROM orders WHERE channel = 'ebay'")).length, 1, 'l’historique de ventes est conservé');
 });
