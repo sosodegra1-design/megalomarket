@@ -19,7 +19,11 @@
  */
 
 import 'dotenv/config';
-import { collectBookmarks, resolveBookmarkFiles, loadSeen, saveSeen } from '../src/services/bookmarks.js';
+import { readFile, writeFile, mkdir } from 'node:fs/promises';
+import { dirname } from 'node:path';
+import {
+  collectBookmarks, resolveBookmarkFiles, loadSeen, saveSeen, normalizeLinkKey, isGenericSourceTitle,
+} from '../src/services/bookmarks.js';
 
 const SERVER = (process.env.MEGALOMARKET_URL || `http://localhost:${process.env.PORT || 3000}`).replace(/\/+$/, '');
 const KEY = process.env.ADMIN_API_KEY;
@@ -38,11 +42,11 @@ if (!KEY) {
   process.exit(1);
 }
 
-async function api(path, body) {
+async function api(path, body, method = 'POST') {
   const response = await fetch(`${SERVER}${path}`, {
-    method: 'POST',
+    method,
     headers: { 'Content-Type': 'application/json', 'X-Admin-Key': KEY },
-    body: JSON.stringify(body || {}),
+    body: method === 'GET' || method === 'DELETE' ? undefined : JSON.stringify(body || {}),
     signal: AbortSignal.timeout(Number(process.env.AI_TIMEOUT_MS) || 180000),
   });
   const text = await response.text();
@@ -50,6 +54,48 @@ async function api(path, body) {
   try { data = JSON.parse(text); } catch { data = { error: text.slice(0, 200) }; }
   if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
   return data;
+}
+
+const RETRY_PATH = process.env.BOOKMARKS_RETRY_PATH || './data/bookmarks-retries.json';
+const MAX_RETRIES = 3;
+
+async function loadRetries() {
+  try { return JSON.parse(await readFile(RETRY_PATH, 'utf8')); } catch { return {}; }
+}
+async function saveRetries(retries) {
+  await mkdir(dirname(RETRY_PATH), { recursive: true });
+  await writeFile(RETRY_PATH, JSON.stringify(retries, null, 2));
+}
+
+/* Imports restés « brouillon » (fiches jamais générées : Ollama occupé, délai dépassé…) :
+   on retente la génération, au plus MAX_RETRIES fois chacun. Les imports issus d'une page
+   « barrière » (titre générique) sont supprimés : ils n'ont rien à générer. */
+async function repairPending(stamp) {
+  let imports;
+  try { imports = await api('/api/imports', undefined, 'GET'); } catch { return; }
+  const retries = await loadRetries();
+  let attempts = 0;
+  for (const imp of imports.filter((i) => i.status === 'brouillon')) {
+    if (isGenericSourceTitle(imp.title)) {
+      try {
+        await api(`/api/imports/${imp.id}`, undefined, 'DELETE');
+        console.log(`[${stamp}] import #${imp.id} supprimé : page générique (le site a bloqué la lecture), pas un vrai produit`);
+      } catch (error) {
+        console.error(`[${stamp}] suppression de #${imp.id} impossible : ${error.message}`);
+      }
+      continue;
+    }
+    if (attempts >= MAX_PER_PASS || (retries[imp.id] || 0) >= MAX_RETRIES) continue;
+    attempts += 1;
+    retries[imp.id] = (retries[imp.id] || 0) + 1;
+    await saveRetries(retries);
+    try {
+      await api(`/api/imports/${imp.id}/generate`);
+      console.log(`[${stamp}] import #${imp.id} : fiches générées (reprise ${retries[imp.id]}/${MAX_RETRIES})`);
+    } catch (error) {
+      console.error(`[${stamp}] import #${imp.id} : reprise ${retries[imp.id]}/${MAX_RETRIES} en échec : ${error.message}`);
+    }
+  }
 }
 
 async function serverIsUp() {
@@ -90,7 +136,18 @@ async function pass() {
     console.log(`[${stamp}] état de départ enregistré : ${seen.size} lien(s) existant(s) ne seront pas importés`);
     return;
   }
-  const pending = result.accepted.filter((entry) => !seen.has(entry.url));
+  // Même produit sous plusieurs liens (paramètres de suivi, ancres) : un seul import.
+  const knownKeys = new Set([...seen].map((u) => normalizeLinkKey(u)));
+  const pendingKeys = new Set();
+  const pending = result.accepted.filter((entry) => {
+    const key = normalizeLinkKey(entry.url);
+    if (seen.has(entry.url) || knownKeys.has(key) || pendingKeys.has(key)) {
+      if (!seen.has(entry.url) && (knownKeys.has(key) || pendingKeys.has(key))) seen.add(entry.url);
+      return false;
+    }
+    pendingKeys.add(key);
+    return true;
+  });
   const fresh = pending.slice(0, MAX_PER_PASS);
   if (pending.length > fresh.length) console.log(`[${stamp}] ${pending.length} nouveaux liens : ${fresh.length} traités maintenant, le reste au prochain passage`);
   for (const entry of result.ignored.filter((e) => !seen.has(e.url))) {
@@ -104,6 +161,14 @@ async function pass() {
     let imported = null;
     try {
       imported = await api('/api/imports', { url: entry.url });
+      if (isGenericSourceTitle(imported.title)) {
+        await api(`/api/imports/${imported.id}`, undefined, 'DELETE');
+        console.log(`  ✗ page générique « ${String(imported.title).slice(0, 50)}… » : le site a bloqué la lecture, lien ignoré (ouvre-le et remets-le en favori depuis la page produit)`);
+        imported = null;
+        seen.add(entry.url);
+        await saveSeen(SEEN_PATH, seen);
+        continue;
+      }
       await api(`/api/imports/${imported.id}/generate`);
       console.log(`  ✓ import #${imported.id} « ${imported.title} » : fiches en brouillon, à valider dans le tableau de bord`);
     } catch (error) {
@@ -119,10 +184,24 @@ async function pass() {
     await saveSeen(SEEN_PATH, seen);
   }
   await saveSeen(SEEN_PATH, seen);
+  await repairPending(stamp);
 }
 
 console.log(`Surveillance du dossier « ${FOLDER} » (tous les profils Chrome, ou CHROME_BOOKMARKS_PATH) vers ${SERVER}`);
-await pass();
+// Passages SÉQUENTIELS : le suivant ne part qu'une fois le précédent terminé. Avec un
+// minuteur fixe, un passage lent (Ollama) en chevauchait un autre, qui réimportait
+// les mêmes liens en double.
+async function runPass() {
+  try {
+    await pass();
+  } catch (error) {
+    console.error(`passage en échec : ${error.message}`);
+  }
+}
+await runPass();
 if (!ONCE && !BASELINE) {
-  setInterval(() => pass().catch((error) => console.error(error.message)), INTERVAL_MIN * 60 * 1000);
+  for (;;) {
+    await new Promise((resolve) => setTimeout(resolve, INTERVAL_MIN * 60 * 1000));
+    await runPass();
+  }
 }

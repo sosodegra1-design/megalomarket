@@ -172,3 +172,30 @@ export async function collectBookmarks({ files, folderName, extraHosts = [] }) {
   }
   return { accepted, ignored, perFile };
 }
+
+/**
+ * Clé de dédoublonnage d'un lien : même produit, même clé, quels que soient les
+ * paramètres de suivi (?spm=…, #ancre) ou le « www. ». Deux favoris du même
+ * produit ne doivent produire qu'un seul import.
+ */
+export function normalizeLinkKey(url) {
+  try {
+    const parsed = new URL(url);
+    const host = parsed.hostname.toLowerCase().replace(/^www\./, '');
+    const path = parsed.pathname.replace(/\/+$/, '') || '/';
+    return `${host}${path}`;
+  } catch {
+    return String(url);
+  }
+}
+
+/**
+ * Titres des pages « barrière » que renvoient les sites quand ils bloquent la lecture
+ * (page d'accueil, contrôle anti-robot) : l'import qui en résulte n'a aucune valeur.
+ */
+export function isGenericSourceTitle(title) {
+  const text = String(title || '').trim();
+  return /manufacturers,\s*suppliers,\s*exporters/i.test(text)
+    || /largest online b2b marketplace/i.test(text)
+    || /^(captcha|access denied|just a moment|robot check)/i.test(text);
+}

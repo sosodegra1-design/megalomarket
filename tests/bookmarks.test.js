@@ -109,3 +109,19 @@ test('CHROME_BOOKMARKS_PATH wins over auto-detection and accepts several paths',
   assert.deepEqual(await resolveBookmarkFiles('/a/Bookmarks | /b/Bookmarks'), ['/a/Bookmarks', '/b/Bookmarks']);
   assert.ok((await resolveBookmarkFiles('', fakeChrome())).length === 3);
 });
+
+import { normalizeLinkKey, isGenericSourceTitle } from '../src/services/bookmarks.js';
+
+test('the same product under tracking parameters has a single key', () => {
+  const a = normalizeLinkKey('https://www.alibaba.com/product-detail/Balle-Magique_16000.html?spm=a2700.1&src=x#reviews');
+  const b = normalizeLinkKey('https://alibaba.com/product-detail/Balle-Magique_16000.html/');
+  assert.equal(a, b);
+  assert.notEqual(a, normalizeLinkKey('https://www.alibaba.com/product-detail/Autre_17000.html'));
+});
+
+test('barrier pages are recognised as generic titles', () => {
+  assert.equal(isGenericSourceTitle("Alibaba.com: Manufacturers, Suppliers, Exporters & Importers from the world's largest online B2B marketplace"), true);
+  assert.equal(isGenericSourceTitle('Just a moment...'), true);
+  assert.equal(isGenericSourceTitle('Balle Magique Électrique Intelligente Pour Chat'), false);
+  assert.equal(isGenericSourceTitle(''), false);
+});
