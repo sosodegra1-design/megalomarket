@@ -18,7 +18,8 @@
     "report:push": "node scripts/report.mjs --push",
     "restart": "launchctl kickstart -k gui/$(id -u)/com.megalomarket.server && launchctl kickstart -k gui/$(id -u)/com.megalomarket.watcher",
     "logs": "tail -n 40 -f ~/Library/Logs/Megalomarket/com.megalomarket.server.log ~/Library/Logs/Megalomarket/com.megalomarket.server.err.log ~/Library/Logs/Megalomarket/com.megalomarket.watcher.log",
-    "status": "launchctl list | grep megalomarket || echo \"Aucun agent Megalomarket chargé (npm run autostart:install)\""
+    "status": "launchctl list | grep megalomarket || echo \"Aucun agent Megalomarket chargé (npm run autostart:install)\"",
+    "quotes": "node scripts/quotes.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.32.1",
