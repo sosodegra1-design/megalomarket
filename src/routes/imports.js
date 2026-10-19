@@ -190,8 +190,8 @@ importsRouter.post(
     // photos à la main.
     const imageUrls = data.imageUrls.slice(0, MAX_IMAGES);
     const info = await dbRun(
-      `INSERT INTO imports (source_url, source_site, title, raw_description, purchase_price, currency, shipping_price, image_urls, status, supplier_id, extraction_method, extraction_notes, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'brouillon', ?, ?, ?, ?)`,
+      `INSERT INTO imports (source_url, source_site, title, raw_description, purchase_price, currency, shipping_price, weight_g, image_urls, status, supplier_id, extraction_method, extraction_notes, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'brouillon', ?, ?, ?, ?)`,
       [
         url,
         data.sourceSite,
@@ -201,6 +201,8 @@ importsRouter.post(
         data.currency,
         // Transport lu sur la page, dans la devise du prix d'achat. 0 = inconnu.
         Number.isFinite(Number(data.shippingPrice)) && Number(data.shippingPrice) > 0 ? Number(data.shippingPrice) : 0,
+        // Poids lu sur la page, en grammes. NULL = inconnu, et le hub le dira.
+        Number.isFinite(Number(data.weightGrams)) && Number(data.weightGrams) > 0 ? Math.round(Number(data.weightGrams)) : null,
         JSON.stringify(imageUrls),
         resolvedSupplierId,
         extractionMethod,
