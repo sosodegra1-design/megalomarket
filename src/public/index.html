@@ -1876,6 +1876,10 @@
                   <th data-sort="source_site">Site</th>
                   <th data-sort="status">Statut</th>
                   <th data-sort="purchase_price">Prix d'achat</th>
+                  <!-- MOQ : la quantité MINIMALE que le fournisseur accepte. Triable,
+                       parce que c'est le premier critère quand on compare des
+                       fournisseurs : certains n'acceptent que 500 pièces. -->
+                  <th data-sort="moq" class="num">MOQ</th>
                   <th data-sort="listings">Fiches</th>
                   <th data-sort="created_at">Créé le</th>
                   <th>Actions</th>
@@ -5909,6 +5913,7 @@ const importsTable = createTable({
     { key: 'source_site', value: (i) => i.source_site },
     { key: 'status', value: (i) => i.status },
     { key: 'purchase_price', value: (i) => Number(i.purchase_price) },
+    { key: 'moq', value: (i) => (i.moq == null ? -1 : Number(i.moq)) },
     { key: 'listings', value: (i) => importListingCount(i) ?? -1 },
     { key: 'created_at', value: (i) => Number(i.created_at) },
   ],
@@ -5931,6 +5936,15 @@ const importsTable = createTable({
       + (i.supplier_name ? '<div style="font-size:.75rem">via ' + esc(i.supplier_name) + '</div>' : '') + '</td>'
       + '<td data-label="Statut"><span class="pill ' + (i.status === 'pret' ? 'ok' : 'off') + '">' + esc(i.status) + '</span></td>'
       + '<td data-label="Prix d\'achat" class="num">' + money(i.purchase_price) + ' ' + esc(i.currency) + '</td>'
+      /* Le MOQ en clair, et SIGNALÉ quand il est petit : c'est ce qu'on cherche
+         quand on veut tester un produit sans immobiliser 500 pièces. « — » quand
+         le fournisseur ne l'affiche pas — et non « 1 », qui laisserait croire à
+         une vente à l'unité. */
+      + '<td data-label="MOQ" class="num">'
+      + (i.moq == null
+        ? '<span class="cell-muted">—</span>'
+        : '<span class="pill ' + (Number(i.moq) <= 10 ? 'ok' : 'off') + '">' + formatInt(i.moq) + '</span>')
+      + '</td>'
       + '<td data-label="Fiches">' + countCell + '</td>'
       + '<td data-label="Créé le" class="cell-muted">' + esc(when(i.created_at)) + '</td>'
       + '<td data-label="Actions" class="cell-actions"><div class="actions">'
