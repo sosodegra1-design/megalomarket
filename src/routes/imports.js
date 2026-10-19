@@ -452,7 +452,7 @@ importsRouter.delete(
 importsRouter.patch(
   '/:id',
   asyncRoute(async (req, res) => {
-    const { purchasePrice, currency, shippingPrice, weightG, title, rawDescription, imageUrls, lotQuantity, lotFees } = req.body || {};
+    const { purchasePrice, currency, shippingPrice, weightG, moq, title, rawDescription, imageUrls, lotQuantity, lotFees } = req.body || {};
 
     const imp = await dbGet('SELECT id FROM imports WHERE id = ?', [req.params.id]);
     if (!imp) throw new Error('Import introuvable.');
@@ -517,6 +517,21 @@ importsRouter.patch(
       prixTouche = true;
     }
 
+    if (moq !== undefined) {
+      /* Le MOQ peut être corrigé à la main : un fournisseur l'annonce parfois
+         oralement, hors fiche. null = inconnu, et l'écran affichera « — ». */
+      if (moq === null || moq === '') {
+        fields.push('moq = ?');
+        values.push(null);
+      } else {
+        const n = Number(moq);
+        if (!Number.isInteger(n) || n < 1) {
+          throw new Error('MOQ invalide : un entier supérieur ou égal à 1 est attendu, ou null.');
+        }
+        fields.push('moq = ?');
+        values.push(n);
+      }
+    }
     if (weightG !== undefined) {
       const poids = Number(weightG);
       if (!Number.isFinite(poids) || poids < 0) {
