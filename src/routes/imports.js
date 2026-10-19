@@ -190,8 +190,8 @@ importsRouter.post(
     // photos à la main.
     const imageUrls = data.imageUrls.slice(0, MAX_IMAGES);
     const info = await dbRun(
-      `INSERT INTO imports (source_url, source_site, title, raw_description, purchase_price, currency, shipping_price, weight_g, lot_quantity, image_urls, status, supplier_id, extraction_method, extraction_notes, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'brouillon', ?, ?, ?, ?)`,
+      `INSERT INTO imports (source_url, source_site, title, raw_description, purchase_price, currency, shipping_price, weight_g, moq, lot_quantity, image_urls, status, supplier_id, extraction_method, extraction_notes, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'brouillon', ?, ?, ?, ?)`,
       [
         url,
         data.sourceSite,
@@ -207,6 +207,7 @@ importsRouter.post(
            tout le port du colis par une seule pièce (45 € pour une affiche) ;
            le minimum que le fournisseur accepte est un bien meilleur défaut, et
            l'utilisateur peut le corriger. */
+        Number.isInteger(data.moq) && data.moq > 0 ? data.moq : null,
         Number.isInteger(data.moq) && data.moq > 0 ? data.moq : 1,
         JSON.stringify(imageUrls),
         resolvedSupplierId,
@@ -250,7 +251,7 @@ importsRouter.post(
 importsRouter.post(
   '/manual',
   asyncRoute(async (req, res) => {
-    const { url, title, purchasePrice, currency, shippingPrice, rawDescription, imageUrls, supplierId } = req.body || {};
+    const { url, title, purchasePrice, currency, shippingPrice, moq, rawDescription, imageUrls, supplierId } = req.body || {};
 
     // Titre : chaîne non vide (mêmes règles que PATCH /:id).
     if (typeof title !== 'string' || !title.trim()) {
@@ -303,8 +304,8 @@ importsRouter.post(
     const images = imageUrls ? parseImageUrls(imageUrls) : [];
 
     const info = await dbRun(
-      `INSERT INTO imports (source_url, source_site, title, raw_description, purchase_price, currency, shipping_price, image_urls, status, supplier_id, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'brouillon', ?, ?)`,
+      `INSERT INTO imports (source_url, source_site, title, raw_description, purchase_price, currency, shipping_price, moq, lot_quantity, image_urls, status, supplier_id, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'brouillon', ?, ?)`,
       [
         sourceUrl,
         sourceSite,
@@ -314,6 +315,8 @@ importsRouter.post(
         currency.trim().toUpperCase(),
         // Transport lu sur la page, dans la devise du prix d'achat. 0 = inconnu.
         Number.isFinite(Number(shippingPrice)) && Number(shippingPrice) > 0 ? Number(shippingPrice) : 0,
+        Number.isInteger(Number(moq)) && Number(moq) > 0 ? Number(moq) : null,
+        Number.isInteger(Number(moq)) && Number(moq) > 0 ? Number(moq) : 1,
         JSON.stringify(images),
         resolvedSupplierId,
         Date.now(),
@@ -338,6 +341,12 @@ importsRouter.post(
       purchasePrice,
       currency: currency.trim().toUpperCase(),
       imageUrls: images,
+      /* Le MOQ et la quantité de lot font partie de la réponse : sans eux, un
+         import saisi à la main reviendrait sans sa donnée de comparaison, et le
+         tableau afficherait « — » là où le fournisseur a bien un minimum. */
+      moq: Number.isInteger(Number(moq)) && Number(moq) > 0 ? Number(moq) : null,
+      lotQuantity: Number.isInteger(Number(moq)) && Number(moq) > 0 ? Number(moq) : 1,
+      shippingPrice: Number.isFinite(Number(shippingPrice)) && Number(shippingPrice) > 0 ? Number(shippingPrice) : 0,
       supplier,
       strategy: 'manuel',
     });

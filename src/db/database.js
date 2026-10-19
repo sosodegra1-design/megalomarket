@@ -271,13 +271,20 @@ async function migrateImportsLandedCost() {
      fiche ne donne pas le port. */
   const addedWeight = await addColumnIfMissing('imports', 'weight_g', 'INTEGER');
 
-  if (addedQuantity || addedFees || addedShipping || addedCarrier || addedWeight) {
+  /* MOQ : la quantité MINIMALE que le fournisseur accepte. Distincte de
+     lot_quantity, qui est la quantité qu'on commande réellement.
+     C'est la donnée qui permet de comparer des fournisseurs : certains
+     n'acceptent que 500 pièces, d'autres 10. NULL = inconnu (et non 1, qui
+     laisserait croire à une vente à l'unité). */
+  const addedMoq = await addColumnIfMissing('imports', 'moq', 'INTEGER');
+
+  if (addedQuantity || addedFees || addedShipping || addedCarrier || addedWeight || addedMoq) {
     await logActivity(
       'MIGRATION',
       'Colonnes imports.lot_quantity, lot_fees et shipping_price ajoutées : le prix conseillé tient compte du transport et de la douane.',
     );
   }
-  return addedQuantity || addedFees || addedShipping || addedCarrier || addedWeight;
+  return addedQuantity || addedFees || addedShipping || addedCarrier || addedWeight || addedMoq;
 }
 
 /* Champs apportés par un catalogue fournisseur (voir connectors/rewix.js) : le
