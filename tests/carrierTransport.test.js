@@ -168,3 +168,54 @@ test('le détail dit d’où vient le transport, pour pouvoir le justifier', () 
   assert.equal(detail.transportSource, 'transporteur');
   assert.equal(detail.transportEur, 12);
 });
+
+/* ===================== TRANSPORT AU KILO ===================== */
+
+/* La demande : « compare le gramme au kilo, tu as un prix approximatif ».
+ * Le port suit le POIDS, pas le nombre de pièces — dix affiches pèsent plus
+ * qu'une. Deux erreurs symétriques sont testées ici :
+ *   - facturer le plancher à CHAQUE pièce (50 kg pour 100 affiches de 150 g) ;
+ *   - ne pas appliquer de plancher du tout (1,35 € pour un colis réel à 8 €). */
+
+test('le transport suit le POIDS, pas le nombre de pièces', async () => {
+  await dbRun(
+    "INSERT INTO suppliers (kind, name, shipping_cost_per_kg, status, created_at, updated_at) VALUES ('transporteur', 'Ligne au kilo', 9, 'actif', ?, ?)",
+    [new Date().toISOString(), new Date().toISOString()],
+  );
+  const { dbGet } = await import('../src/db/database.js');
+  const porteur = await dbGet("SELECT id FROM suppliers WHERE name = 'Ligne au kilo'");
+
+  // 600 g à 9 €/kg = 5,40 € — quel que soit le lot (au-dessus du plancher).
+  for (const lot of [1, 10, 100]) {
+    const r = await carrierCostForImport({ carrier_id: porteur.id, weight_g: 600, lot_quantity: lot });
+    assert.equal(r.carrierCostEur, 5.4, `lot de ${lot} : le poids par pièce ne change pas`);
+    assert.equal(r.methode, 'poids');
+  }
+});
+
+test('le plancher de 0,5 kg s’applique au COLIS, pas à chaque pièce', async () => {
+  const { dbGet } = await import('../src/db/database.js');
+  const porteur = await dbGet("SELECT id FROM suppliers WHERE name = 'Ligne au kilo'");
+
+  // 100 affiches de 150 g = 15 kg de colis, pas 100 × 0,5 kg = 50 kg.
+  const r = await carrierCostForImport({ carrier_id: porteur.id, weight_g: 150, lot_quantity: 100 });
+  assert.equal(r.poidsColisKg, 15);
+  assert.equal(r.carrierCostEur, 1.35, '9 €/kg × 15 kg / 100 = 1,35 €');
+});
+
+test('une pièce seule supporte le plancher du colis', async () => {
+  const { dbGet } = await import('../src/db/database.js');
+  const porteur = await dbGet("SELECT id FROM suppliers WHERE name = 'Ligne au kilo'");
+
+  // 150 g facturés 0,5 kg : c'est ainsi qu'un transporteur facture un petit colis.
+  const r = await carrierCostForImport({ carrier_id: porteur.id, weight_g: 150, lot_quantity: 1 });
+  assert.equal(r.carrierCostEur, 4.5, '9 €/kg × 0,5 kg');
+});
+
+test('au kilo mais sans poids connu : on le DIT, on n’invente pas', async () => {
+  const { dbGet } = await import('../src/db/database.js');
+  const porteur = await dbGet("SELECT id FROM suppliers WHERE name = 'Ligne au kilo'");
+  const r = await carrierCostForImport({ carrier_id: porteur.id, weight_g: null, lot_quantity: 1 });
+  assert.equal(r.carrierCostEur, 0);
+  assert.match(r.raison, /poids du produit n'est pas renseigné/);
+});

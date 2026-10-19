@@ -1795,10 +1795,21 @@
                    l'indique. Le bloc « lot » en dessous reste disponible pour un
                    envoi forfaitaire ; le calcul n'utilise QUE l'un des deux,
                    jamais les deux (sinon le transport serait compté deux fois). -->
-              <div class="field" style="margin-top:14px;max-width:320px">
-                <label for="importShipping">Transport par pièce</label>
-                <input type="number" id="importShipping" step="0.01" min="0" placeholder="1.20">
-                <p class="field-help">Frais de port d'UNE pièce, dans la devise du prix d'achat.</p>
+              <!-- POIDS : c'est lui qui donne un transport approximatif mais
+                   juste quand la fiche ne dit rien. Une affiche de 150 g à
+                   9 €/kg coûte 1,35 € de port — le nombre de pièces n'y change
+                   rien, seul le poids compte. -->
+              <div class="field-grid" style="margin-top:14px">
+                <div class="field">
+                  <label for="importWeight">Poids d'une pièce (g)</label>
+                  <input type="number" id="importWeight" step="1" min="0" placeholder="150">
+                  <p class="field-help">Sert à estimer le transport au kilo quand la fiche ne le donne pas.</p>
+                </div>
+                <div class="field">
+                  <label for="importShipping">Transport par pièce</label>
+                  <input type="number" id="importShipping" step="0.01" min="0" placeholder="1.20">
+                  <p class="field-help">Frais de port d'UNE pièce, dans la devise du prix d'achat.</p>
+                </div>
               </div>
 
               <h3 class="panel-section-title" style="margin-top:14px">Transport et douane du lot</h3>
@@ -6068,6 +6079,8 @@ function renderImportPrice(data) {
      GET /api/imports/:id (colonnes SQL). */
   const quantite = data.lotQuantity != null ? data.lotQuantity : data.lot_quantity;
   const frais = data.lotFees != null ? data.lotFees : data.lot_fees;
+  const poids = data.weight_g ?? data.weightG;
+  if ($('importWeight')) $('importWeight').value = poids != null && Number(poids) > 0 ? String(poids) : '';
   const port = data.shipping_price ?? data.shippingPrice;
   if ($('importShipping')) $('importShipping').value = port != null && Number(port) > 0 ? String(port) : '';
   if ($('importLotQuantity')) $('importLotQuantity').value = quantite != null ? String(quantite) : '';
@@ -6364,6 +6377,15 @@ $('btnSavePurchasePrice').addEventListener('click', (event) => action(event.curr
 
   /* Transport par pièce : envoyé seulement s'il est renseigné, comme les champs
      de lot — sinon un champ vide écraserait une valeur déjà en base. */
+  const poidsBrut = $('importWeight') ? $('importWeight').value.trim() : '';
+  if (poidsBrut !== '') {
+    const poids = Number(poidsBrut);
+    if (!Number.isFinite(poids) || poids < 0) {
+      throw new Error('Poids invalide : un nombre de grammes positif ou nul est attendu.');
+    }
+    body.weightG = Math.round(poids);
+  }
+
   const portBrut = $('importShipping') ? $('importShipping').value.trim() : '';
   if (portBrut !== '') {
     const port = Number(portBrut);
