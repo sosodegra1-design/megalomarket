@@ -2405,6 +2405,129 @@
           </div>
           <div id="currenciesStatus" role="alert" hidden></div>
         </div>
+
+        <!-- Sauvegarde : sortir ses données, et pouvoir le vérifier. -->
+        <div class="card reveal-in">
+          <div class="card-head card-head-line">
+            <div class="card-head-text">
+              <h2>Sauvegarde des données</h2>
+              <p>
+                L'export produit un <strong>fichier JSON lisible</strong> contenant toutes tes tables :
+                imports, produits, partenaires, commandes, journal. Il t'appartient — tu peux l'ouvrir
+                sans Megalomarket, et le relire dans six mois.
+              </p>
+            </div>
+          </div>
+          <p class="hint">
+            La base Turso assure déjà la durabilité et les points de reprise. Cet export sert à autre
+            chose : <strong>emporter ses données</strong>, sans dépendre d'un fournisseur.
+          </p>
+          <div class="row row-actions">
+            <button class="btn" id="btnExportBackup" type="button">Exporter toutes les données</button>
+            <button class="btn btn-ghost" id="btnCheckBackup" type="button">Vérifier l'inventaire</button>
+          </div>
+          <div id="backupStatus" class="hint hint-tight" hidden></div>
+        </div>
+
+        <!-- Mentions légales et confidentialité. -->
+        <div class="card reveal-in">
+          <div class="card-head card-head-line">
+            <div class="card-head-text">
+              <h2>Informations légales</h2>
+              <p>Mentions légales, traitement des données et stockage local.</p>
+            </div>
+            <a class="btn btn-ghost btn-sm" href="#/legal">Ouvrir les pages légales</a>
+          </div>
+          <p class="hint">
+            Ces pages sont <strong>à compléter avec tes informations d'entreprise</strong> (raison
+            sociale, SIRET, adresse, contact) : elles sont obligatoires en France, et un texte
+            générique ne suffit pas.
+          </p>
+        </div>
+      </section>
+
+      <!-- ==================== VUE : LÉGAL ==================== -->
+      <section class="view" id="view-legal" data-view="legal" hidden>
+        <div class="card reveal-in">
+          <div class="card-head card-head-line">
+            <div class="card-head-text">
+              <h2>Informations légales</h2>
+              <p>Mentions légales, données personnelles et stockage local.</p>
+            </div>
+          </div>
+
+          <!-- L'avertissement est en tête et ne disparaît pas : un texte légal
+               incomplet est pire qu'absent, parce qu'il donne l'illusion d'être
+               en règle. -->
+          <div class="price-warning" role="alert" style="margin-bottom:18px">
+            <strong>À compléter avant publication.</strong>
+            Les mentions marquées <code>[À COMPLÉTER]</code> doivent être remplacées par tes
+            informations d'entreprise réelles. Ce texte décrit fidèlement ce que fait le hub, mais
+            il ne peut pas deviner ta raison sociale, ton SIRET ni ton adresse.
+          </div>
+
+          <section class="panel-section" style="margin-bottom:22px">
+            <h3 class="panel-section-title">Éditeur</h3>
+            <div class="kv"><span>Raison sociale</span><span>[À COMPLÉTER — nom de l'entreprise]</span></div>
+            <div class="kv"><span>Forme juridique</span><span>[À COMPLÉTER — SARL, SAS, micro-entreprise…]</span></div>
+            <div class="kv"><span>SIRET</span><span>[À COMPLÉTER — 14 chiffres]</span></div>
+            <div class="kv"><span>Siège social</span><span>[À COMPLÉTER — adresse complète]</span></div>
+            <div class="kv"><span>Contact</span><span>[À COMPLÉTER — adresse e-mail]</span></div>
+            <div class="kv"><span>Responsable de publication</span><span>[À COMPLÉTER — nom]</span></div>
+          </section>
+
+          <section class="panel-section" style="margin-bottom:22px">
+            <h3 class="panel-section-title">Hébergement</h3>
+            <p class="field-help" style="margin:0">
+              Le service est hébergé par <strong>Render</strong> (Render Services, Inc., États-Unis),
+              et la base de données par <strong>Turso</strong>. Les données peuvent donc transiter
+              et être stockées hors de l'Union européenne ; si le volume de données clients le
+              justifie, un transfert encadré (clauses contractuelles types) doit être formalisé.
+            </p>
+          </section>
+
+          <section class="panel-section" style="margin-bottom:22px">
+            <h3 class="panel-section-title">Données personnelles traitées</h3>
+            <p class="field-help" style="margin:0 0 8px">
+              Le hub traite, pour le compte de l'éditeur :
+            </p>
+            <div class="kv"><span>Commandes</span><span>nom, adresse postale, téléphone, e-mail du client final</span></div>
+            <div class="kv"><span>Journal d'activité</span><span>actions effectuées dans le hub, horodatées</span></div>
+            <div class="kv"><span>Réglages</span><span>langue, barème de marge, préférences d'affichage (stockés dans le navigateur)</span></div>
+            <p class="field-help" style="margin:10px 0 0">
+              <strong>Aucune donnée n'est vendue ni transmise à des fins publicitaires.</strong>
+              Les sous-traitants techniques sont : Render (hébergement), Turso (base de données),
+              Brevo (e-mails post-achat), Sendcloud (étiquettes et suivi), Cloudinary (images) et le
+              fournisseur d'IA configuré (génération de textes).
+            </p>
+          </section>
+
+          <section class="panel-section" style="margin-bottom:22px">
+            <h3 class="panel-section-title">Durée de conservation et droits</h3>
+            <p class="field-help" style="margin:0 0 8px">
+              Les commandes sont conservées le temps de la relation commerciale, puis archivées ou
+              supprimées selon les obligations comptables (<strong>10 ans</strong> pour les pièces
+              comptables). Le journal d'activité conserve les <strong>100 dernières entrées</strong>.
+            </p>
+            <p class="field-help" style="margin:0">
+              Conformément au RGPD, toute personne concernée peut demander l'accès, la rectification,
+              l'effacement ou la portabilité de ses données, ainsi que la limitation du traitement.
+              La demande s'adresse au contact indiqué ci-dessus. La personne peut également introduire
+              une réclamation auprès de la <strong>CNIL</strong> (cnil.fr).
+            </p>
+          </section>
+
+          <section class="panel-section">
+            <h3 class="panel-section-title">Stockage local dans le navigateur</h3>
+            <p class="field-help" style="margin:0">
+              Le hub utilise le <strong>stockage local du navigateur</strong> (localStorage) pour
+              mémoriser tes préférences : langue, barème de marge, repli du menu, identifiant de
+              l'import en cours. Ce ne sont <strong>pas des traceurs</strong> : aucune information
+              n'est transmise à un tiers, et aucune publicité n'est ciblée. Vider le stockage du
+              navigateur remet ces préférences à zéro, sans perte de données du hub.
+            </p>
+          </section>
+        </div>
       </section>
 
       <!-- ==================== VUE : CANAUX ==================== -->
@@ -7514,6 +7637,7 @@ const VIEWS = {
   'baremes-marge': { el: 'view-baremes-marge', title: 'Barèmes de marge', group: 'Réglages', sub: "Paliers de prix d'achat et coefficients appliqués" },
   partenaires: { el: 'view-partenaires', title: 'Partenaires', group: 'Réglages', sub: 'Tous les partenaires enregistrés, par type' },
   parametres: { el: 'view-parametres', title: 'Paramètres', group: 'Réglages', sub: 'Taux de change des devises utilisées pour calculer les prix' },
+  legal: { el: 'view-legal', title: 'Informations légales', group: 'Réglages', sub: "Mentions légales, données personnelles et stockage local" },
   canaux: { el: 'view-canaux', title: 'Canaux', group: 'Exploitation', sub: 'Places de marché connectées et état de publication' },
   commandes: { el: 'view-commandes', title: 'Commandes', group: 'Exploitation', sub: 'Commandes reçues et suivi des expéditions' },
   distributeurs: { el: 'view-distributeurs', title: 'Distributeurs', group: 'Exploitation', sub: 'Clients B2B en aval du hub' },
@@ -7532,6 +7656,7 @@ const ROUTES = {
   '#/baremes-marge': 'baremes-marge',
   '#/partenaires': 'partenaires',
   '#/parametres': 'parametres',
+  '#/legal': 'legal',
   '#/canaux': 'canaux',
   '#/commandes': 'commandes',
   '#/distributeurs': 'distributeurs',
@@ -7780,6 +7905,36 @@ function renderCurrencies() {
     + '</tr>'
   )).join('');
   stagger(body);
+}
+
+/* ===================== SAUVEGARDE ===================== */
+
+/* Le téléchargement passe par une NAVIGATION, pas par `fetch` : le navigateur
+   envoie alors ses identifiants Basic et traite la réponse comme un fichier
+   (Content-Disposition: attachment). Un `fetch` rendrait le JSON en mémoire et
+   il faudrait reconstruire le fichier à la main — pour rien. */
+if ($('btnExportBackup')) {
+  $('btnExportBackup').addEventListener('click', () => {
+    if (typeof window === 'undefined' || !window.location) return;
+    window.location.assign('/api/backup');
+  });
+}
+
+if ($('btnCheckBackup')) {
+  $('btnCheckBackup').addEventListener('click', (event) => action(event.currentTarget, async () => {
+    const inventaire = await api('/api/backup?meta=1');
+    const zone = $('backupStatus');
+    if (zone) {
+      zone.hidden = false;
+      const controle = inventaire.controle || {};
+      // On dit explicitement si la sauvegarde serait COMPLÈTE : un inventaire
+      // qu'on ne juge pas ne sert à rien.
+      zone.innerHTML = controle.complete
+        ? esc(`Sauvegarde complète : ${inventaire.tableCount} tables, ${inventaire.rowCount} lignes.`)
+        : esc(`Sauvegarde INCOMPLÈTE — tables manquantes : ${(controle.missing || []).join(', ')}.`);
+    }
+    return inventaire;
+  }));
 }
 
 onAction($('currenciesBody'), {

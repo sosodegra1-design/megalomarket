@@ -52,7 +52,27 @@ after(async () => {
 test('/api/health stays public so monitoring and the keep-alive ping work', async () => {
   const { status, body } = await call('/api/health');
   assert.equal(status, 200);
-  assert.deepEqual(body, { ok: true });
+  // `ok` reste le contrat : c'est lui que lit une sonde externe. Les autres
+  // champs sont un supplément d'information, pas un remplacement.
+  assert.equal(body.ok, true);
+  // La sonde vérifie réellement la base : un serveur debout devant une base
+  // morte est un serveur mort, et une sonde qui répond toujours « ok » ne
+  // surveille rien.
+  assert.equal(body.database, 'ok');
+  assert.ok(Number.isFinite(body.uptimeSeconds));
+});
+
+test('la sonde de santé ne divulgue aucun secret, même en étant publique', async () => {
+  const { body } = await call('/api/health');
+  const texte = JSON.stringify(body);
+  // Elle est joignable sans clé : rien de ce qui y figure ne doit aider
+  // quelqu'un à entrer. On vérifie les valeurs sensibles réellement chargées.
+  for (const secret of [process.env.ADMIN_API_KEY, process.env.TURSO_AUTH_TOKEN, process.env.AI_API_KEY]) {
+    if (secret) assert.ok(!texte.includes(secret), 'la sonde publique ne doit jamais contenir de secret');
+  }
+  for (const interdit of ['key', 'token', 'password', 'secret']) {
+    assert.ok(!texte.toLowerCase().includes(interdit), `le champ « ${interdit} » ne doit pas apparaître`);
+  }
 });
 
 test('health stays reachable even when the service is locked', async () => {

@@ -187,6 +187,73 @@ pas la deviner caractère par caractère en mesurant les temps de réponse.
 
 Génère une clé solide avec `openssl rand -hex 32`.
 
+## Supervision
+
+La sonde publique est **`GET /api/health`**. Elle est joignable sans clé — c'est
+le seul point qu'une surveillance externe peut interroger.
+
+```json
+{ "ok": true, "database": "ok", "uptimeSeconds": 3600, "checkedAt": "2026-09-25T…" }
+```
+
+Deux propriétés qui comptent :
+
+- **Elle vérifie réellement la base** (`SELECT 1`), pas seulement le processus.
+  Un serveur debout devant une base morte est un serveur mort — et une sonde qui
+  répond toujours « ok » ne surveille rien, elle rassure.
+- **Elle ne divulgue aucun secret.** Elle n'est pas authentifiée : elle ne dit
+  que des états.
+
+**Mettre en place une alerte externe** (UptimeRobot, BetterStack, Cronitor…) :
+créer un moniteur HTTP sur `https://<service>.onrender.com/api/health`, intervalle
+5 minutes, alerte si **le code HTTP n'est pas 200** (503 = base injoignable).
+
+Sur l'offre gratuite Render, le service se met en veille après inactivité : un
+moniteur à 5 minutes sert aussi de **ping de maintien en vie** et supprime la
+latence de ~20 s du premier appel.
+
+## Sauvegarde
+
+**Turso assure la durabilité et les points de reprise.** L'export ci-dessous ne
+les remplace pas : il sert à **emporter ses données** dans un fichier lisible,
+sans dépendre d'un fournisseur.
+
+| Route | Ce qu'elle fait |
+|---|---|
+| `GET /api/backup` | Export complet en JSON, en téléchargement, nommé `megalomarket-sauvegarde-AAAA-MM-JJ.json` |
+| `GET /api/backup?meta=1` | Inventaire seul (tables + nombres de lignes), **sans données personnelles**, avec un contrôle de complétude |
+
+Depuis le hub : **Paramètres → Sauvegarde des données**.
+
+```bash
+# En ligne de commande
+curl -u "admin:$ADMIN_API_KEY" -o sauvegarde.json \
+  https://<service>.onrender.com/api/backup
+
+# Vérifier que la sauvegarde est complète
+curl -u "admin:$ADMIN_API_KEY" https://<service>.onrender.com/api/backup?meta=1 \
+  | jq '.controle'
+```
+
+Le mode inventaire renvoie `{"complete": true}` ou la liste des tables
+manquantes. C'est le contrôle à faire **après** chaque export : une sauvegarde
+incomplète ne se voit qu'au moment de restaurer, c'est-à-dire trop tard.
+
+## Pages légales
+
+Obligatoires en France. Disponibles dans le hub : **Paramètres → Informations
+légales**, ou directement `#/legal`.
+
+Elles sont **pré-remplies avec des emplacements `[À COMPLÉTER]`** : raison
+sociale, forme juridique, SIRET, siège, contact, responsable de publication.
+Un texte générique ne suffit pas — ces informations doivent être les vraies
+avant publication.
+
+Le contenu RGPD est, lui, déjà renseigné et fidèle : données réellement traitées
+(commandes, journal, réglages), sous-traitants réellement utilisés (Render,
+Turso, Brevo, Sendcloud, Cloudinary, fournisseur d'IA), durée de conservation et
+droits des personnes.
+
 ## Prochaines étapes concrètes
 
 1. Renseigner `OWN_SITE_API_URL` (`https://bbhappy.onrender.com`) et `OWN_SITE_API_KEY` — la **même
