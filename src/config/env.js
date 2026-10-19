@@ -292,6 +292,16 @@ export const config = {
     get ready() {
       return has('PERPLEXITY_API_KEY');
     },
+    /* OPT-IN, ET FERMÉ PAR DÉFAUT. Le lecteur gratuit (r.jina.ai + modèle local)
+       couvre le cas général sans rien coûter. Une clé Perplexity présente dans
+       l'environnement ne doit donc pas réactiver silencieusement un service
+       payant : il faut le demander explicitement.
+
+       Conséquence voulue : une clé oubliée dans un déploiement ne facture plus
+       rien. Pour réactiver l'agent payant, ajouter USE_PERPLEXITY_AGENT=true. */
+    get enabled() {
+      return String(process.env.USE_PERPLEXITY_AGENT || '').toLowerCase() === 'true';
+    },
   },
 
   // Coefficient de marge et frais fixes utilisés pour calculer le prix de vente conseillé
