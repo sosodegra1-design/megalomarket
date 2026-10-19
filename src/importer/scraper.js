@@ -1272,6 +1272,7 @@ function normalizeFastPathResult(platform, payload) {
     rawDescription: cleanText(payload.rawDescription),
     purchasePrice: Number.isFinite(payload.purchasePrice) ? payload.purchasePrice : 0,
     currency: payload.currency || 'USD',
+    shippingPrice: Number.isFinite(payload.shippingPrice) ? payload.shippingPrice : 0,
     imageUrls: payload.imageUrls || [],
   };
 }
@@ -1290,6 +1291,54 @@ const BLOCKED_PAGE_TITLE = /(just a moment|attention required|access denied|are 
  * `null` qui fait monter d'une identité dans la stratégie directe, puis bascule
  * vers les lecteurs tiers.
  */
+/*
+ * FRAIS DE PORT affichés sur la fiche produit.
+ *
+ * POURQUOI ICI. Le transport est la moitié du coût rendu sur un petit objet venu
+ * de loin, et il figure presque toujours sur la page — « Shipping: US$1.20/piece »,
+ * « Frais de port : 12,50 € », « Livraison incluse ». Le faire saisir à la main
+ * revient à l'oublier : un prix calculé sans transport est un prix qui ne couvre
+ * pas l'achat.
+ *
+ * CE QU'ON REFUSE DE FAIRE : deviner. Sans devise explicite à proximité, on ne
+ * remonte rien — un montant sans devise serait interprété dans celle du produit
+ * et fausserait le calcul. Et une mention « livraison gratuite » vaut 0, ce qui
+ * est une information, pas une absence.
+ *
+ * Renvoie { shippingPrice, shippingCurrency } ou null.
+ */
+export function extractShippingPrice($, texte) {
+  // 1. Données structurées : le seul endroit où la devise est certaine.
+  const taux = $('[itemprop="shippingRate"] [itemprop="price"], [itemprop="shippingRate"] [itemprop="value"]').first();
+  if (taux.length) {
+    const valeur = Number(String(taux.attr('content') ?? taux.text()).replace(',', '.').replace(/[^\d.]/g, ''));
+    const devise = $('[itemprop="shippingRate"] [itemprop="priceCurrency"]').attr('content')
+      || $('[itemprop="priceCurrency"]').first().attr('content');
+    if (Number.isFinite(valeur) && valeur >= 0 && devise) {
+      return { shippingPrice: valeur, shippingCurrency: String(devise).toUpperCase() };
+    }
+  }
+
+  // 2. Texte de la page, avec la devise collée au montant.
+  const motif = /(?:shipping|livraison|frais de port|frais de livraison)[^0-9]{0,24}(?:(US)?\$|€|EUR|USD)\s*([0-9]+(?:[.,][0-9]{1,2})?)/i;
+  const inverse = /(?:shipping|livraison|frais de port|frais de livraison)[^0-9]{0,24}([0-9]+(?:[.,][0-9]{1,2})?)\s*(€|EUR|USD|\$)/i;
+
+  const trouve = motif.exec(texte) || inverse.exec(texte);
+  if (!trouve) {
+    // « Livraison incluse » / « free shipping » : 0 est une VRAIE information.
+    if (/(livraison|shipping)[^.]{0,20}(incluse|gratuite|offerte|free)/i.test(texte)) {
+      return { shippingPrice: 0, shippingCurrency: null };
+    }
+    return null;
+  }
+
+  const brut = trouve[2] && /[0-9]/.test(trouve[2]) ? trouve[2] : trouve[1];
+  const symbole = (trouve[0].match(/US\$|USD/i) ? 'USD' : trouve[0].match(/€|EUR/i) ? 'EUR' : null);
+  const valeur = Number(String(brut).replace(',', '.'));
+  if (!Number.isFinite(valeur) || valeur < 0 || !symbole) return null;
+  return { shippingPrice: valeur, shippingCurrency: symbole };
+}
+
 function extractFromHtml(html, finalUrl, patternSite) {
   const $ = cheerio.load(html || '');
   const jsonLdProduct = parseJsonLdProduct($);
@@ -1312,12 +1361,21 @@ function extractFromHtml(html, finalUrl, patternSite) {
   const { price, currency } = extractPrice(jsonLdProduct, $);
   const imageUrls = extractImages($, finalUrl, jsonLdProduct);
 
+  /* Le transport n'est retenu que s'il est exprimé dans la MÊME devise que le
+     prix d'achat : convertir ici obligerait à charger les taux à chaque page, et
+     un montant mal interprété fausserait tous les prix en silence. */
+  const port = extractShippingPrice($, cleanText($('body').text()).slice(0, 20000));
+  const shippingPrice = port && port.shippingCurrency && port.shippingCurrency === String(currency).toUpperCase()
+    ? port.shippingPrice
+    : 0;
+
   return {
     sourceSite: patternSite,
     title: title.trim(),
     rawDescription: rawDescription.trim(),
     purchasePrice: price,
     currency,
+    shippingPrice,
     imageUrls,
   };
 }

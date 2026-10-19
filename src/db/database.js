@@ -253,10 +253,22 @@ async function migrateImportsExtractionMethod() {
 async function migrateImportsLandedCost() {
   const addedQuantity = await addColumnIfMissing('imports', 'lot_quantity', 'INTEGER NOT NULL DEFAULT 1');
   const addedFees = await addColumnIfMissing('imports', 'lot_fees', 'REAL NOT NULL DEFAULT 0');
-  if (addedQuantity || addedFees) {
-    await logActivity('MIGRATION', 'Colonnes imports.lot_quantity et lot_fees ajoutées : le prix conseillé tient compte du transport et de la douane.');
+
+  /* Transport PAR PIÈCE — la forme que donne le plus souvent une fiche
+     fournisseur (« Shipping: US$1.20/piece »). Elle s'ajoute aux deux colonnes
+     précédentes sans les remplacer : les imports déjà saisis avec un forfait de
+     lot continuent de fonctionner, et le calcul n'utilise QUE l'une des deux
+     formes à la fois (voir computeLandedCost) — les additionner compterait le
+     transport deux fois. */
+  const addedShipping = await addColumnIfMissing('imports', 'shipping_price', 'REAL NOT NULL DEFAULT 0');
+
+  if (addedQuantity || addedFees || addedShipping) {
+    await logActivity(
+      'MIGRATION',
+      'Colonnes imports.lot_quantity, lot_fees et shipping_price ajoutées : le prix conseillé tient compte du transport et de la douane.',
+    );
   }
-  return addedQuantity || addedFees;
+  return addedQuantity || addedFees || addedShipping;
 }
 
 /* Champs apportés par un catalogue fournisseur (voir connectors/rewix.js) : le

@@ -84,6 +84,7 @@ function buildPrompt(url) {
     + '  "title": le nom exact du produit tel qu\'il est écrit sur la page, ou "" si tu n\'as pas pu lire la page,\n'
     + '  "price": le prix à l\'unité le PLUS BAS visible sur la page, en nombre décimal sans symbole ni séparateur de milliers, ou null,\n'
     + '  "currency": le code ISO à 3 lettres de ce prix (USD, EUR, CNY…) ou null,\n'
+  + '  "shippingPrice": les frais de PORT par pièce s\'ils sont écrits sur la page, en nombre décimal, ou null,\n'
     + '  "priceNote": le prix tel qu\'il est écrit sur la page, recopié mot pour mot (par exemple "US$1.20-1.50 / piece, min. order 100 pieces"), ou "",\n'
     + '  "description": 2 à 4 phrases décrivant le produit d\'après ce que dit la page, ou "",\n'
     + '  "images": un tableau d\'URL absolues d\'images du produit vues sur la page (maximum 8, [] si aucune),\n'
@@ -255,6 +256,13 @@ function normalizeAgentResult(raw, url, { strategy = 'agent-perplexity', lecteur
     rawDescription: description,
     purchasePrice: price,
     currency,
+    /* Transport lu par l'agent, dans la même devise que le prix d'achat.
+       Absent ou illisible = 0 : le calcul retombera alors sur le forfait de lot
+       s'il existe. On ne devine jamais — un transport inventé fausse le coût
+       rendu, et donc tous les prix qui en découlent. */
+    shippingPrice: Number.isFinite(Number(raw.shippingPrice)) && Number(raw.shippingPrice) >= 0
+      ? Number(raw.shippingPrice)
+      : 0,
     imageUrls,
     strategy,
     agentNotes: notes,
@@ -365,6 +373,7 @@ function buildExtractionPrompt(url, texte) {
     + '  "pageKind": "fiche produit" | "page d\'accueil" | "page de categorie" | "annuaire" | "mur anti-robot" | "erreur",\n'
     + '  "title": le nom exact du produit tel qu\'il est écrit, ou "",\n'
     + '  "price": le prix à l\'unité le PLUS BAS visible, en nombre décimal sans symbole ni séparateur de milliers, ou null,\n'
+    + '  "shippingPrice": les frais de PORT par pièce s\'ils sont écrits sur la page, en nombre décimal, ou null,\n'
     + '  "currency": le code ISO à 3 lettres de ce prix (USD, EUR, CNY…) ou null,\n'
     + '  "priceNote": le prix tel qu\'écrit mot pour mot, ou "",\n'
     + '  "description": 2 à 4 phrases décrivant le produit d\'après ce texte, ou "",\n'
@@ -377,7 +386,8 @@ function buildExtractionPrompt(url, texte) {
     + 'cela vaut mieux qu\'un titre approximatif.\n'
     + '- Fourchette de prix : retiens la borne BASSE pour "price", recopie la fourchette entière dans "priceNote".\n'
     + '- Ne convertis aucune devise : donne celle qui est écrite.\n'
-    + '- Aucune estimation de marché, aucun prix « typique ».\n\n'
+    + '- Les frais de port ne se devinent pas : si la page ne les écrit pas, mets null. '
+    + 'S\'ils sont écrits « livraison incluse » ou « free shipping », mets 0.\n\n'
     + '--- DÉBUT DU TEXTE DE LA PAGE ---\n'
     + texte
   );

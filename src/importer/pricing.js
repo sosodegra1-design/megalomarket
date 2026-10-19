@@ -57,12 +57,16 @@ export function convertToEur(amount, currency, rates = {}) {
 export function computeLandedCost({
   purchasePrice,
   currency,
+  shippingPrice = 0,
   lotQuantity = 1,
   lotFees = 0,
   rates = {},
 } = {}) {
   if (!Number.isFinite(purchasePrice) || purchasePrice < 0) {
     throw new Error("Prix d'achat invalide.");
+  }
+  if (!Number.isFinite(shippingPrice) || shippingPrice < 0) {
+    throw new Error('Transport invalide.');
   }
   if (!Number.isInteger(lotQuantity) || lotQuantity < 1) {
     throw new Error('Quantité du lot invalide (doit être un entier supérieur ou égal à 1).');
@@ -72,8 +76,23 @@ export function computeLandedCost({
   }
 
   const unitPriceEur = convertToEur(purchasePrice, currency, rates);
-  const feesPerUnit = lotFees / lotQuantity;
-  return round2(unitPriceEur + feesPerUnit);
+
+  /* LE TRANSPORT, DE DEUX FAÇONS — ET UNE SEULE À LA FOIS.
+   *
+   * `shippingPrice` est le transport PAR PIÈCE, tel qu'il est souvent écrit sur
+   * la fiche fournisseur (« Shipping: US$1.20/piece »). C'est la forme que
+   * l'agent d'extraction remplit, et la plus simple à comprendre.
+   *
+   * `lotFees` / `lotQuantity` reste la forme « forfait pour un envoi de N
+   * pièces ». Elle est conservée pour les imports déjà saisis, et n'est utilisée
+   * QUE si aucun transport par pièce n'est renseigné : additionner les deux
+   * compterait le transport deux fois — l'erreur la plus coûteuse du calcul.
+   */
+  const transportParPiece = shippingPrice > 0
+    ? convertToEur(shippingPrice, currency, rates)
+    : round2(lotFees / lotQuantity);
+
+  return round2(unitPriceEur + transportParPiece);
 }
 
 /**
@@ -114,16 +133,21 @@ export function computeSuggestedPrice(landedCost, { marginCoefficient = 1.8, fix
 export function computePriceFromSupplier({
   purchasePrice,
   currency,
+  shippingPrice = 0,
   lotQuantity = 1,
   lotFees = 0,
   rates = {},
   marginCoefficient,
   fixedFee,
 } = {}) {
-  const landedCost = computeLandedCost({ purchasePrice, currency, lotQuantity, lotFees, rates });
+  const landedCost = computeLandedCost({ purchasePrice, currency, shippingPrice, lotQuantity, lotFees, rates });
   const suggestedPrice = computeSuggestedPrice(landedCost, { marginCoefficient, fixedFee });
 
   const code = String(currency || '').trim().toUpperCase();
+  const transportParPiece = shippingPrice > 0
+    ? round2(convertToEur(shippingPrice, currency, rates))
+    : round2(lotFees / lotQuantity);
+
   return {
     landedCost,
     suggestedPrice,
@@ -132,9 +156,14 @@ export function computePriceFromSupplier({
       currency: code,
       rate: rates[code] ?? null,
       priceInEur: round2(convertToEur(purchasePrice, currency, rates)),
+      shippingPrice,
+      transportEur: transportParPiece,
       lotQuantity,
       lotFees,
-      feesPerUnit: round2(lotFees / lotQuantity),
+      feesPerUnit: transportParPiece,
+      // Le multiplicateur est conservé dans le détail : sans lui, impossible de
+      // justifier un prix six mois plus tard.
+      marginCoefficient,
     },
   };
 }

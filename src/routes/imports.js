@@ -8,6 +8,7 @@ import { connectors } from '../connectors/index.js';
 import { computePriceFromSupplier } from '../importer/pricing.js';
 import { loadCurrencyRates } from '../db/currency-catalogue.js';
 import { config } from '../config/env.js';
+import { getMultiplicateur } from '../services/pricingSettings.js';
 import { withResolvedMargin } from './suppliers.js';
 import { inspectImages } from '../ai/visionInspector.js';
 
@@ -188,8 +189,8 @@ importsRouter.post(
     // photos à la main.
     const imageUrls = data.imageUrls.slice(0, MAX_IMAGES);
     const info = await dbRun(
-      `INSERT INTO imports (source_url, source_site, title, raw_description, purchase_price, currency, image_urls, status, supplier_id, extraction_method, extraction_notes, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, 'brouillon', ?, ?, ?, ?)`,
+      `INSERT INTO imports (source_url, source_site, title, raw_description, purchase_price, currency, shipping_price, image_urls, status, supplier_id, extraction_method, extraction_notes, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'brouillon', ?, ?, ?, ?)`,
       [
         url,
         data.sourceSite,
@@ -197,6 +198,8 @@ importsRouter.post(
         data.rawDescription,
         data.purchasePrice,
         data.currency,
+        // Transport lu sur la page, dans la devise du prix d'achat. 0 = inconnu.
+        Number.isFinite(Number(data.shippingPrice)) && Number(data.shippingPrice) > 0 ? Number(data.shippingPrice) : 0,
         JSON.stringify(imageUrls),
         resolvedSupplierId,
         extractionMethod,
@@ -239,7 +242,7 @@ importsRouter.post(
 importsRouter.post(
   '/manual',
   asyncRoute(async (req, res) => {
-    const { url, title, purchasePrice, currency, rawDescription, imageUrls, supplierId } = req.body || {};
+    const { url, title, purchasePrice, currency, shippingPrice, rawDescription, imageUrls, supplierId } = req.body || {};
 
     // Titre : chaîne non vide (mêmes règles que PATCH /:id).
     if (typeof title !== 'string' || !title.trim()) {
@@ -292,8 +295,8 @@ importsRouter.post(
     const images = imageUrls ? parseImageUrls(imageUrls) : [];
 
     const info = await dbRun(
-      `INSERT INTO imports (source_url, source_site, title, raw_description, purchase_price, currency, image_urls, status, supplier_id, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, 'brouillon', ?, ?)`,
+      `INSERT INTO imports (source_url, source_site, title, raw_description, purchase_price, currency, shipping_price, image_urls, status, supplier_id, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'brouillon', ?, ?)`,
       [
         sourceUrl,
         sourceSite,
@@ -301,6 +304,8 @@ importsRouter.post(
         (rawDescription || '').trim(),
         purchasePrice,
         currency.trim().toUpperCase(),
+        // Transport lu sur la page, dans la devise du prix d'achat. 0 = inconnu.
+        Number.isFinite(Number(shippingPrice)) && Number(shippingPrice) > 0 ? Number(shippingPrice) : 0,
         JSON.stringify(images),
         resolvedSupplierId,
         Date.now(),
@@ -430,7 +435,7 @@ importsRouter.delete(
 importsRouter.patch(
   '/:id',
   asyncRoute(async (req, res) => {
-    const { purchasePrice, currency, title, rawDescription, imageUrls, lotQuantity, lotFees } = req.body || {};
+    const { purchasePrice, currency, shippingPrice, title, rawDescription, imageUrls, lotQuantity, lotFees } = req.body || {};
 
     const imp = await dbGet('SELECT id FROM imports WHERE id = ?', [req.params.id]);
     if (!imp) throw new Error('Import introuvable.');
@@ -495,6 +500,15 @@ importsRouter.patch(
       prixTouche = true;
     }
 
+    if (shippingPrice !== undefined) {
+      const port = Number(shippingPrice);
+      if (!Number.isFinite(port) || port < 0) {
+        throw new Error('Transport invalide : un nombre positif ou nul est attendu.');
+      }
+      fields.push('shipping_price = ?');
+      values.push(port);
+      prixTouche = true;
+    }
     if (lotFees !== undefined) {
       if (!Number.isFinite(lotFees) || lotFees < 0) {
         throw new Error('Frais du lot invalides : un nombre positif ou nul est attendu (transport et douane du lot entier).');
@@ -599,12 +613,15 @@ function suggestCurrency(code, connus) {
 
 async function recomputeListingPrices(importId) {
   const imp = await dbGet(
-    'SELECT purchase_price, currency, lot_quantity, lot_fees, supplier_id FROM imports WHERE id = ?',
+    'SELECT purchase_price, currency, shipping_price, lot_quantity, lot_fees, supplier_id FROM imports WHERE id = ?',
     [importId],
   );
   if (!imp) return 0;
 
-  let coefficient = config.pricing.marginCoefficient;
+  /* Le multiplicateur du hub vient de la BASE, pas de l'environnement : il est
+     ainsi modifiable depuis l'interface, sans redéploiement. Un partenaire peut
+     avoir une marge négociée, qui reste prioritaire. */
+  let coefficient = await getMultiplicateur();
   if (imp.supplier_id != null) {
     const fournisseur = await dbGet('SELECT margin_coefficient FROM suppliers WHERE id = ?', [imp.supplier_id]);
     if (fournisseur && fournisseur.margin_coefficient != null) {
@@ -616,6 +633,7 @@ async function recomputeListingPrices(importId) {
   const { suggestedPrice } = computePriceFromSupplier({
     purchasePrice: imp.purchase_price,
     currency: imp.currency,
+    shippingPrice: imp.shipping_price,
     lotQuantity: imp.lot_quantity,
     lotFees: imp.lot_fees,
     rates,

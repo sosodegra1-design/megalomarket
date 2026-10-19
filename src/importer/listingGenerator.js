@@ -3,6 +3,7 @@ import { dbGet, dbRun, logActivity } from '../db/database.js';
 import { computePriceFromSupplier } from './pricing.js';
 import { loadCurrencyRates } from '../db/currency-catalogue.js';
 import { config } from '../config/env.js';
+import { getMultiplicateur } from '../services/pricingSettings.js';
 import { connectors } from '../connectors/index.js';
 
 const MARKETPLACES = ['amazon', 'tiktok_shop', 'allegro', 'lumivita'];
@@ -221,10 +222,11 @@ export async function generateListingsForImport(importId) {
     ({ suggestedPrice } = computePriceFromSupplier({
       purchasePrice: imp.purchase_price,
       currency: imp.currency,
+      shippingPrice: imp.shipping_price,
       lotQuantity: imp.lot_quantity,
       lotFees: imp.lot_fees,
       rates,
-      marginCoefficient: config.pricing.marginCoefficient,
+      marginCoefficient: await getMultiplicateur(),
       fixedFee: config.pricing.fixedFee,
     }));
   } catch (error) {
