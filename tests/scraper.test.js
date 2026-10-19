@@ -368,7 +368,17 @@ test('aborts with a clear message when the supplier page never responds', async 
   global.fetch = async (_url, options = {}) => {
     signals.push(options.signal);
     return new Promise((_resolve, reject) => {
-      // Un fetch réel rejette avec la raison du signal quand le délai expire.
+      /* Un fetch réel rejette avec la raison du signal quand le délai expire.
+         MAIS si le signal est DÉJÀ abandonné à l'arrivée, l'écouter ne
+         déclencherait jamais rien : la promesse resterait pendante à vie, la
+         boucle d'événements se viderait, et Node 22 annule alors TOUT le
+         fichier de tests (« Promise resolution is still pending but the event
+         loop has already resolved »). C'est une course : avec un délai de 10 ms,
+         l'abandon précède parfois l'appel.
+
+         On traite donc le cas déjà-abandonné avant d'écouter. */
+      if (!options.signal) { reject(new Error('aucun signal transmis au fetch')); return; }
+      if (options.signal.aborted) { reject(options.signal.reason); return; }
       options.signal.addEventListener('abort', () => reject(options.signal.reason), { once: true });
     });
   };
@@ -514,6 +524,10 @@ test('the timeout budget covers the whole redirect chain', async () => {
     if (calls === 1) return redirectResponse('https://supplier.example/slow.html');
     return new Promise((_resolve, reject) => {
       // Le second saut ne répond jamais : c'est le délai restant qui doit le tuer.
+      // Même précaution que plus haut : un signal déjà abandonné ne redéclenchera
+      // jamais « abort », et la promesse resterait pendante.
+      if (!options.signal) { reject(new Error('aucun signal transmis au fetch')); return; }
+      if (options.signal.aborted) { reject(options.signal.reason); return; }
       options.signal.addEventListener('abort', () => reject(options.signal.reason), { once: true });
     });
   };
