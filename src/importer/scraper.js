@@ -1273,6 +1273,7 @@ function normalizeFastPathResult(platform, payload) {
     purchasePrice: Number.isFinite(payload.purchasePrice) ? payload.purchasePrice : 0,
     currency: payload.currency || 'USD',
     shippingPrice: Number.isFinite(payload.shippingPrice) ? payload.shippingPrice : 0,
+    weightGrams: Number.isFinite(payload.weightGrams) ? payload.weightGrams : null,
     imageUrls: payload.imageUrls || [],
   };
 }
@@ -1307,6 +1308,60 @@ const BLOCKED_PAGE_TITLE = /(just a moment|attention required|access denied|are 
  *
  * Renvoie { shippingPrice, shippingCurrency } ou null.
  */
+/*
+ * POIDS du produit, en GRAMMES.
+ *
+ * POURQUOI C'EST AUSSI IMPORTANT QUE LE PRIX. Le transport se calcule au kilo :
+ * sans poids, le hub retombe sur un forfait par envoi, qui suppose un colis
+ * type. Une affiche de 150 g et un meuble de 12 kg n'ont rien à voir — et le
+ * prix de vente non plus.
+ *
+ * CE QU'ON REFUSE DE FAIRE : convertir à l'aveugle. On ne lit que les grammes et
+ * les kilos. Les livres et les onces existent sur certaines fiches, mais une
+ * conversion approximative introduirait une erreur qu'aucun test ne verrait
+ * venir ; mieux vaut ne rien remonter et laisser l'utilisateur saisir.
+ *
+ * Renvoie un entier de grammes, ou null.
+ */
+export function extractWeightGrams($, texte, jsonLdProduct) {
+  // 1. Données structurées : unité explicite, donc aucun doute.
+  const poidsStructure = jsonLdProduct?.weight;
+  if (poidsStructure && typeof poidsStructure === 'object') {
+    const valeur = Number(poidsStructure.value);
+    const unite = String(poidsStructure.unitCode || '').toUpperCase();
+    if (Number.isFinite(valeur) && valeur > 0) {
+      if (unite === 'KGM' || unite === 'KG') return Math.round(valeur * 1000);
+      if (unite === 'GRM' || unite === 'G') return Math.round(valeur);
+    }
+  }
+  const itemprop = $('[itemprop="weight"]').first();
+  if (itemprop.length) {
+    const brut = String(itemprop.attr('content') ?? itemprop.text()).trim();
+    const lu = poidsDepuisTexte(brut);
+    if (lu != null) return lu;
+  }
+
+  // 2. Texte de la page : on exige un nombre SUIVI d'une unité.
+  return poidsDepuisTexte(texte);
+}
+
+/* Un nombre, puis g / kg / grammes / kilos. Le « poids net » et le « poids
+   brut » sont acceptés tous deux : faute de mieux, l'un ou l'autre donne un
+   ordre de grandeur correct pour le transport. */
+function poidsDepuisTexte(texte) {
+  if (!texte) return null;
+  const motif = /(?:poids(?:\s+net|\s+brut)?|weight|gw|nw)[^0-9]{0,18}([0-9]+(?:[.,][0-9]+)?)\s*(kg|kilos?|kilogrammes?|g|grammes?)\b/i;
+  const trouve = motif.exec(String(texte));
+  if (!trouve) return null;
+  const valeur = Number(String(trouve[1]).replace(',', '.'));
+  if (!Number.isFinite(valeur) || valeur <= 0) return null;
+  const grammes = /^k/i.test(trouve[2]) ? valeur * 1000 : valeur;
+  // Un « poids » de 500 kg sur une fiche produit est une erreur de lecture
+  // (souvent une dimension ou un prix). On refuse plutôt que de fausser le port.
+  if (grammes < 1 || grammes > 100000) return null;
+  return Math.round(grammes);
+}
+
 export function extractShippingPrice($, texte) {
   // 1. Données structurées : le seul endroit où la devise est certaine.
   const taux = $('[itemprop="shippingRate"] [itemprop="price"], [itemprop="shippingRate"] [itemprop="value"]').first();
@@ -1364,7 +1419,9 @@ function extractFromHtml(html, finalUrl, patternSite) {
   /* Le transport n'est retenu que s'il est exprimé dans la MÊME devise que le
      prix d'achat : convertir ici obligerait à charger les taux à chaque page, et
      un montant mal interprété fausserait tous les prix en silence. */
-  const port = extractShippingPrice($, cleanText($('body').text()).slice(0, 20000));
+  const textePage = cleanText($('body').text()).slice(0, 20000);
+  const port = extractShippingPrice($, textePage);
+  const weightGrams = extractWeightGrams($, textePage, jsonLdProduct);
   const shippingPrice = port && port.shippingCurrency && port.shippingCurrency === String(currency).toUpperCase()
     ? port.shippingPrice
     : 0;
@@ -1376,6 +1433,7 @@ function extractFromHtml(html, finalUrl, patternSite) {
     purchasePrice: price,
     currency,
     shippingPrice,
+    weightGrams,
     imageUrls,
   };
 }

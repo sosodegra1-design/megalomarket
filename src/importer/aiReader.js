@@ -84,6 +84,7 @@ function buildPrompt(url) {
     + '  "title": le nom exact du produit tel qu\'il est écrit sur la page, ou "" si tu n\'as pas pu lire la page,\n'
     + '  "price": le prix à l\'unité le PLUS BAS visible sur la page, en nombre décimal sans symbole ni séparateur de milliers, ou null,\n'
     + '  "currency": le code ISO à 3 lettres de ce prix (USD, EUR, CNY…) ou null,\n'
+    + '  "weightGrams": le POIDS d\'une pièce en GRAMMES s\'il est écrit (ex. 150, 1200), ou null,\n'
   + '  "shippingPrice": les frais de PORT par pièce s\'ils sont écrits sur la page, en nombre décimal, ou null,\n'
     + '  "priceNote": le prix tel qu\'il est écrit sur la page, recopié mot pour mot (par exemple "US$1.20-1.50 / piece, min. order 100 pieces"), ou "",\n'
     + '  "description": 2 à 4 phrases décrivant le produit d\'après ce que dit la page, ou "",\n'
@@ -263,6 +264,13 @@ function normalizeAgentResult(raw, url, { strategy = 'agent-perplexity', lecteur
     shippingPrice: Number.isFinite(Number(raw.shippingPrice)) && Number(raw.shippingPrice) >= 0
       ? Number(raw.shippingPrice)
       : 0,
+    /* Poids en grammes. Au-delà de 100 kg, c'est une erreur de lecture (souvent
+       une dimension ou un prix confondus) : on préfère null, qui fera saisir à
+       la main, plutôt qu'un poids faux qui fausserait le port. */
+    weightGrams: (() => {
+      const g = Number(raw.weightGrams);
+      return Number.isFinite(g) && g >= 1 && g <= 100000 ? Math.round(g) : null;
+    })(),
     imageUrls,
     strategy,
     agentNotes: notes,
@@ -374,6 +382,7 @@ function buildExtractionPrompt(url, texte) {
     + '  "title": le nom exact du produit tel qu\'il est écrit, ou "",\n'
     + '  "price": le prix à l\'unité le PLUS BAS visible, en nombre décimal sans symbole ni séparateur de milliers, ou null,\n'
     + '  "shippingPrice": les frais de PORT par pièce s\'ils sont écrits sur la page, en nombre décimal, ou null,\n'
+    + '  "weightGrams": le POIDS d\'une pièce en GRAMMES s\'il est écrit (ex. 150, 1200), ou null,\n'
     + '  "currency": le code ISO à 3 lettres de ce prix (USD, EUR, CNY…) ou null,\n'
     + '  "priceNote": le prix tel qu\'écrit mot pour mot, ou "",\n'
     + '  "description": 2 à 4 phrases décrivant le produit d\'après ce texte, ou "",\n'
