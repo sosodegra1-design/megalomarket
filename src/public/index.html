@@ -2429,6 +2429,28 @@
           <div id="backupStatus" class="hint hint-tight" hidden></div>
         </div>
 
+        <!-- Connecteur Rewix : grossiste dans l'UE, donc sans douane ni TVA à
+             l'import. Le catalogue donne le coût, le poids et le code douanier
+             que le hub devait estimer à la main sur Alibaba. -->
+        <div class="card reveal-in">
+          <div class="card-head card-head-line">
+            <div class="card-head-text">
+              <h2>Fournisseur Rewix</h2>
+              <p>
+                Catalogue d'un grossiste <strong>dans l'Union européenne</strong> : ni douane, ni
+                droit forfaitaire de 3 €, ni TVA à l'import. La synchronisation récupère le coût
+                d'achat, le poids et le code douanier de chaque produit.
+              </p>
+            </div>
+            <span class="pill off" id="rewixStatusBadge">Vérification…</span>
+          </div>
+          <div id="rewixStatusBody" class="hint hint-tight">Chargement…</div>
+          <div class="row row-actions">
+            <button class="btn btn-sm" id="btnRewixSync" type="button">Synchroniser le catalogue</button>
+            <button class="btn btn-ghost btn-sm" id="btnRewixFullSync" type="button">Synchronisation complète</button>
+          </div>
+        </div>
+
         <!-- Mentions légales et confidentialité. -->
         <div class="card reveal-in">
           <div class="card-head card-head-line">
@@ -7907,6 +7929,65 @@ function renderCurrencies() {
   stagger(body);
 }
 
+/* ===================== REWIX ===================== */
+
+async function loadRewixStatus() {
+  const badge = $('rewixStatusBadge');
+  const zone = $('rewixStatusBody');
+  try {
+    const etat = await api('/api/rewix/status');
+    if (badge) {
+      badge.textContent = etat.configured ? 'Configuré' : 'Non configuré';
+      badge.className = 'pill ' + (etat.configured ? 'ok' : 'off');
+    }
+    if (zone) {
+      zone.hidden = false;
+      if (!etat.configured) {
+        // On nomme la variable manquante plutôt que de laisser chercher : sans
+        // elle, le bouton échouerait avec un message générique.
+        zone.innerHTML = esc("Renseigne REWIX_API_URL, REWIX_API_KEY et REWIX_PASSWORD pour activer la synchronisation. ")
+          + esc("L'URL est celle du site de ton fournisseur — il n'existe pas d'adresse commune.");
+      } else {
+        zone.innerHTML = esc(
+          `${etat.produitsSynchronises} produit(s) issu(s) de Rewix. `
+          + (etat.curseur ? `Dernière synchronisation : ${when(Date.parse(etat.curseur))}.` : 'Aucune synchronisation encore.'),
+        );
+      }
+    }
+  } catch (error) {
+    if (badge) { badge.textContent = 'Indisponible'; badge.className = 'pill bad'; }
+    if (zone) { zone.hidden = false; zone.innerHTML = esc(error.message); }
+  }
+}
+
+function lancerRewixSync(complet) {
+  return (event) => action(event.currentTarget, async () => {
+    const rapport = await api('/api/rewix/sync', {
+      method: 'POST',
+      body: JSON.stringify({ complet }),
+    });
+    await loadRewixStatus();
+    await loadProducts();
+    // On affiche le compte rendu : « 0 produit » et « 300 produits » ne veulent
+    // pas dire la même chose selon le mode.
+    const zone = $('rewixStatusBody');
+    if (zone) {
+      zone.hidden = false;
+      zone.innerHTML = esc(
+        `Synchronisation ${rapport.mode} : ${rapport.crees} créé(s), ${rapport.misAJour} mis à jour, `
+        + `${rapport.ignores} ignoré(s), ${rapport.sansPrix} sans prix.`,
+      )
+        + (rapport.conflits && rapport.conflits.length
+          ? esc(` Produits locaux conservés : ${rapport.conflits.join(', ')}.`)
+          : '');
+    }
+    return rapport;
+  }, 'Catalogue Rewix synchronisé.');
+}
+
+if ($('btnRewixSync')) $('btnRewixSync').addEventListener('click', lancerRewixSync(false));
+if ($('btnRewixFullSync')) $('btnRewixFullSync').addEventListener('click', lancerRewixSync(true));
+
 /* ===================== SAUVEGARDE ===================== */
 
 /* Le téléchargement passe par une NAVIGATION, pas par `fetch` : le navigateur
@@ -7989,7 +8070,7 @@ function boot() {
       // boucle : seule une VRAIE navigation (retour arrière, lien cliqué,
       // saisie manuelle de l'URL) entre ici.
       if (view === 'produits') { restoreProductsStateFromHash(); loadProductsFragment(); }
-      if (view === 'parametres') loadCurrencies();
+      if (view === 'parametres') { loadCurrencies(); loadRewixStatus(); }
     });
     if (typeof window.matchMedia === 'function') {
       const media = window.matchMedia('(prefers-reduced-motion: reduce)');

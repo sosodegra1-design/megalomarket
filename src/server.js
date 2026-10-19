@@ -12,6 +12,7 @@ import { siteRouter } from './routes/site.js';
 import { pipelineRouter } from './routes/pipeline.js';
 import { ordersRouter } from './routes/orders.js';
 import { currenciesRouter } from './routes/currencies.js';
+import { rewixRouter } from './routes/rewix.js';
 import { lumivitaRouter } from './routes/lumivita.js';
 import { requireAdmin } from './middleware/auth.js';
 import { startScheduler } from './services/scheduler.js';
@@ -48,6 +49,7 @@ app.use('/api/site', siteRouter);
 app.use('/api/pipeline', pipelineRouter);
 app.use('/api/orders', ordersRouter);
 app.use('/api/currencies', currenciesRouter);
+app.use('/api/rewix', rewixRouter);
 app.use('/api/lumivita', lumivitaRouter);
 app.use(express.static(join(__dirname, 'public')));
 
