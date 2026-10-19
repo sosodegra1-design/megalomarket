@@ -32,10 +32,16 @@ import { config } from '../config/env.js';
 
 const CLE = 'pricing_multiplier';
 
-/* Liste courte et fermée. Volontairement peu de valeurs : au-delà de cinq
-   choix, on ne choisit plus, on hésite. Toutes sont des demi-entiers ou des
-   entiers, lisibles d'un coup d'œil. */
-export const MULTIPLICATEURS = [1.5, 2, 2.5, 3, 4, 5];
+/* Liste courte et fermée, mais qui doit couvrir la marge RÉELLE.
+ *
+ * La première version s'arrêtait à ×5, en supposant que c'était large. Faux :
+ * revendre 3 € à 19,90 € demande ×6,63. Une liste trop courte ne simplifie pas,
+ * elle rend le prix cible INATTEIGNABLE — c'est pire qu'un décimal libre.
+ *
+ * D'où ×6 et ×8. Elles couvrent les reventes à forte valeur ajoutée (petit
+ * objet acheté en gros, vendu au détail) sans réintroduire un champ libre.
+ * Toutes restent des entiers ou des demi-entiers, lisibles d'un coup d'œil. */
+export const MULTIPLICATEURS = [1.5, 2, 2.5, 3, 4, 5, 6, 8];
 
 export function multiplicateurValide(valeur) {
   const n = Number(valeur);

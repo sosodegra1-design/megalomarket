@@ -119,10 +119,15 @@ test('sans transport par pièce, le forfait de lot reprend la main', () => {
 
 /* ===================== LE RÉGLAGE ===================== */
 
-test('la liste des multiplicateurs reste courte et lisible', () => {
-  // Au-delà de six choix, on ne choisit plus, on hésite.
-  assert.ok(MULTIPLICATEURS.length <= 6);
-  assert.deepEqual(MULTIPLICATEURS, [1.5, 2, 2.5, 3, 4, 5]);
+test('la liste couvre la marge RÉELLE, pas seulement les petits multiplicateurs', () => {
+  // La première version s'arrêtait à ×5 : revendre 3 € à 19,90 € demande ×6,63,
+  // donc le prix cible était INATTEIGNABLE. Une liste trop courte ne simplifie
+  // pas — elle rend le calcul impossible.
+  assert.ok(MULTIPLICATEURS.includes(2), '×2 doit rester disponible');
+  assert.ok(MULTIPLICATEURS.includes(3), '×3 doit rester disponible');
+  assert.ok(MULTIPLICATEURS.includes(4), '×4 doit rester disponible');
+  assert.ok(MULTIPLICATEURS.includes(6), '×6 couvre les reventes à forte valeur');
+  assert.ok(MULTIPLICATEURS.includes(8), '×8 couvre les reventes à très forte valeur');
   for (const m of MULTIPLICATEURS) assert.ok(m > 1, 'un multiplicateur ≤ 1 vendrait à perte');
 });
 
