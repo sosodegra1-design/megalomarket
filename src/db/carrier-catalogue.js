@@ -22,174 +22,107 @@ import { dbAll, dbRun } from './database.js';
  * vérité.
  */
 export const CARRIER_CATALOGUE = [
-  // --- Express international (porte-à-porte) ---
-  {
+{
     kind: 'transporteur',
     name: 'DHL Express',
     siteUrl: 'https://www.dhl.com/fr-fr/home.html',
     marginCoefficient: 1.5,
     notes: 'Express international. Rapide et cher, suivi fiable, dédouanement inclus.',
   },
-  {
+{
     kind: 'transporteur',
     name: 'FedEx',
     siteUrl: 'https://www.fedex.com/fr-fr/home.html',
     marginCoefficient: 1.5,
     notes: 'Express international. Bon pour les envois lourds et urgents.',
   },
-  {
+{
     kind: 'transporteur',
     name: 'UPS',
     siteUrl: 'https://www.ups.com/fr/fr/Home.page',
     marginCoefficient: 1.5,
     notes: 'Express international. Réseau large, tarifs négociables en volume.',
   },
-  {
+{
     kind: 'transporteur',
     name: 'Chronopost',
     siteUrl: 'https://www.chronopost.fr',
     marginCoefficient: 1.5,
     notes: "Express français, intégré à La Poste. Bon pour l'Europe.",
   },
-  {
+{
     kind: 'transporteur',
     name: 'DPD',
     siteUrl: 'https://www.dpd.com/fr/fr/',
     marginCoefficient: 1.5,
     notes: 'Réseau européen de colis, bon rapport prix/délai.',
   },
-  {
+{
     kind: 'transporteur',
     name: 'GLS',
     siteUrl: 'https://gls-group.com/FR/fr/',
     marginCoefficient: 1.5,
     notes: "Réseau européen, très présent en Allemagne et en Europe de l'Est.",
   },
-  {
+{
     kind: 'transporteur',
     name: 'Colissimo',
     siteUrl: 'https://www.laposte.fr/colissimo',
     marginCoefficient: 1.5,
     notes: 'Colis international de La Poste. Économique, dépôt en bureau.',
   },
-
-  // --- Fret et transit (Asie → Europe) ---
-  {
-    kind: 'transporteur',
-    name: 'Freightos',
-    siteUrl: 'https://www.freightos.com',
-    marginCoefficient: 1.5,
-    notes: 'Comparateur de fret international. Devis maritime et aérien en ligne.',
-  },
-  {
-    kind: 'transporteur',
-    name: 'Flexport',
-    siteUrl: 'https://www.flexport.com',
-    marginCoefficient: 1.5,
-    notes: 'Transitaire numérique. Fret maritime et aérien, dédouanement.',
-  },
-  {
-    kind: 'transporteur',
-    name: 'Kuehne+Nagel',
-    siteUrl: 'https://www.kuehne-nagel.com',
-    marginCoefficient: 1.5,
-    notes: 'Gros transitaire mondial. Aérien, maritime, terrestre.',
-  },
-  {
-    kind: 'transporteur',
-    name: 'DSV',
-    siteUrl: 'https://www.dsv.com',
-    marginCoefficient: 1.5,
-    notes: 'Transitaire mondial. Fret et logistique contractuelle.',
-  },
-  {
-    kind: 'transporteur',
-    name: 'Maersk',
-    siteUrl: 'https://www.maersk.com',
-    marginCoefficient: 1.5,
-    notes: 'Armateur. Conteneurs complets ou groupage maritime.',
-  },
-  {
-    kind: 'transporteur',
-    name: 'CMA CGM',
-    siteUrl: 'https://www.cma-cgm.com',
-    marginCoefficient: 1.5,
-    notes: 'Armateur français. Fret maritime mondial.',
-  },
-  {
-    kind: 'transporteur',
-    name: 'Bolloré Logistics',
-    siteUrl: 'https://www.bollore-logistics.com',
-    marginCoefficient: 1.5,
-    notes: 'Transitaire français, forte présence en Afrique et en Asie.',
-  },
-
-  // --- Agents d'achat en Chine (indispensables pour 1688 et Taobao) ---
-  {
+{
     kind: 'transporteur',
     name: 'Superbuy',
     siteUrl: 'https://www.superbuy.com',
     marginCoefficient: 1.5,
     notes: "Agent d'achat chinois. Achète sur 1688 et Taobao, contrôle et réexpédie.",
   },
-  {
+{
     kind: 'transporteur',
     name: 'Sugargoo',
     siteUrl: 'https://www.sugargoo.com',
     marginCoefficient: 1.5,
     notes: "Agent d'achat chinois. Consolidation de colis, photos de contrôle.",
   },
-  {
+{
     kind: 'transporteur',
     name: 'CNFans',
     siteUrl: 'https://cnfans.com',
     marginCoefficient: 1.5,
     notes: "Agent d'achat chinois. Bon pour les petites commandes.",
   },
-  {
+{
     kind: 'transporteur',
     name: 'Yoybuy',
     siteUrl: 'https://www.yoybuy.com',
     marginCoefficient: 1.5,
     notes: "Agent d'achat chinois. Ancien et fiable, frais clairs.",
   },
-  {
+{
     kind: 'transporteur',
     name: 'Basetao',
     siteUrl: 'https://www.basetao.com',
     marginCoefficient: 1.5,
     notes: "Agent d'achat chinois. Contrôle qualité et réexpédie.",
-  },
-
-  // --- Plateformes d'expédition (multi-transporteurs) ---
-  {
-    kind: 'transporteur',
-    name: 'Sendcloud',
-    siteUrl: 'https://www.sendcloud.com/fr/',
-    marginCoefficient: 1.5,
-    notes: "Plateforme d'expédition multi-transporteurs. Comparaison et étiquettes.",
-  },
-  {
-    kind: 'transporteur',
-    name: 'Shippo',
-    siteUrl: 'https://goshippo.com',
-    marginCoefficient: 1.5,
-    notes: "Plateforme d'expédition multi-transporteurs, orientée e-commerce.",
-  },
-  {
-    kind: 'transporteur',
-    name: 'Easyship',
-    siteUrl: 'https://www.easyship.com',
-    marginCoefficient: 1.5,
-    notes: 'Expédition internationale multi-transporteurs, taxes estimées.',
-  },
-  {
-    kind: 'transporteur',
-    name: 'Boxtal',
-    siteUrl: 'https://www.boxtal.com/fr/fr',
-    marginCoefficient: 1.5,
-    notes: 'Expédition française multi-transporteurs, tarifs négociés.',
-  },
+  }  /* CE QUI A ÉTÉ RETIRÉ, ET POURQUOI (19/10/2026)
+   *
+   * Onze entrées ne pouvaient pas tarifer un colis, et encombraient un écran où
+   * l'on vient choisir un transporteur :
+   *
+   *   - Boxtal, Sendcloud, Shippo, Easyship sont des LOGICIELS multi-transporteurs,
+   *     pas des transporteurs : ils vendent une API d'étiquettes et ne donnent
+   *     aucun prix. Les lister dans une table de transporteurs est une erreur de
+   *     catégorie (Sendcloud reste intégré comme API, ce qui n'a rien à voir).
+   *
+   *   - Maersk, CMA CGM, Kuehne+Nagel, DSV, Flexport, Freightos, Bolloré Logistics
+   *     font du FRET MARITIME : ils cotent au conteneur (FCL/LCL), jamais au
+   *     colis. Utiles pour un import en volume, inutilisables pour calculer un
+   *     port à la pièce — leur place n'est pas dans cette liste.
+   *
+   * Restent les transporteurs qui peuvent réellement porter un colis : les
+   * agents d'achat chinois, l'express international, et les transporteurs de
+   * livraison finale en France. */
 ];
 
 /**

@@ -76,7 +76,22 @@ after(async () => {
 
 test('chaque entrée du catalogue transporteur est exploitable telle quelle', () => {
   assert.ok(CARRIER_CATALOGUE.length > 0, 'un catalogue vide ne réglerait pas le problème');
-  assert.equal(CARRIER_CATALOGUE.length, 23, 'les 23 transporteurs réels doivent tous être présents');
+  /* DOUZE, ET NON VINGT-TROIS. Onze entrées ont été retirées le 19/10/2026 :
+     quatre logiciels multi-transporteurs (Boxtal, Sendcloud, Shippo, Easyship)
+     qui vendent une API d'étiquettes et ne donnent aucun prix, et sept
+     transitaires de fret maritime (Maersk, CMA CGM, Kuehne+Nagel, DSV, Flexport,
+     Freightos, Bolloré) qui cotent au conteneur, jamais au colis. Aucun des deux
+     groupes ne peut tarifer un envoi à la pièce. */
+  assert.equal(
+    CARRIER_CATALOGUE.length,
+    12,
+    'seuls les transporteurs capables de porter un colis restent au catalogue',
+  );
+  // Garde-fou : ces noms ne doivent jamais revenir par inadvertance.
+  const indesirables = ['Boxtal', 'Sendcloud', 'Shippo', 'Easyship', 'Maersk', 'CMA CGM',
+    'Kuehne+Nagel', 'DSV', 'Flexport', 'Freightos', 'Bolloré Logistics'];
+  const revenus = CARRIER_CATALOGUE.map((e) => e.name).filter((n) => indesirables.includes(n));
+  assert.deepEqual(revenus, [], 'un logiciel d\'étiquettes ou un transitaire fret n\'a rien à faire ici');
 
   for (const entry of CARRIER_CATALOGUE) {
     const label = entry?.name ?? JSON.stringify(entry);
