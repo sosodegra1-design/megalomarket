@@ -3,6 +3,7 @@ import { dbAll, dbGet, dbRun, logActivity } from '../db/database.js';
 import { config } from '../config/env.js';
 import { allChannelsStatus } from '../connectors/index.js';
 import { dumpDatabase, checkDumpCompleteness } from '../services/backup.js';
+import { getMultiplicateur, setMultiplicateur, MULTIPLICATEURS } from '../services/pricingSettings.js';
 import { generatePriceRecommendations } from '../ai/priceOptimizer.js';
 import { generateDescription } from '../ai/descriptionWriter.js';
 import { qualifySupportMessage } from '../ai/supportAgent.js';
@@ -102,6 +103,28 @@ api.get('/health', async (req, res) => {
     checkedAt: new Date().toISOString(),
   });
 });
+
+// --- Multiplicateur de marge ---
+/*
+ * UN SEUL RÉGLAGE, LISIBLE. Le hub portait trois mécanismes de marge, dont un
+ * « barème par paliers » affiché dans l'interface et JAMAIS appliqué. Un réglage
+ * qu'on peut modifier sans effet est pire qu'absent.
+ *
+ * Ici : une valeur, une liste courte, et le calcul l'utilise réellement.
+ */
+api.get('/pricing', asyncRoute(async (req, res) => {
+  res.json({
+    multiplicateur: await getMultiplicateur(),
+    options: MULTIPLICATEURS,
+  });
+}));
+
+api.put('/pricing', asyncRoute(async (req, res) => {
+  const valeur = req.body ? req.body.multiplicateur : undefined;
+  const applique = await setMultiplicateur(valeur);
+  await logActivity('MARGE', `Multiplicateur de marge réglé sur ×${applique}.`);
+  res.json({ multiplicateur: applique, options: MULTIPLICATEURS });
+}));
 
 // --- Sauvegardes ---
 /*
