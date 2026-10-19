@@ -368,8 +368,29 @@ test('aborts with a clear message when the supplier page never responds', async 
   global.fetch = async (_url, options = {}) => {
     signals.push(options.signal);
     return new Promise((_resolve, reject) => {
-      // Un fetch réel rejette avec la raison du signal quand le délai expire.
-      options.signal.addEventListener('abort', () => reject(options.signal.reason), { once: true });
+      /* Un fetch réel rejette avec la raison du signal quand le délai expire.
+         MAIS si le signal est DÉJÀ abandonné à l'arrivée, l'écouter ne
+         déclencherait jamais rien : la promesse resterait pendante à vie, la
+         boucle d'événements se viderait, et Node 22 annule alors TOUT le
+         fichier de tests (« Promise resolution is still pending but the event
+         loop has already resolved »). C'est une course : avec un délai de 10 ms,
+         l'abandon précède parfois l'appel.
+
+         On traite donc le cas déjà-abandonné avant d'écouter. */
+      if (!options.signal) { reject(new Error('aucun signal transmis au fetch')); return; }
+      if (options.signal.aborted) { reject(options.signal.reason); return; }
+      /* GARDE-FOU DE BOUCLE. `AbortSignal.timeout()` utilise un minuteur
+         « unref » : il ne maintient PAS la boucle d'événements en vie. Si rien
+         d'autre ne la retient, Node sort avant que l'abandon ne parte, la
+         promesse reste pendante, et Node 22 annule tout le fichier de tests
+         (« Promise resolution is still pending but the event loop has already
+         resolved »). Ce minuteur-ci garde la boucle vivante le temps que le
+         signal parte ; il est annulé dès l'abandon. */
+      const garde = setTimeout(() => reject(new Error('le signal ne s’est jamais déclenché')), 500);
+      options.signal.addEventListener('abort', () => {
+        clearTimeout(garde);
+        reject(options.signal.reason);
+      }, { once: true });
     });
   };
   try {
@@ -514,7 +535,17 @@ test('the timeout budget covers the whole redirect chain', async () => {
     if (calls === 1) return redirectResponse('https://supplier.example/slow.html');
     return new Promise((_resolve, reject) => {
       // Le second saut ne répond jamais : c'est le délai restant qui doit le tuer.
-      options.signal.addEventListener('abort', () => reject(options.signal.reason), { once: true });
+      // Même précaution que plus haut : un signal déjà abandonné ne redéclenchera
+      // jamais « abort », et la promesse resterait pendante.
+      if (!options.signal) { reject(new Error('aucun signal transmis au fetch')); return; }
+      if (options.signal.aborted) { reject(options.signal.reason); return; }
+      // Même garde-fou de boucle que plus haut : le minuteur d'AbortSignal.timeout
+      // est « unref » et ne retient pas le processus.
+      const garde = setTimeout(() => reject(new Error('le signal ne s’est jamais déclenché')), 800);
+      options.signal.addEventListener('abort', () => {
+        clearTimeout(garde);
+        reject(options.signal.reason);
+      }, { once: true });
     });
   };
   try {
