@@ -60,7 +60,15 @@ function presentedSecret(req) {
    est protégé autrement (signature HMAC vérifiée dans routes/orders.js,
    voir services/sendcloud.js:verifyWebhookSignature), pas par ce
    middleware. */
-const PUBLIC_PATHS = new Set(['/api/health', '/api/orders/sendcloud/webhook']);
+/* `/api/cron/denicheur` est public AU NIVEAU DU MIDDLEWARE mais protégé par son
+   PROPRE jeton (CRON_SECRET), vérifié dans routes/cron.js. Un planificateur
+   externe ne doit pas détenir la clé admin : il n'a besoin que de lancer une
+   chasse, pas de lire les commandes ni les clients. */
+const PUBLIC_PATHS = new Set([
+  '/api/health',
+  '/api/orders/sendcloud/webhook',
+  '/api/cron/denicheur',
+]);
 
 export function requireAdmin(req, res, next) {
   if (PUBLIC_PATHS.has(req.path)) return next();

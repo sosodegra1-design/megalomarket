@@ -80,7 +80,11 @@ test('throwing a non-Error value is contained the same way', async () => {
   assert.equal(logs.length, 1);
 });
 
-test('startScheduler registers all 5 jobs with the exact expressions', async () => {
+/* QUATRE tâches, et non cinq : le Dénicheur n'est plus planifié ici. Son cron
+   interne à 3 h du matin ne se déclenchait jamais (le service s'endort), et il
+   est passé sur un déclencheur externe — voir routes/cron.js et
+   .github/workflows/denicheur.yml. */
+test('startScheduler enregistre les 4 tâches restantes avec les expressions exactes', async () => {
   const { registered, schedule } = captureSchedules();
   const logs = [];
   const logger = async (kind, message) => { logs.push({ kind, message }); };
@@ -98,11 +102,17 @@ test('startScheduler registers all 5 jobs with the exact expressions', async () 
   // Les cadences ne doivent pas bouger sans qu'on le décide explicitement.
   assert.deepEqual(
     registered.map((entry) => entry.expression),
-    ['*/15 * * * *', '*/5 * * * *', '0 3 */2 * *', '*/10 * * * *', '*/30 * * * *'],
+    ['*/15 * * * *', '*/5 * * * *', '*/10 * * * *', '*/30 * * * *'],
   );
   assert.deepEqual(
     registered.map((entry) => entry.options?.noOverlap),
-    [true, true, true, true, true],
+    [true, true, true, true],
+  );
+  // Le Dénicheur ne doit plus apparaître : deux déclencheurs concurrents
+  // produiraient deux lots pour la même semaine.
+  assert.ok(
+    !registered.some((entry) => entry.expression === '0 3 */2 * *'),
+    'le cron du Dénicheur ne doit plus être enregistré',
   );
   // Les expressions sont bien comprises par le node-cron réellement installé.
   for (const { expression } of registered) {
@@ -142,10 +152,9 @@ test('the callbacks registered by startScheduler contain a failing job instead o
   }
 
   const errors = logs.filter((entry) => entry.kind === 'ERREUR_SYNC');
-  assert.equal(errors.length, 5, 'chaque tick en échec doit être journalisé, sans fuite');
+  assert.equal(errors.length, 4, 'chaque tick en échec doit être journalisé, sans fuite');
   assert.match(errors[0].message, /synchronisation stock planifiée/);
   assert.match(errors[1].message, /synchronisation commandes planifiée/);
-  assert.match(errors[2].message, /synchronisation denicheur planifiée/);
-  assert.match(errors[3].message, /synchronisation retours planifiée/);
-  assert.match(errors[4].message, /synchronisation controle_qualite planifiée/);
+  assert.match(errors[2].message, /synchronisation retours planifiée/);
+  assert.match(errors[3].message, /synchronisation controle_qualite planifiée/);
 });

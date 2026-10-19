@@ -74,16 +74,25 @@ export async function startScheduler({
   schedule('*/5 * * * *', () => runSafely('commandes', ordersJob, logger), { noOverlap: true });
 
   /*
-   * Dénicheur : tous les 2 jours à 3h du matin (heure serveur). `*\/2` sur le
-   * jour du mois n'est qu'une approximation de « tous les 2 jours » — il
-   * repart à 1 au début de chaque mois (donc parfois un jour d'écart en fin
-   * de mois) — sans conséquence réelle pour une simple actualisation de
-   * suggestions. `nicheJob()` sans argument : pas d'axe de recherche imposé,
-   * la tâche planifiée part sur un lot généraliste comme le bouton manuel.
-   * Si l'IA n'est pas configurée, huntNiches() lève une erreur que
-   * runSafely() journalise sans jamais faire tomber le processus.
+   * DÉNICHEUR : PLUS DE CRON INTERNE — ET C'EST VOLONTAIRE.
+   *
+   * Il y avait ici `schedule('0 3 *\/2 * *', ...)`. Ce rendez-vous ne se
+   * déclenchait jamais : un cron vit À L'INTÉRIEUR du processus, et l'offre
+   * gratuite Render endort le service. Relevé en production : dernier lot de
+   * pépites vieux de 7 jours, 32 redémarrages en 30 heures.
+   *
+   * Le laisser en place serait pire que de le retirer : il donnerait
+   * l'illusion d'une actualisation automatique, et le jour où le service
+   * resterait éveillé par hasard, il lancerait une chasse EN PLUS du
+   * déclencheur externe — deux lots concurrents pour la même semaine.
+   *
+   * La chasse est désormais déclenchée de l'extérieur :
+   *   POST /api/cron/denicheur  (voir routes/cron.js)
+   *   .github/workflows/denicheur.yml  — chaque lundi 6 h UTC.
+   *
+   * `nicheJob` reste un paramètre d'injection (les tests s'en servent), mais il
+   * n'est plus planifié ici.
    */
-  schedule('0 3 */2 * *', () => runSafely('denicheur', () => nicheJob(), logger), { noOverlap: true });
 
   /*
    * Retours (e-mail SAV) : toutes les 10 minutes. Idempotent — chaque retour
