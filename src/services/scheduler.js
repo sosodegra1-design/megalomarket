@@ -126,5 +126,13 @@ export async function startScheduler({
    * À rebrancher le jour où un connecteur exposera updateStock.
    */
 
-  await logSafely('DEMARRAGE', 'Planificateur de synchronisation démarré (stock: 15 min, commandes: 5 min, Dénicheur: tous les 2 jours, retours: 10 min, contrôle qualité: 30 min).', logger);
+  // Le message doit dire la VÉRITÉ sur ce qui est planifié. Il annonçait encore un
+  // « Dénicheur : tous les 2 jours » alors que ce cron est retiré (déclencheur
+  // externe) : un journal qui décrit une tâche inexistante fait chercher au
+  // mauvais endroit le jour où elle ne tourne pas.
+  await logSafely(
+    'DEMARRAGE',
+    'Planificateur de synchronisation démarré (stock: 15 min, commandes: 5 min, retours: 10 min, contrôle qualité: 30 min). Dénicheur : déclencheur externe, voir /api/cron/denicheur.',
+    logger,
+  );
 }
