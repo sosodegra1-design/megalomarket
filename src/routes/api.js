@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { dbAll, dbGet, dbRun, logActivity } from '../db/database.js';
 import { config } from '../config/env.js';
 import { allChannelsStatus } from '../connectors/index.js';
+import { dumpDatabase, checkDumpCompleteness } from '../services/backup.js';
 import { generatePriceRecommendations } from '../ai/priceOptimizer.js';
 import { generateDescription } from '../ai/descriptionWriter.js';
 import { qualifySupportMessage } from '../ai/supportAgent.js';
@@ -76,9 +77,57 @@ export function missingConfiguration() {
 }
 
 // --- Supervision ---
-api.get('/health', (req, res) => {
-  res.json({ ok: true });
+/* Sonde de santé. Elle est PUBLIQUE (voir middleware/auth.js) : c'est le seul
+   point que la surveillance externe peut interroger sans clé.
+   Deux règles :
+   1. Ne JAMAIS y exposer de secret — uniquement des états.
+   2. Ne jamais mentir. Une base injoignable renvoie 503, pas 200 : une sonde qui
+      répond toujours « ok » ne surveille rien, elle rassure.
+   Elle vérifie réellement la base (une lecture triviale) au lieu de se contenter
+   de constater que le processus tourne — un serveur debout devant une base
+   morte est un serveur mort. */
+api.get('/health', async (req, res) => {
+  let base = 'ok';
+  try {
+    await dbGet('SELECT 1 AS ok');
+  } catch {
+    base = 'injoignable';
+  }
+
+  const ok = base === 'ok';
+  res.status(ok ? 200 : 503).json({
+    ok,
+    database: base,
+    uptimeSeconds: Math.round(process.uptime()),
+    checkedAt: new Date().toISOString(),
+  });
 });
+
+// --- Sauvegardes ---
+/*
+ * Export complet en JSON. Protege par la cle comme le reste du back-office :
+ * le fichier contient des donnees clients (commandes, adresses), il ne doit
+ * jamais partir sans authentification.
+ *
+ * `?meta=1` renvoie l'inventaire seul (noms de tables, nombres de lignes) sans
+ * les donnees : de quoi verifier qu'une sauvegarde est complete sans faire
+ * transiter d'informations personnelles.
+ */
+api.get('/backup', asyncRoute(async (req, res) => {
+  const metaOnly = String(req.query.meta || '') === '1';
+  const dump = await dumpDatabase({ includeData: !metaOnly });
+
+  if (metaOnly) {
+    const controle = checkDumpCompleteness(dump);
+    res.json({ ...dump, controle });
+    return;
+  }
+
+  const jour = new Date().toISOString().slice(0, 10);
+  res.setHeader('Content-Type', 'application/json; charset=utf-8');
+  res.setHeader('Content-Disposition', `attachment; filename="megalomarket-sauvegarde-${jour}.json"`);
+  res.send(JSON.stringify(dump, null, 2));
+}));
 
 // --- État des connecteurs ---
 api.get('/channels', (req, res) => {
