@@ -259,6 +259,27 @@ async function migrateImportsLandedCost() {
   return addedQuantity || addedFees;
 }
 
+/* Champs apportés par un catalogue fournisseur (voir connectors/rewix.js) : le
+   poids et le code douanier ne se devinent pas, et le catalogue Rewix les donne.
+   Le poids est stocké en GRAMMES — un entier, et l'unité est dans le nom de la
+   colonne : stocker « 2 » pour 2 kg dans une colonne nommée « poids » finirait un
+   jour interprété comme 2 g.
+
+   `source_ref` garde l'identifiant chez le fournisseur : le code produit peut
+   changer côté fournisseur, l'identifiant numérique non — c'est lui qui permet
+   de relier un produit du hub à sa fiche d'origine. */
+async function migrateProductsSourceFields() {
+  const ajouts = await Promise.all([
+    addColumnIfMissing('products', 'weight_g', 'INTEGER'),
+    addColumnIfMissing('products', 'hs_code', 'TEXT'),
+    addColumnIfMissing('products', 'source_ref', 'TEXT'),
+  ]);
+  if (ajouts.some(Boolean)) {
+    await logActivity('MIGRATION', 'Colonnes products.weight_g, hs_code et source_ref ajoutées : poids, code douanier et référence fournisseur.');
+  }
+  return ajouts.some(Boolean);
+}
+
 /* Coût et délai d'expédition d'un transporteur, saisis à la main (aucune API
    de cotation en temps réel n'est branchée ici — voir src/services/shipping.js).
    NULL tant que non renseigné : un transporteur sans coût connu est ignoré par
@@ -478,6 +499,7 @@ export async function initDatabase() {
   await migrateImportsLandedCost();
   await migrateLumivitaChannel();
   await seedCurrenciesIfEmpty();
+  await migrateProductsSourceFields();
 }
 
 /* Les devises sont installées AVEC le schéma, et non au démarrage du serveur

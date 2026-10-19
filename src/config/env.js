@@ -167,6 +167,30 @@ export const config = {
     },
   },
 
+  /* Rewix — grossiste dropshipping (voir connectors/rewix.js).
+     L'URL de base dépend du FOURNISSEUR : chaque grossiste Rewix a son propre
+     domaine, il n'y a pas d'URL publique commune. On ne peut donc pas la
+     deviner, et on refuse de fonctionner sans elle plutôt que d'inventer un
+     hôte qui échouerait à chaque appel.
+
+     L'authentification est en Basic : la clé API sert de NOM d'utilisateur, et
+     le mot de passe est celui du compte sur le site du fournisseur — les deux
+     restent synchronisés côté Rewix (changer le mot de passe du site casse
+     l'API).
+
+     `locales` : Rewix exige au moins une locale (`acceptedlocales`). On demande
+     le français en premier, l'anglais en repli — un produit sans traduction
+     française doit encore remonter avec son nom anglais plutôt que pas du tout. */
+  rewix: {
+    baseUrl: process.env.REWIX_API_URL || null,
+    apiKey: process.env.REWIX_API_KEY || null,
+    password: process.env.REWIX_PASSWORD || null,
+    locales: process.env.REWIX_LOCALES || 'fr_FR,en_US',
+    get ready() {
+      return has('REWIX_API_URL', 'REWIX_API_KEY', 'REWIX_PASSWORD');
+    },
+  },
+
   /* Studio photo (Agent 2 — traitement visuel, voir services/imageStudio.js) :
      héberge et détoure/uniformise le fond des photos produit via Cloudinary. */
   cloudinary: {

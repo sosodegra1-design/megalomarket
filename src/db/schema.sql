@@ -181,6 +181,16 @@ CREATE TABLE IF NOT EXISTS pipeline_runs (
 -- (EUR = 1 par définition). Les taux sont saisis à la main : une API de change
 -- tomberait en panne au moment précis où l'on calcule un prix. `updated_at`
 -- permet de repérer un taux périmé.
+-- Petit magasin clé/valeur pour les états techniques qui ne méritent pas une
+-- colonne : curseur de synchronisation d'un fournisseur, date du dernier
+-- import réussi… Une table dédiée évite d'inventer une colonne à chaque besoin
+-- et de déformer une table métier pour y ranger un marqueur.
+CREATE TABLE IF NOT EXISTS app_state (
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS currencies (
   code TEXT PRIMARY KEY,
   country TEXT NOT NULL,
