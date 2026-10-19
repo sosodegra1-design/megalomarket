@@ -4,6 +4,7 @@ import { computePriceFromSupplier } from './pricing.js';
 import { loadCurrencyRates } from '../db/currency-catalogue.js';
 import { config } from '../config/env.js';
 import { getMultiplicateur } from '../services/pricingSettings.js';
+import { carrierCostForImport } from '../services/transport.js';
 import { connectors } from '../connectors/index.js';
 
 const MARKETPLACES = ['amazon', 'tiktok_shop', 'allegro', 'lumivita'];
@@ -219,10 +220,12 @@ export async function generateListingsForImport(importId) {
   let priceError = null;
   try {
     const rates = await loadCurrencyRates();
+    const { carrierCostEur } = await carrierCostForImport(imp);
     ({ suggestedPrice } = computePriceFromSupplier({
       purchasePrice: imp.purchase_price,
       currency: imp.currency,
       shippingPrice: imp.shipping_price,
+      carrierCostEur,
       lotQuantity: imp.lot_quantity,
       lotFees: imp.lot_fees,
       rates,

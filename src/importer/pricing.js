@@ -54,10 +54,50 @@ export function convertToEur(amount, currency, rates = {}) {
  * D'où `lotQuantity` et `lotFees` — et non « frais par unité », qui obligerait
  * à refaire la division à chaque saisie.
  */
+/*
+ * D'OÙ VIENT LE TRANSPORT — et combien.
+ *
+ * TROIS ORIGINES, UNE SEULE RETENUE, dans cet ordre :
+ *
+ *   1. la FICHE fournisseur (`shippingPrice`, écrit sur la page) ;
+ *   2. le TRANSPORTEUR (`carrierCostEur`) — la règle demandée : à défaut
+ *      d'indication sur la page, c'est au hub d'estimer avec NOS transporteurs ;
+ *   3. le FORFAIT DE LOT (`lotFees` réparti sur `lotQuantity`), pour les imports
+ *      saisis avant l'existence des deux premiers ;
+ *   4. sinon 0, et l'appelant DOIT le signaler : un prix calculé sans transport
+ *      ne couvre pas l'achat.
+ *
+ * Jamais de cumul : additionner deux origines compterait le port deux fois.
+ *
+ * La source est renvoyée pour que l'écran puisse la dire. Un transport LU sur la
+ * page et un transport ESTIMÉ au tarif d'un transporteur n'ont pas la même
+ * valeur de preuve, et l'utilisateur doit pouvoir faire la différence.
+ */
+export function resolveTransport({
+  currency,
+  shippingPrice = 0,
+  carrierCostEur = 0,
+  lotQuantity = 1,
+  lotFees = 0,
+  rates = {},
+} = {}) {
+  if (Number.isFinite(shippingPrice) && shippingPrice > 0) {
+    return { perPieceEur: round2(convertToEur(shippingPrice, currency, rates)), source: 'fiche' };
+  }
+  if (Number.isFinite(carrierCostEur) && carrierCostEur > 0) {
+    return { perPieceEur: round2(carrierCostEur), source: 'transporteur' };
+  }
+  if (Number.isFinite(lotFees) && lotFees > 0) {
+    return { perPieceEur: round2(lotFees / lotQuantity), source: 'lot' };
+  }
+  return { perPieceEur: 0, source: 'aucun' };
+}
+
 export function computeLandedCost({
   purchasePrice,
   currency,
   shippingPrice = 0,
+  carrierCostEur = 0,
   lotQuantity = 1,
   lotFees = 0,
   rates = {},
@@ -88,11 +128,11 @@ export function computeLandedCost({
    * QUE si aucun transport par pièce n'est renseigné : additionner les deux
    * compterait le transport deux fois — l'erreur la plus coûteuse du calcul.
    */
-  const transportParPiece = shippingPrice > 0
-    ? convertToEur(shippingPrice, currency, rates)
-    : round2(lotFees / lotQuantity);
+  const { perPieceEur } = resolveTransport({
+    currency, shippingPrice, carrierCostEur, lotQuantity, lotFees, rates,
+  });
 
-  return round2(unitPriceEur + transportParPiece);
+  return round2(unitPriceEur + perPieceEur);
 }
 
 /**
@@ -134,13 +174,15 @@ export function computePriceFromSupplier({
   purchasePrice,
   currency,
   shippingPrice = 0,
+  carrierCostEur = 0,
   lotQuantity = 1,
   lotFees = 0,
   rates = {},
   marginCoefficient,
   fixedFee,
 } = {}) {
-  const landedCost = computeLandedCost({ purchasePrice, currency, shippingPrice, lotQuantity, lotFees, rates });
+  const transport = resolveTransport({ currency, shippingPrice, carrierCostEur, lotQuantity, lotFees, rates });
+  const landedCost = computeLandedCost({ purchasePrice, currency, shippingPrice, carrierCostEur, lotQuantity, lotFees, rates });
   const suggestedPrice = computeSuggestedPrice(landedCost, { marginCoefficient, fixedFee });
 
   const code = String(currency || '').trim().toUpperCase();
@@ -157,7 +199,10 @@ export function computePriceFromSupplier({
       rate: rates[code] ?? null,
       priceInEur: round2(convertToEur(purchasePrice, currency, rates)),
       shippingPrice,
-      transportEur: transportParPiece,
+      carrierCostEur,
+      transportEur: transport.perPieceEur,
+      // D'où vient le transport : 'fiche', 'transporteur', 'lot' ou 'aucun'.
+      transportSource: transport.source,
       lotQuantity,
       lotFees,
       feesPerUnit: transportParPiece,

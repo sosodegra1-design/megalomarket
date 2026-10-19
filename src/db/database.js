@@ -262,13 +262,17 @@ async function migrateImportsLandedCost() {
      transport deux fois. */
   const addedShipping = await addColumnIfMissing('imports', 'shipping_price', 'REAL NOT NULL DEFAULT 0');
 
-  if (addedQuantity || addedFees || addedShipping) {
+  /* Transporteur retenu pour cet import. NULL = le premier transporteur tarifé
+     fera l'affaire, et l'écran le signalera comme un défaut, pas comme un choix. */
+  const addedCarrier = await addColumnIfMissing('imports', 'carrier_id', 'INTEGER');
+
+  if (addedQuantity || addedFees || addedShipping || addedCarrier) {
     await logActivity(
       'MIGRATION',
       'Colonnes imports.lot_quantity, lot_fees et shipping_price ajoutées : le prix conseillé tient compte du transport et de la douane.',
     );
   }
-  return addedQuantity || addedFees || addedShipping;
+  return addedQuantity || addedFees || addedShipping || addedCarrier;
 }
 
 /* Champs apportés par un catalogue fournisseur (voir connectors/rewix.js) : le

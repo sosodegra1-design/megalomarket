@@ -9,6 +9,7 @@ import { computePriceFromSupplier } from '../importer/pricing.js';
 import { loadCurrencyRates } from '../db/currency-catalogue.js';
 import { config } from '../config/env.js';
 import { getMultiplicateur } from '../services/pricingSettings.js';
+import { carrierCostForImport } from '../services/transport.js';
 import { withResolvedMargin } from './suppliers.js';
 import { inspectImages } from '../ai/visionInspector.js';
 
@@ -613,7 +614,7 @@ function suggestCurrency(code, connus) {
 
 async function recomputeListingPrices(importId) {
   const imp = await dbGet(
-    'SELECT purchase_price, currency, shipping_price, lot_quantity, lot_fees, supplier_id FROM imports WHERE id = ?',
+    'SELECT purchase_price, currency, shipping_price, carrier_id, lot_quantity, lot_fees, supplier_id FROM imports WHERE id = ?',
     [importId],
   );
   if (!imp) return 0;
@@ -630,10 +631,15 @@ async function recomputeListingPrices(importId) {
   }
 
   const rates = await loadCurrencyRates();
+  /* La page ne dit pas toujours le port : on estime alors avec NOTRE
+     transporteur, et le détail dira lequel — un transport estimé n'a pas la même
+     valeur de preuve qu'un transport lu sur la fiche. */
+  const { carrierCostEur } = await carrierCostForImport(imp);
   const { suggestedPrice } = computePriceFromSupplier({
     purchasePrice: imp.purchase_price,
     currency: imp.currency,
     shippingPrice: imp.shipping_price,
+    carrierCostEur,
     lotQuantity: imp.lot_quantity,
     lotFees: imp.lot_fees,
     rates,
