@@ -1,0 +1,103 @@
+# Déclencheur externe du Dénicheur.
+#
+# POURQUOI PAS UN CRON INTERNE. `node-cron` tourne À L'INTÉRIEUR du processus.
+# Sur l'offre gratuite Render, le service s'endort après quelques minutes
+# d'inactivité : plus personne ne compte les minutes, et un rendez-vous à 3 h du
+# matin ne tombe jamais. Relevé en production : dernier lot vieux de 7 jours,
+# 32 redémarrages en 30 heures.
+#
+# Ce workflow SORT le déclencheur du processus. Il réveille le service au
+# passage, puis attend la réponse.
+#
+# PONCTUALITÉ — à savoir : GitHub ne garantit pas l'heure exacte d'un
+# `schedule`. Une exécution peut être retardée de 10 à 20 minutes, et GitHub en
+# saute parfois une en cas de forte charge. Pour une chasse HEBDOMADAIRE c'est
+# sans conséquence (personne ne s'aperçoit qu'un lot arrive à 6 h 12 au lieu de
+# 6 h 00). Ce serait inadapté à une synchronisation toutes les 5 minutes.
+#
+# SECRET REQUIS : `CRON_SECRET`, identique à la variable d'environnement du
+# service Render. Ce jeton est DISTINCT de la clé admin : s'il fuitait, il ne
+# pourrait que lancer une chasse.
+
+name: Dénicheur hebdomadaire
+
+on:
+  schedule:
+    # Lundi 06:00 UTC. Hebdomadaire et non bi-hebdomadaire : les tendances
+    # bougent à l'échelle de la semaine, et chaque chasse coûte deux appels au
+    # modèle (chasse + supervision).
+    - cron: '0 6 * * 1'
+  # Permet de lancer une chasse à la main depuis l'onglet Actions.
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Deux chasses simultanées créeraient deux lots et se disputeraient le délai de
+# garde côté serveur. On fait la queue plutôt que d'annuler : une chasse en
+# cours ne doit pas être interrompue au milieu de son écriture.
+concurrency:
+  group: denicheur
+  cancel-in-progress: false
+
+jobs:
+  chasse:
+    name: Chasse aux pépites
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Vérifier que le secret est présent
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          # Un secret absent ferait échouer l'appel avec un 401 opaque. On le
+          # dit explicitement, avec la marche à suivre.
+          if [ -z "$CRON_SECRET" ]; then
+            echo "::error::Le secret CRON_SECRET n'est pas configuré (Settings > Secrets and variables > Actions). Il doit être identique à la variable d'environnement CRON_SECRET du service Render."
+            exit 1
+          fi
+
+      - name: Lancer la chasse
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+          HUB_URL: https://megalomarket-ai-core.onrender.com
+        run: |
+          # --max-time large : le service peut être endormi, et une chasse coûte
+          # deux appels au modèle. 5 minutes couvrent le réveil + la génération.
+          code=$(curl -sS -o /tmp/reponse.json -w '%{http_code}' \
+            --max-time 300 \
+            -X POST "$HUB_URL/api/cron/denicheur" \
+            -H "X-Cron-Token: $CRON_SECRET")
+
+          echo "HTTP $code"
+          cat /tmp/reponse.json || true
+          echo
+
+          if [ "$code" = "429" ]; then
+            # Pas un échec : une chasse a déjà eu lieu récemment (délai de garde
+            # de 10 minutes). On sort proprement pour ne pas alerter à tort.
+            echo "::notice::Chasse ignorée — un lot récent existe déjà."
+            exit 0
+          fi
+
+          if [ "$code" != "200" ]; then
+            echo "::error::La chasse a échoué (HTTP $code). Voir la réponse ci-dessus."
+            exit 1
+          fi
+
+          # Résumé lisible dans l'onglet Actions, sans avoir à ouvrir le journal.
+          python3 - <<'PY'
+          import json, os
+          d = json.load(open('/tmp/reponse.json'))
+          lignes = [
+              f"## Chasse aux pépites — {d.get('pistes', '?')} pistes",
+              "",
+              f"- Lot : `{d.get('batchId')}`",
+              f"- Suggestions signalées par le superviseur : **{d.get('signalees', 0)}**",
+          ]
+          if d.get('supervision'):
+              lignes.append(f"- ⚠️ Supervision incomplète : {d['supervision']}")
+          else:
+              lignes.append("- ✅ Supervision effectuée")
+          open(os.environ['GITHUB_STEP_SUMMARY'], 'a').write("\n".join(lignes) + "\n")
+          PY

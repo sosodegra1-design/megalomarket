@@ -167,6 +167,20 @@ export const config = {
     },
   },
 
+  /* Jeton du déclencheur externe (GitHub Actions, moniteur…).
+     VOLONTAIREMENT DISTINCT d'ADMIN_API_KEY : ce jeton dort dans les secrets
+     d'un dépôt, il ne doit donc pouvoir que LANCER UNE CHASSE — jamais lire les
+     commandes, les prix ou les clients. Un secret qui traîne dans un second
+     endroit doit avoir le pouvoir le plus étroit possible.
+
+     Absent = déclencheur désactivé (échec en fermé, comme ADMIN_API_KEY). */
+  cron: {
+    secret: process.env.CRON_SECRET || null,
+    get ready() {
+      return has('CRON_SECRET');
+    },
+  },
+
   /* Rewix — grossiste dropshipping (voir connectors/rewix.js).
      L'URL de base dépend du FOURNISSEUR : chaque grossiste Rewix a son propre
      domaine, il n'y a pas d'URL publique commune. On ne peut donc pas la

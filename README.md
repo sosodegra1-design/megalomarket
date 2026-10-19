@@ -182,10 +182,14 @@ bancaire requise). La base de données ne vit donc pas sur un disque Render (pay
 
 Le plan gratuit de Render arrête le service après ~15 min sans requête, ce qui empêche les
 synchronisations planifiées (`src/services/scheduler.js`) de se déclencher pendant la veille.
-Solution gratuite : configure un ping régulier (toutes les 10-14 min) vers
-`https://<ton-service>.onrender.com/api/health` avec un service comme
-[cron-job.org](https://cron-job.org) (gratuit, sans carte). Ça garde le service éveillé et
-les synchronisations internes tournent normalement.
+**Solution : un moniteur HTTP gratuit** (UptimeRobot ou cron-job.org), qui pointe sur
+`/api/health`. Il garde le service éveillé *et* prévient en cas de panne — un seul outil pour
+les deux besoins. La marche à suivre est dans la section [Supervision](#supervision).
+
+> **Attention :** garder le service éveillé fait fonctionner les synchronisations de stock et
+> de commandes, mais **pas** la chasse aux pépites. Son cron interne avait un rendez-vous à 3 h
+> du matin qui ne tombait jamais : elle est passée sur un déclencheur externe, voir
+> [Déclencheur externe](#déclencheur-externe-dénicheur).
 
 ## Authentification
 
@@ -243,6 +247,67 @@ créer un moniteur HTTP sur `https://<service>.onrender.com/api/health`, interva
 Sur l'offre gratuite Render, le service se met en veille après inactivité : un
 moniteur à 5 minutes sert aussi de **ping de maintien en vie** et supprime la
 latence de ~20 s du premier appel.
+
+### Mettre en place le moniteur
+
+Un seul outil couvre les deux besoins : **alerte** et **maintien en vie**.
+
+1. Créer un compte sur [UptimeRobot](https://uptimerobot.com) (gratuit).
+2. **Add New Monitor** → type **HTTP(s)**.
+3. URL : `https://<service>.onrender.com/api/health`
+4. Intervalle : **5 minutes**.
+5. Alerte : e-mail dès le premier échec.
+
+Ce que ça apporte :
+
+- **Alerte** si le hub tombe, ou si la base devient injoignable (la sonde renvoie
+  alors **503** — c'est pour cela qu'elle interroge réellement la base).
+- **Maintien en vie** : l'offre gratuite Render endort le service après ~15 min
+  sans requête. Un ping toutes les 5 minutes le garde éveillé, ce qui remet en
+  marche les synchronisations de stock et de commandes.
+
+> La chasse aux pépites **n'est pas couverte** par ce maintien en vie : elle a
+> son propre déclencheur externe, ci-dessous.
+
+## Déclencheur externe (Dénicheur)
+
+La chasse aux pépites **ne peut pas** être planifiée par un `cron` interne : sur
+l'offre gratuite, le service s'endort et le cron ne se déclenche jamais (relevé
+en production : dernier lot vieux de 7 jours). Le déclencheur vit donc **hors du
+processus**, dans GitHub Actions.
+
+| Élément | Rôle |
+|---|---|
+| `POST /api/cron/denicheur` | Lance une chasse. En-tête `X-Cron-Token`. |
+| `GET /api/cron/denicheur` | État du déclencheur, sans lancer de chasse |
+| `.github/workflows/denicheur.yml` | Appelle la route **chaque lundi à 6 h UTC** |
+
+**Le jeton est distinct de la clé admin.** Il ne peut que lancer une chasse —
+pas lire les commandes, les prix ni les clients.
+
+Mise en place :
+
+```bash
+# 1. Générer un jeton
+openssl rand -hex 32
+
+# 2. Le poser sur Render (Environment) ET dans GitHub
+#    (Settings > Secrets and variables > Actions > New repository secret)
+#    Les deux valeurs doivent être IDENTIQUES.
+
+# 3. Vérifier
+curl -H "X-Cron-Token: <jeton>" \
+  https://<service>.onrender.com/api/cron/denicheur
+```
+
+Un **délai de garde de 10 minutes** limite les chasses : un jeton dérobé ne peut
+pas brûler le quota du modèle en boucle. Pour forcer une chasse immédiate,
+utiliser le bouton du tableau de bord (qui passe par la clé admin).
+
+> **Limite connue :** GitHub ne garantit pas l'heure exacte d'un `schedule` —
+> retard de 10 à 20 minutes possible, et une exécution peut être sautée en cas de
+> forte charge. Sans conséquence pour une chasse hebdomadaire ; inadapté à une
+> tâche toutes les 5 minutes.
 
 ## Sauvegarde
 
