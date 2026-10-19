@@ -1362,6 +1362,39 @@ function poidsDepuisTexte(texte) {
   return Math.round(grammes);
 }
 
+/*
+ * NETTOYAGE DU TITRE — le remplissage SEO n'est pas le nom du produit.
+ *
+ * Une fiche Alibaba titre :
+ *   « Jouets Pour Enfants Pas Chers Ept 2023,…,Fusil À Bulles - Buy Product on Alibaba.com »
+ * Une fiche AliExpress : « … | AliExpress ». Une boutique Shopify ajoute parfois
+ * « – Mon Magasin ».
+ *
+ * Ce suffixe part dans le titre de l'annonce publiée sur Amazon, TikTok ou le
+ * site. Ce n'est pas neutre : un titre qui se termine par « Buy Product on
+ * Alibaba.com » annonce à tout le monde d'où vient la marchandise, et mange des
+ * caractères utiles dans une limite de 80.
+ *
+ * On ne retire QUE des suffixes connus. Un titre qui contient légitimement
+ * « on Alibaba.com » au milieu n'est pas touché.
+ */
+const SUFFIXES_DE_PLATEFORME = [
+  /\s*[-–—|]\s*Buy\s+[^-–—|]{0,80}?\s+on\s+Alibaba\.com\s*$/i,
+  /\s*[-–—|]\s*Alibaba\.com\s*$/i,
+  /\s*[|]\s*AliExpress\s*$/i,
+  /\s*[-–—|]\s*Made-in-China\.com\s*$/i,
+];
+
+export function cleanProductTitle(titre) {
+  let net = String(titre || '').trim();
+  if (!net) return net;
+  for (const motif of SUFFIXES_DE_PLATEFORME) {
+    net = net.replace(motif, '').trim();
+  }
+  // Un titre réduit à néant par le nettoyage serait pire que l'original.
+  return net.length >= 3 ? net : String(titre || '').trim();
+}
+
 export function extractShippingPrice($, texte) {
   // 1. Données structurées : le seul endroit où la devise est certaine.
   const taux = $('[itemprop="shippingRate"] [itemprop="price"], [itemprop="shippingRate"] [itemprop="value"]').first();
@@ -1428,7 +1461,7 @@ function extractFromHtml(html, finalUrl, patternSite) {
 
   return {
     sourceSite: patternSite,
-    title: title.trim(),
+    title: cleanProductTitle(title.trim()),
     rawDescription: rawDescription.trim(),
     purchasePrice: price,
     currency,
