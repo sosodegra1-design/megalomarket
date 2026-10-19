@@ -190,8 +190,8 @@ importsRouter.post(
     // photos à la main.
     const imageUrls = data.imageUrls.slice(0, MAX_IMAGES);
     const info = await dbRun(
-      `INSERT INTO imports (source_url, source_site, title, raw_description, purchase_price, currency, shipping_price, weight_g, image_urls, status, supplier_id, extraction_method, extraction_notes, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'brouillon', ?, ?, ?, ?)`,
+      `INSERT INTO imports (source_url, source_site, title, raw_description, purchase_price, currency, shipping_price, weight_g, lot_quantity, image_urls, status, supplier_id, extraction_method, extraction_notes, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'brouillon', ?, ?, ?, ?)`,
       [
         url,
         data.sourceSite,
@@ -203,6 +203,11 @@ importsRouter.post(
         Number.isFinite(Number(data.shippingPrice)) && Number(data.shippingPrice) > 0 ? Number(data.shippingPrice) : 0,
         // Poids lu sur la page, en grammes. NULL = inconnu, et le hub le dira.
         Number.isFinite(Number(data.weightGrams)) && Number(data.weightGrams) > 0 ? Math.round(Number(data.weightGrams)) : null,
+        /* Le MOQ comme quantité de lot par défaut. Un lot de 1 fait supporter
+           tout le port du colis par une seule pièce (45 € pour une affiche) ;
+           le minimum que le fournisseur accepte est un bien meilleur défaut, et
+           l'utilisateur peut le corriger. */
+        Number.isInteger(data.moq) && data.moq > 0 ? data.moq : 1,
         JSON.stringify(imageUrls),
         resolvedSupplierId,
         extractionMethod,

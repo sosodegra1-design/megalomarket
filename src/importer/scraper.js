@@ -1274,6 +1274,7 @@ function normalizeFastPathResult(platform, payload) {
     currency: payload.currency || 'USD',
     shippingPrice: Number.isFinite(payload.shippingPrice) ? payload.shippingPrice : 0,
     weightGrams: Number.isFinite(payload.weightGrams) ? payload.weightGrams : null,
+    moq: Number.isInteger(payload.moq) && payload.moq > 0 ? payload.moq : null,
     imageUrls: payload.imageUrls || [],
   };
 }
@@ -1323,6 +1324,96 @@ const BLOCKED_PAGE_TITLE = /(just a moment|attention required|access denied|are 
  *
  * Renvoie un entier de grammes, ou null.
  */
+/*
+ * CARACTÉRISTIQUES PRODUIT ALIBABA — le tableau « Caractéristiques du produit ».
+ *
+ * DÉCOUVERTE DÉCISIVE, en épuisant une vraie fiche : ces données ne sont PAS
+ * chargées par API, elles sont rendues côté serveur dans le HTML, balisées :
+ *
+ *   <div data-testid="module-attribute-row">
+ *     <div title="G.W/N.W"  data-testid="module-attribute-name">…</div>
+ *     <div title="17.5/16kgs" data-testid="module-attribute-value">…</div>
+ *   </div>
+ *
+ * On y trouve le POIDS (G.W/N.W), la QUANTITÉ PAR CARTON (QTY/CTN), le MOQ, les
+ * dimensions, la matière, l'origine. C'est là que se cache le poids qui manquait
+ * à tous nos calculs de transport.
+ *
+ * On lit le `title` : c'est la valeur COMPLÈTE, alors que le texte affiché est
+ * tronqué à l'écran (« 17.5/16kg… »).
+ */
+export function extractAlibabaAttributes($) {
+  const attributs = {};
+  $('[data-testid="module-attribute-row"]').each((_, el) => {
+    const nom = $(el).find('[data-testid="module-attribute-name"]').attr('title')
+      || $(el).find('[data-testid="module-attribute-name"]').text();
+    const valeur = $(el).find('[data-testid="module-attribute-value"]').attr('title')
+      || $(el).find('[data-testid="module-attribute-value"]').text();
+    const cle = String(nom || '').trim().toLowerCase();
+    const val = String(valeur || '').trim();
+    if (cle && val) attributs[cle] = val;
+  });
+  return attributs;
+}
+
+/** Cherche une valeur dont la CLÉ correspond à l'un des motifs. */
+function valeurAttribut(attributs, motifs) {
+  for (const [cle, val] of Object.entries(attributs || {})) {
+    if (motifs.some((m) => m.test(cle))) return val;
+  }
+  return null;
+}
+
+/**
+ * POIDS PAR PIÈCE, déduit du poids carton et de la quantité par carton.
+ *
+ *   G.W/N.W = « 17,5/16kgs »  →  poids BRUT du carton : 17,5 kg
+ *   QTY/CTN = « 16 PCS »      →  16 pièces par carton
+ *   → 17 500 g ÷ 16 = 1 094 g par pièce
+ *
+ * On prend le BRUT, pas le net : c'est ce que le transporteur pèse, emballage
+ * compris. Un carton de 16 pièces pèse 17,5 kg avec ses boîtes, pas 16 kg.
+ *
+ * Renvoie null si l'un des deux nombres manque : diviser par un QTY/CTN inventé
+ * donnerait un poids faux, donc un port faux, donc un prix faux.
+ */
+export function weightFromAlibabaAttributes(attributs) {
+  const poidsCarton = valeurAttribut(attributs, [/^g\.?w/i, /poids\s*brut/i, /gross\s*weight/i]);
+  const parCarton = valeurAttribut(attributs, [/^qty\s*\/?\s*ctn/i, /quantit[eé].*carton/i, /pcs.*carton/i]);
+  if (!poidsCarton || !parCarton) return null;
+
+  // « 17.5/16kgs » ou « 17,5 kg » : on ne garde que le premier nombre.
+  const nombrePoids = /([0-9]+(?:[.,][0-9]+)?)/.exec(poidsCarton);
+  if (!nombrePoids) return null;
+  const valeur = Number(nombrePoids[1].replace(',', '.'));
+  if (!Number.isFinite(valeur) || valeur <= 0) return null;
+
+  // Une valeur en grammes est possible (« 850g ») ; sinon on suppose des kilos,
+  // ce qui est la convention du champ G.W/N.W.
+  const enGrammes = /[0-9]\s*g\b/i.test(poidsCarton) && !/kg/i.test(poidsCarton);
+  const poidsCartonG = enGrammes ? valeur : valeur * 1000;
+
+  const nombrePieces = /([0-9]+)/.exec(parCarton);
+  if (!nombrePieces) return null;
+  const pieces = Number(nombrePieces[1]);
+  if (!Number.isInteger(pieces) || pieces < 1) return null;
+
+  const parPiece = Math.round(poidsCartonG / pieces);
+  // Mêmes bornes que l'extracteur générique : hors de là, c'est une erreur.
+  if (parPiece < 1 || parPiece > 100000) return null;
+  return parPiece;
+}
+
+/** Quantité minimale de commande, en pièces — utile pour la quantité du lot. */
+export function moqFromAlibabaAttributes(attributs) {
+  const brut = valeurAttribut(attributs, [/minim.*commande/i, /^moq/i, /min.*order/i]);
+  if (!brut) return null;
+  const n = /([0-9][0-9\s.,]*)/.exec(brut);
+  if (!n) return null;
+  const valeur = Number(n[1].replace(/[\s.,]/g, ''));
+  return Number.isInteger(valeur) && valeur > 0 ? valeur : null;
+}
+
 export function extractWeightGrams($, texte, jsonLdProduct) {
   // 1. Données structurées : unité explicite, donc aucun doute.
   const poidsStructure = jsonLdProduct?.weight;
@@ -1360,6 +1451,39 @@ function poidsDepuisTexte(texte) {
   // (souvent une dimension ou un prix). On refuse plutôt que de fausser le port.
   if (grammes < 1 || grammes > 100000) return null;
   return Math.round(grammes);
+}
+
+/*
+ * NETTOYAGE DU TITRE — le remplissage SEO n'est pas le nom du produit.
+ *
+ * Une fiche Alibaba titre :
+ *   « Jouets Pour Enfants Pas Chers Ept 2023,…,Fusil À Bulles - Buy Product on Alibaba.com »
+ * Une fiche AliExpress : « … | AliExpress ». Une boutique Shopify ajoute parfois
+ * « – Mon Magasin ».
+ *
+ * Ce suffixe part dans le titre de l'annonce publiée sur Amazon, TikTok ou le
+ * site. Ce n'est pas neutre : un titre qui se termine par « Buy Product on
+ * Alibaba.com » annonce à tout le monde d'où vient la marchandise, et mange des
+ * caractères utiles dans une limite de 80.
+ *
+ * On ne retire QUE des suffixes connus. Un titre qui contient légitimement
+ * « on Alibaba.com » au milieu n'est pas touché.
+ */
+const SUFFIXES_DE_PLATEFORME = [
+  /\s*[-–—|]\s*Buy\s+[^-–—|]{0,80}?\s+on\s+Alibaba\.com\s*$/i,
+  /\s*[-–—|]\s*Alibaba\.com\s*$/i,
+  /\s*[|]\s*AliExpress\s*$/i,
+  /\s*[-–—|]\s*Made-in-China\.com\s*$/i,
+];
+
+export function cleanProductTitle(titre) {
+  let net = String(titre || '').trim();
+  if (!net) return net;
+  for (const motif of SUFFIXES_DE_PLATEFORME) {
+    net = net.replace(motif, '').trim();
+  }
+  // Un titre réduit à néant par le nettoyage serait pire que l'original.
+  return net.length >= 3 ? net : String(titre || '').trim();
 }
 
 export function extractShippingPrice($, texte) {
@@ -1421,19 +1545,34 @@ function extractFromHtml(html, finalUrl, patternSite) {
      un montant mal interprété fausserait tous les prix en silence. */
   const textePage = cleanText($('body').text()).slice(0, 20000);
   const port = extractShippingPrice($, textePage);
-  const weightGrams = extractWeightGrams($, textePage, jsonLdProduct);
+  let weightGrams = extractWeightGrams($, textePage, jsonLdProduct);
+
+  /* Repli DÉCISIF pour Alibaba : le poids n'est pas dans les métadonnées, il est
+     dans le tableau « Caractéristiques du produit » (G.W/N.W ÷ QTY/CTN). Sans ce
+     repli, toute fiche Alibaba arrivait sans poids — donc avec un port estimé au
+     forfait au lieu du kilo.
+
+     Le MOQ vient du même tableau : c'est la quantité minimale que le fournisseur
+     accepte. S'en servir comme quantité de lot par défaut évite le piège du lot
+     de 1, où une pièce supporte tout le port du colis. */
+  const attributsAlibaba = extractAlibabaAttributes($);
+  if (weightGrams == null) {
+    weightGrams = weightFromAlibabaAttributes(attributsAlibaba);
+  }
+  const moq = moqFromAlibabaAttributes(attributsAlibaba);
   const shippingPrice = port && port.shippingCurrency && port.shippingCurrency === String(currency).toUpperCase()
     ? port.shippingPrice
     : 0;
 
   return {
     sourceSite: patternSite,
-    title: title.trim(),
+    title: cleanProductTitle(title.trim()),
     rawDescription: rawDescription.trim(),
     purchasePrice: price,
     currency,
     shippingPrice,
     weightGrams,
+    moq,
     imageUrls,
   };
 }
