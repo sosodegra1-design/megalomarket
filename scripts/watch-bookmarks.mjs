@@ -54,7 +54,14 @@ async function api(path, body) {
 
 async function serverIsUp() {
   try {
-    const response = await fetch(`${SERVER}/api/health`, { signal: AbortSignal.timeout(5000) });
+    /* DÉLAI ADAPTÉ AU RÉVEIL D'UN SERVICE ENDORMI. Sur l'offre gratuite Render,
+       le service s'arrête après ~15 min sans requête : la PREMIÈRE requête le
+       réveille et peut mettre 30 à 60 s. Avec 5 s, le chien de garde concluait
+       « serveur injoignable » et sautait le passage — un lien déposé dans les
+       favoris attendait alors 5 à 10 minutes de plus, sans raison.
+       Réglable par HEALTH_TIMEOUT_MS. */
+    const delai = Number(process.env.HEALTH_TIMEOUT_MS) || 45000;
+    const response = await fetch(`${SERVER}/api/health`, { signal: AbortSignal.timeout(delai) });
     return response.ok;
   } catch {
     return false;
