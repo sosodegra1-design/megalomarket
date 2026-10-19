@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { askModel, parseJsonFromModel } from './client.js';
 import { dbAll, dbRun, logActivity } from '../db/database.js';
+import { reviewBatch } from './nicheSupervisor.js';
 
 /*
  * Agent « chasseur de pépites ».
@@ -87,7 +88,41 @@ export async function huntNiches({ focus } = {}) {
 
   saved.sort((a, b) => a.rank - b.rank);
   await logActivity('DENICHEUR_CHASSE', `Nouvelle chasse aux pépites : ${saved.length} suggestion(s) générée(s) (lot ${batchId}).`);
-  return { batchId, finds: saved };
+
+  /* ---------- Supervision chaînée ----------
+     Le superviseur existait mais n'était appelé par personne : le seul garde-fou
+     qualité de la chaîne dormait, et les lots partaient avec `review_ok` à NULL
+     — relevé en production sur les 20 lignes du dernier lot.
+
+     On le chaîne donc ici plutôt que de compter sur un clic. Un garde-fou qu'on
+     oublie n'est pas un garde-fou.
+
+     Mais un échec de relecture ne doit JAMAIS coûter le lot : les suggestions
+     sont déjà en base. On l'attrape, on le journalise, et on renvoie les pistes
+     sans verdict — l'écran garde alors son bouton de vérification manuelle. */
+  let supervision = null;
+  try {
+    supervision = await reviewBatch(batchId);
+  } catch (error) {
+    await logActivity(
+      'DENICHEUR_SUPERVISION_ECHEC',
+      `Supervision du lot ${batchId} impossible : ${error.message}. Les ${saved.length} suggestions restent disponibles et vérifiables à la main.`,
+    );
+  }
+
+  /* On renvoie les lignes AVEC le verdict : l'écran affiche le résultat de la
+     relecture sans avoir à recharger le lot. */
+  if (supervision && Array.isArray(supervision.reviewed)) {
+    const parRang = new Map(supervision.reviewed.map((entree) => [entree.rank, entree]));
+    for (const ligne of saved) {
+      const verdict = parRang.get(ligne.rank);
+      if (!verdict) continue;
+      ligne.reviewOk = verdict.ok;
+      ligne.reviewIssue = verdict.issue;
+    }
+  }
+
+  return { batchId, finds: saved, supervision: supervision ? supervision.error ?? null : 'indisponible' };
 }
 
 /** Retourne le dernier lot généré (les 20 lignes les plus récentes du batch le plus récent), ou un lot vide. */

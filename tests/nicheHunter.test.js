@@ -144,3 +144,94 @@ test('la route de chasse exige la clé admin', async () => {
   const response = await fetch(base + '/api/niches/hunt', { method: 'POST' });
   assert.equal(response.status, 401);
 });
+
+/*
+ * LA SUPERVISION DOIT PARTIR TOUTE SEULE.
+ *
+ * Le superviseur existait mais n'était appelé par personne : relevé en
+ * production, les 20 lignes du dernier lot portaient `review_ok = NULL`. Un
+ * garde-fou qu'on doit penser à déclencher n'est pas un garde-fou.
+ *
+ * Ce test distingue les DEUX appels au modèle (chasse, puis relecture) et
+ * vérifie que le verdict atterrit à la fois dans la réponse et en base.
+ */
+test('la chasse déclenche la supervision et enregistre son verdict', async () => {
+  const finds = [makeFind(1), makeFind(2), makeFind(3)];
+  const verdict = {
+    reviewed: [
+      { rank: 1, ok: true, issue: null },
+      { rank: 2, ok: false, issue: 'Fourchette de prix irréaliste pour ce type de produit.' },
+      { rank: 3, ok: true, issue: null },
+    ],
+  };
+
+  const original = global.fetch;
+  const appels = [];
+  global.fetch = async (url, options) => {
+    if (!String(url).includes('/chat/completions')) return original(url, options);
+    appels.push(String(url));
+    // 1er appel : la chasse. 2e : la supervision. Contenus DIFFÉRENTS, sinon
+    // le test passerait même si le superviseur n'était jamais appelé.
+    const content = appels.length === 1 ? JSON.stringify({ finds }) : JSON.stringify(verdict);
+    const payload = { choices: [{ message: { content } }] };
+    return { ok: true, status: 200, json: async () => payload, text: async () => JSON.stringify(payload) };
+  };
+
+  let result;
+  try {
+    result = await call('/api/niches/hunt', { method: 'POST', body: {} });
+  } finally {
+    global.fetch = original;
+  }
+
+  assert.equal(result.status, 200);
+  assert.equal(appels.length, 2, 'le modèle doit être appelé DEUX fois : chasse puis supervision');
+
+  // Le verdict est renvoyé avec les pistes, sans rechargement.
+  const parRang = new Map(result.body.finds.map((f) => [f.rank, f]));
+  assert.equal(parRang.get(1).reviewOk, true);
+  assert.equal(parRang.get(2).reviewOk, false);
+  assert.match(parRang.get(2).reviewIssue, /irréaliste/);
+
+  // Et il est bien PERSISTÉ, pas seulement affiché.
+  const enBase = await dbAll(
+    'SELECT rank, review_ok, review_issue FROM trend_finds WHERE batch_id = ? ORDER BY rank',
+    [result.body.batchId],
+  );
+  assert.equal(enBase.length, 3);
+  assert.equal(enBase[1].review_ok, 0);
+  assert.match(enBase[1].review_issue, /irréaliste/);
+});
+
+test('une supervision en échec ne fait PAS perdre le lot', async () => {
+  // Le cas qui compterait : le second appel tombe. Les suggestions doivent
+  // rester disponibles, sinon le garde-fou deviendrait une source de panne.
+  const finds = [makeFind(1), makeFind(2)];
+
+  const original = global.fetch;
+  let appel = 0;
+  global.fetch = async (url, options) => {
+    if (!String(url).includes('/chat/completions')) return original(url, options);
+    appel += 1;
+    if (appel === 1) {
+      const payload = { choices: [{ message: { content: JSON.stringify({ finds }) } }] };
+      return { ok: true, status: 200, json: async () => payload, text: async () => JSON.stringify(payload) };
+    }
+    // La supervision échoue (502 côté fournisseur).
+    return { ok: false, status: 502, json: async () => ({}), text: async () => 'bad gateway' };
+  };
+
+  let result;
+  try {
+    result = await call('/api/niches/hunt', { method: 'POST', body: {} });
+  } finally {
+    global.fetch = original;
+  }
+
+  assert.equal(result.status, 200, 'la chasse reste un succès');
+  assert.equal(result.body.finds.length, 2, 'les pistes sont bien là');
+
+  const enBase = await dbAll('SELECT review_ok FROM trend_finds WHERE batch_id = ?', [result.body.batchId]);
+  assert.equal(enBase.length, 2);
+  assert.ok(enBase.every((r) => r.review_ok === null), 'sans verdict, mais conservées');
+});
