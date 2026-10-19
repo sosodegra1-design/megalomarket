@@ -4107,14 +4107,25 @@ async function loadChannels() {
   const channels = await api('/api/channels');
   state.channels = channels;
   if (box) {
-    if (!channels.length) box.innerHTML = '<p class="empty">Aucun canal enregistré.</p>';
-    else box.innerHTML = channels.map((c) => (
+    /* Seuls les canaux RÉELLEMENT configurés apparaissent : les autres ne
+       peuvent rien recevoir, et les afficher revient à proposer des boutons qui
+       échouent. Leur nombre est rappelé une fois, pour qu'ils ne semblent pas
+       avoir disparu par accident. */
+    const actifs = channels.filter((c) => c.configured);
+    const inactifs = channels.filter((c) => !c.configured).map((c) => c.channel);
+    const rappel = inactifs.length
+      ? '<p class="hint hint-tight" style="margin-top:10px">'
+        + inactifs.length + ' canal(aux) non configuré(s), masqué(s) : '
+        + esc(inactifs.join(', ')) + '. Ils réapparaîtront dès qu\'ils seront configurés.</p>'
+      : '';
+    if (!actifs.length) box.innerHTML = '<p class="empty">Aucun canal configuré pour le moment.</p>' + rappel;
+    else box.innerHTML = actifs.map((c) => (
       '<div class="channel-card row-in">'
       + '<div class="channel-main"><span class="channel-name">' + esc(c.channel) + '</span>'
       + '<span class="channel-meta">' + (c.configured ? 'Prêt à recevoir des écritures.' : 'Ignoré par les synchronisations.') + '</span></div>'
       + '<span class="pill ' + (c.configured ? 'ok' : 'off') + '">' + (c.configured ? 'configuré' : 'non configuré') + '</span>'
       + '</div>'
-    )).join('');
+    )).join('') + rappel;
     stagger(box);
   }
   scheduleDashboard();
@@ -6347,6 +6358,31 @@ $('btnGenerate').addEventListener('click', (event) => action(event.currentTarget
 }));
 
 /* ===================== IMPORT : FICHES ===================== */
+
+/* Quels canaux méritent d'être affichés ?
+ *
+ * Un canal NON configuré est déjà ignoré par les synchronisations — il ne peut
+ * rien recevoir. Afficher quand même ses fiches produit deux effets pervers :
+ * l'écran se remplit de cartes inertes (5 canaux dont 3 morts), et l'on croit
+ * devoir remplir des formulaires qui ne partiront nulle part.
+ *
+ * DEUX EXCEPTIONS, volontaires :
+ *  - si l'état des canaux n'a pas pu être chargé, on n'en cache AUCUN (masquer
+ *    par accident serait pire que d'afficher en trop) ;
+ *  - une fiche DÉJÀ PUBLIÉE reste visible même si son canal est passé inactif :
+ *    on ne cache jamais quelque chose qui est en ligne. */
+function activeChannelNames() {
+  return (state.channels || []).filter((c) => c.configured).map((c) => c.channel);
+}
+
+function visibleListings(listings) {
+  const actifs = activeChannelNames();
+  if (!actifs.length) return { visibles: listings, masques: [] };
+  const visibles = listings.filter((l) => actifs.includes(l.marketplace) || l.status === 'publie');
+  const masques = listings.filter((l) => !visibles.includes(l)).map((l) => l.marketplace);
+  return { visibles, masques };
+}
+
 function renderListings(listings) {
   const box = $('listings');
   if (!box) return;
@@ -6354,7 +6390,25 @@ function renderListings(listings) {
     box.innerHTML = '<p class="empty">Aucune fiche pour cet import. Lance la génération IA.</p>';
     return;
   }
-  box.innerHTML = listings.map((l) => (
+
+  const { visibles, masques } = visibleListings(listings);
+  if (!visibles.length) {
+    // Toutes les fiches dorment sur des canaux non configurés : le dire, plutôt
+    // que d'afficher un écran vide et laisser croire à une panne.
+    box.innerHTML = '<p class="empty">Aucune fiche sur un canal actif. '
+      + (masques.length ? 'En attente de configuration : ' + esc(masques.join(', ')) + '.' : '')
+      + '</p>';
+    return;
+  }
+
+  // Une ligne discrète explique les absentes : une disparition silencieuse
+  // ferait chercher ce qu'on croit avoir perdu.
+  const note = masques.length
+    ? '<p class="hint hint-tight" style="margin:0 0 10px">' + masques.length
+      + ' fiche(s) masquée(s) — canal non configuré : ' + esc(masques.join(', ')) + '.</p>'
+    : '';
+
+  box.innerHTML = note + visibles.map((l) => (
     '<article class="listing-card row-in">'
     + '<header class="listing-head">'
     + '<div><span class="listing-mp">' + esc(l.marketplace) + '</span>'
@@ -6372,8 +6426,13 @@ function renderListings(listings) {
     + '<div class="field"><label for="p-' + esc(l.id) + '">Prix (€)</label>'
     + '<input class="input" type="number" id="p-' + esc(l.id) + '" step="0.01" min="0" value="' + esc(l.suggested_price) + '"></div>'
     + '</div>'
+    /* La description est REPLIÉE par défaut. Avec cinq canaux, cinq zones de
+       quatre lignes faisaient défiler l'écran sur plusieurs hauteurs d'écran
+       pour une information qu'on ne modifie qu'une fois sur dix. */
+    + '<details class="site-details"><summary>Description ('
+      + esc(String(l.description || '').length) + ' caractères)</summary>'
     + '<div class="field" style="margin-top:8px"><label for="d-' + esc(l.id) + '">Description</label>'
-    + '<textarea class="input textarea" id="d-' + esc(l.id) + '" rows="4">' + esc(l.description) + '</textarea></div>'
+    + '<textarea class="input textarea" id="d-' + esc(l.id) + '" rows="4">' + esc(l.description) + '</textarea></div></details>'
     + (l.marketplace === 'own_site'
       ? '<details class="site-details"><summary>Fiche détaillée du site (catégorie, univers, âge, icône, bilingue)</summary>'
         + '<p class="hint hint-tight" style="margin-top:8px">Le site exige ces champs, que les marketplaces ne demandent pas. Corrige le JSON si la génération s\'est trompée, puis enregistre avant de publier.</p>'

@@ -181,3 +181,71 @@ test('le tableau des devises est derrière la clé, comme le reste du back-offic
   const response = await fetch(base + '/api/currencies');
   assert.equal(response.status, 401);
 });
+
+/* ===================== GARDE-FOU : TAUX INVERSÉ ===================== */
+
+/* Constaté en production : le CNY enregistré à 6,33 au lieu de 0,13 — 6,33 est
+   le nombre de yuans pour 1 €, l'inverse exact de ce que le champ attend. Aucune
+   erreur n'était levée, et un achat de 1,80 CNY était compté 11,39 € au lieu de
+   0,23 €. Ce test verrouille le refus de ce cas précis. */
+
+test('un taux inversé est REFUSÉ, avec la valeur correcte dans le message', async () => {
+  const { status, body } = await call('/api/currencies/CNY', {
+    method: 'PATCH',
+    body: { rateToEur: 6.33 },
+  });
+
+  assert.equal(status, 400, 'un taux inversé ne doit jamais être enregistré');
+  assert.match(body.error, /invraisemblable/);
+  // Le message doit dire quoi saisir : sinon l'utilisateur répète l'erreur.
+  assert.match(body.error, /0\.13/);
+  assert.match(body.error, /prix d'UNE unité/);
+});
+
+test('un taux inversé n’est pas enregistré : la base reste intacte', async () => {
+  await call('/api/currencies/CNY', { method: 'PATCH', body: { rateToEur: 6.33 } });
+  const { body } = await call('/api/currencies');
+  const cny = (Array.isArray(body) ? body : body.currencies || body.rows || [])
+    .find((d) => d.code === 'CNY');
+  assert.ok(cny, 'le CNY doit toujours exister');
+  const taux = cny.rateToEur ?? cny.rate_to_eur;
+  assert.ok(taux < 1, `le taux du CNY doit rester sous 1 (reçu : ${taux})`);
+});
+
+test('une variation de change RÉELLE n’est pas bloquée', async () => {
+  // Le garde-fou ne doit pas gêner le travail normal : une dérive même forte,
+  // qui ne ressemble pas à un inverse, passe.
+  const { status } = await call('/api/currencies/CNY', {
+    method: 'PATCH',
+    body: { rateToEur: 0.11 },
+  });
+  assert.equal(status, 200, 'une vraie variation doit passer');
+});
+
+test('un taux inversé sur une devise très faible est aussi refusé', async () => {
+  // Le yen vaut ~0,006 € : saisir 166 (le nombre de yens pour 1 €) ferait
+  // exploser le prix d'un facteur 27 000.
+  const { status, body } = await call('/api/currencies/JPY', {
+    method: 'PATCH',
+    body: { rateToEur: 166 },
+  });
+  assert.equal(status, 400);
+  assert.match(body.error, /invraisemblable/);
+});
+
+test('une devise forte ne peut pas s’effondrer d’un coup (cas symétrique)', async () => {
+  // Aucune devise du catalogue ne vaut plus de 2 € (la livre est à 1,17), donc
+  // on en ajoute une pour éprouver la règle : le dinar koweïtien vaut ~3 €.
+  await call('/api/currencies', {
+    method: 'POST',
+    body: { code: 'KWD', country: 'Koweït', name: 'Dinar koweïtien', rateToEur: 3.2 },
+  });
+
+  // Saisir son inverse (0,31) au lieu de son prix : refusé.
+  const { status, body } = await call('/api/currencies/KWD', {
+    method: 'PATCH',
+    body: { rateToEur: 0.31 },
+  });
+  assert.equal(status, 400);
+  assert.match(body.error, /invraisemblable/);
+});

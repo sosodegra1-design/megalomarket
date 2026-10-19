@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { dbAll, dbGet, dbRun, logActivity } from '../db/database.js';
+import { CURRENCY_CATALOGUE } from '../db/currency-data.js';
 
 /*
  * Tableau des devises — lecture et correction des taux.
@@ -52,15 +53,48 @@ currenciesRouter.patch(
     const code = String(req.params.code || '').trim().toUpperCase();
     const { rateToEur, country, name } = req.body || {};
 
-    const existing = await dbGet('SELECT code FROM currencies WHERE code = ?', [code]);
+    const existing = await dbGet('SELECT code, rate_to_eur FROM currencies WHERE code = ?', [code]);
     if (!existing) throw new Error(`Devise inconnue : ${code}.`);
 
     const fields = [];
     const values = [];
 
     if (rateToEur !== undefined) {
+      const taux = parseRate(rateToEur);
+
+      /* GARDE-FOU CONTRE LE TAUX INVERSÉ.
+       *
+       * Constaté en production : le CNY enregistré à 6,33 alors que le champ
+       * attend 0,13. 6,33 est le nombre de yuans que vaut 1 € — l'INVERSE de ce
+       * qu'il faut. Aucune erreur n'est levée nulle part : un achat de 1,80 CNY
+       * est compté 11,39 € au lieu de 0,23 €, et le prix publié devient 20,50 €
+       * au lieu de 0,42 €.
+       *
+       * LA RÈGLE, en une phrase : une devise qui vaut aujourd'hui moins d'un
+       * demi-euro ne peut pas valoir soudainement plus d'un euro. Ce n'est pas
+       * un seuil arbitraire — c'est le sens même de l'inversion : on a saisi le
+       * nombre d'unités pour 1 € au lieu du prix d'une unité.
+       *
+       * On compare au taux ACTUEL et non à une référence figée : une dérive
+       * lente reste toujours possible (chaque correction reste sous le seuil),
+       * alors qu'un basculement d'un coup est une erreur de saisie.
+       *
+       * Le cas symétrique est traité aussi : une devise qui vaut plus de 2 €
+       * (GBP, CHF) ne peut pas tomber sous 0,5 € du jour au lendemain.
+       */
+      const actuel = existing.rate_to_eur;
+      const bascule = (actuel < 0.5 && taux > 1) || (actuel > 2 && taux < 0.5);
+      if (bascule) {
+        throw new Error(
+          `Taux invraisemblable pour ${code} : ${taux}, alors qu'il vaut actuellement ${actuel}. `
+          + `Le champ attend le prix d'UNE unité en euros — pas le nombre d'unités que vaut 1 €. `
+          + `Pour ${code}, saisis ${actuel} et non ${(1 / actuel).toFixed(2)}. `
+          + `Un taux inversé ne déclenche aucune erreur : il fausse silencieusement tous les prix.`,
+        );
+      }
+
       fields.push('rate_to_eur = ?');
-      values.push(parseRate(rateToEur));
+      values.push(taux);
     }
     if (country !== undefined) {
       if (typeof country !== 'string' || !country.trim()) throw new Error('Pays invalide.');
