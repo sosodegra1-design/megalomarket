@@ -46,15 +46,22 @@ function countingFetch(reply) {
   };
 }
 
+/* Perplexity est OPT-IN : fournir la clé ne suffit plus, il faut aussi
+   USE_PERPLEXITY_AGENT=true. Le helper pose les deux — sinon tous les tests du
+   chemin payant basculeraient sur le lecteur gratuit sans que rien ne le dise. */
 function withPerplexityKey(value, fn) {
   const saved = process.env.PERPLEXITY_API_KEY;
+  const savedFlag = process.env.USE_PERPLEXITY_AGENT;
   if (value === undefined) delete process.env.PERPLEXITY_API_KEY;
   else process.env.PERPLEXITY_API_KEY = value;
+  process.env.USE_PERPLEXITY_AGENT = 'true';
   try {
     return fn();
   } finally {
     if (saved === undefined) delete process.env.PERPLEXITY_API_KEY;
     else process.env.PERPLEXITY_API_KEY = saved;
+    if (savedFlag === undefined) delete process.env.USE_PERPLEXITY_AGENT;
+    else process.env.USE_PERPLEXITY_AGENT = savedFlag;
   }
 }
 

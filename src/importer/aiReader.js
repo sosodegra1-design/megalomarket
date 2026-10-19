@@ -439,7 +439,7 @@ export async function readProductPageWithAgent({
      Ce que la bascule ne fait pas : elle ne CHERCHE pas la page ailleurs. Si
      l'URL elle-même est bloquée, elle échouera comme avant — mais avec un
      message clair, et sans exiger de clé. */
-  if (!config.perplexity.ready) {
+  if (!config.perplexity.ready || !config.perplexity.enabled) {
     return readProductPageFree({ url, lookupHost, fetchImpl });
   }
 

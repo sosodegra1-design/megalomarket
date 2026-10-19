@@ -207,3 +207,29 @@ test('une adresse privée est refusée avant que r.jina.ai n’en entende parler
     restore();
   }
 });
+
+/* ===================== PERPLEXITY EST OPT-IN ===================== */
+
+test('une clé Perplexity présente ne réactive PAS le payant sans le drapeau', async () => {
+  // Le cas réel : une clé oubliée dans l'environnement d'un déploiement ne doit
+  // pas facturer en silence. Il faut USE_PERPLEXITY_AGENT=true, explicitement.
+  const sauveCle = process.env.PERPLEXITY_API_KEY;
+  const sauveDrapeau = process.env.USE_PERPLEXITY_AGENT;
+  process.env.PERPLEXITY_API_KEY = 'cle-qui-ne-doit-pas-servir';
+  delete process.env.USE_PERPLEXITY_AGENT;
+
+  const { appels, restore } = stubFetch();
+  let resultat;
+  try {
+    resultat = await readProductPageWithAgent({ url: URL_PRODUIT, lookupHost: publicLookup });
+  } finally {
+    restore();
+    if (sauveCle === undefined) delete process.env.PERPLEXITY_API_KEY;
+    else process.env.PERPLEXITY_API_KEY = sauveCle;
+    if (sauveDrapeau === undefined) delete process.env.USE_PERPLEXITY_AGENT;
+    else process.env.USE_PERPLEXITY_AGENT = sauveDrapeau;
+  }
+
+  assert.equal(resultat.strategy, 'agent-gratuit', 'le gratuit doit rester le défaut');
+  assert.ok(!appels.some((u) => u.includes('api.perplexity.ai')), 'aucun appel payant');
+});
