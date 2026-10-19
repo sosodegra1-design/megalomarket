@@ -108,6 +108,40 @@ les marketplaces (catégorie, univers, âge, clé d'icône, libellés bilingues)
 stockés dans `import_listings.site_payload` et générés par un appel IA dédié, contraint par la
 taxonomie lue sur `/api/admin/taxonomy`.
 
+## Comment une page produit est lue (et à quel prix)
+
+L'import essaie les couches dans cet ordre :
+
+| # | Couche | Coût | Ce qu'elle fait |
+|---|---|---|---|
+| 1-6 | Scraping direct (navigateur, mobile, googlebot, hôte alternatif, Wayback, Jina) | gratuit | lit le HTML de la page |
+| 7 | **Lecteur gratuit** : `r.jina.ai` + le modèle configuré | **gratuit** | `r.jina.ai` rend le texte de la page, le modèle local en extrait titre / prix / devise |
+| 8 | Agent Perplexity (`pro-search`) | **payant** | ouvre la page depuis son propre réseau — utile quand tout le reste est bloqué |
+
+**Le lecteur gratuit (7) est le défaut** : aucune clé à fournir. Ollama en local,
+ou Groq en ligne (offre gratuite) — les deux sont gratuits.
+
+**Perplexity (8) est optionnel.** Si `PERPLEXITY_API_KEY` est renseignée, il prend
+le relais en dernier recours ; sinon la chaîne s'arrête proprement à la couche 7
+avec un message qui renvoie vers la saisie manuelle.
+
+### Ce que le lecteur gratuit ne fait PAS
+
+Il **ne cherche pas** la page ailleurs : si l'URL elle-même est inaccessible,
+elle le restera. Perplexity, lui, peut retrouver un produit par recherche. La
+différence est réelle, mais elle ne justifie pas une clé payante pour la majorité
+des liens.
+
+### Les garde-fous sont les mêmes dans les deux cas
+
+Un titre d'annuaire (« Alibaba Manufacturer Directory »), un prix à 0, ou un prix
+sans devise explicite sont **refusés** — jamais devinés. Un prix faux se
+propagerait silencieusement jusqu'aux annonces publiées.
+
+La provenance est indiquée dans l'import : `agent-gratuit` ou `agent-perplexity`.
+L'interface ne prétend jamais qu'une page a été lue par un service qui n'a pas
+servi.
+
 ## Installation locale
 
 ```bash

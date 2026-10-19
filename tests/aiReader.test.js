@@ -241,20 +241,36 @@ test('un schéma non HTTP est refusé avant tout appel', async () => {
   });
 });
 
-test('sans clé Perplexity, l’erreur nomme la variable à renseigner', async () => {
-  await withPerplexityKey(undefined, async () => {
-    const probe = countingFetch(agentReply(PRODUIT_JSON));
-    await assert.rejects(
-      () => readProductPageWithAgent({
-        url: URL_PRODUIT,
-        lookupHost: publicLookup,
-        fetchImpl: probe.fetchImpl,
-      }),
-      /PERPLEXITY_API_KEY/,
-    );
-    assert.equal(probe.state.calls, 0, 'inutile d’appeler l’API sans clé');
+  test('sans clé Perplexity, la lecture bascule sur le lecteur GRATUIT', async () => {
+    // Avant, l'absence de clé faisait échouer net. Elle déclenche désormais le
+    // lecteur gratuit : r.jina.ai pour le texte, puis le modèle déjà configuré.
+    // Ce qui compte ici : l'appel payant n'est PAS tenté, et r.jina.ai l'est.
+    await withPerplexityKey(undefined, async () => {
+      const vues = [];
+      const fetchImpl = async (url) => {
+        vues.push(String(url));
+        if (String(url).startsWith('https://r.jina.ai/')) {
+          return { ok: true, status: 200, text: async () => 'Title: Bottine\nPrix : US$1.20 / piece' };
+        }
+        throw new Error('appel inattendu : ' + url);
+      };
+
+      // Le modèle n'est pas configuré dans ce test : l'extraction échouera,
+      // mais APRÈS la lecture — c'est exactement ce qu'on veut prouver.
+      await assert.rejects(
+        () => readProductPageWithAgent({ url: URL_PRODUIT, lookupHost: publicLookup, fetchImpl }),
+      );
+
+      assert.ok(
+        vues.some((u) => u.startsWith('https://r.jina.ai/')),
+        'le lecteur gratuit doit être sollicité',
+      );
+      assert.ok(
+        !vues.some((u) => u.includes('api.perplexity.ai')),
+        'aucun appel payant ne doit partir sans clé',
+      );
+    });
   });
-});
 
 test('un HTTP 400 est remonté tel quel, avec le détail de la réponse', async () => {
   await withPerplexityKey('cle-de-test', async () => {

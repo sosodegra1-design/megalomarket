@@ -1,4 +1,5 @@
 import { config } from '../config/env.js';
+import { askModel, parseJsonFromModel } from '../ai/client.js';
 import {
   assertHostIsPublic,
   defaultLookup,
@@ -174,7 +175,7 @@ function normalizeText(value) {
  * erreur disant précisément ce qui a manqué. Aucune valeur n'est devinée : un
  * champ absent est un refus, jamais un zéro ou un dollar par défaut.
  */
-function normalizeAgentResult(raw, url) {
+function normalizeAgentResult(raw, url, { strategy = 'agent-perplexity', lecteur = 'Perplexity' } = {}) {
   if (!raw || typeof raw !== 'object') {
     throw new Error('réponse illisible : aucun objet JSON exploitable.');
   }
@@ -242,7 +243,7 @@ function normalizeAgentResult(raw, url) {
      d'une fourchette de prix B2B (« 1,20–1,50 US$ / pièce, min. 100 pièces »)
      que le seul nombre ne restitue pas. */
   const notes = [
-    `Fiche lue par un agent web (Perplexity), pas extraite du code source de la page — à vérifier avant publication.`,
+    `Fiche lue par un agent web (${lecteur}), pas extraite du code source de la page — à vérifier avant publication.`,
     `Type de page vu par l'agent : ${pageKind}.`,
     priceNote ? `Prix tel qu'affiché : « ${priceNote} ».` : null,
     evidence ? `Passage de la page cité par l'agent : « ${evidence} ».` : null,
@@ -255,7 +256,7 @@ function normalizeAgentResult(raw, url) {
     purchasePrice: price,
     currency,
     imageUrls,
-    strategy: 'agent-perplexity',
+    strategy,
     agentNotes: notes,
   };
 }
@@ -283,16 +284,163 @@ async function callAgent(prompt, fetchImpl) {
  * `lookupHost` et `fetchImpl` sont injectables pour que les tests couvrent la
  * garde SSRF et l'analyse de la réponse sans toucher au réseau.
  */
+
+/* ============================================================================
+   LECTEUR GRATUIT — remplace Perplexity quand aucune clé n'est configurée.
+   ============================================================================
+
+   POURQUOI. La couche agent reposait sur `pro-search` de Perplexity : payant, et
+   une clé de plus à gérer. Or deux briques GRATUITES sont déjà là :
+
+     1. r.jina.ai — lit une page et en renvoie le texte, sans clé ;
+     2. le modèle configuré — Ollama en local (gratuit), Groq en ligne
+        (offre gratuite). C'est `askModel`, déjà utilisé partout.
+
+   Ce que ça change, honnêtement : Perplexity, lui, CHERCHE sur le web quand la
+   page est bloquée. Ici on ne fait que lire l'URL demandée. Une page vraiment
+   inaccessible restera inaccessible — mais elle échouera avec un message clair
+   au lieu de coûter une clé.
+
+   La validation est IDENTIQUE à celle du chemin payant : `normalizeAgentResult`
+   est réutilisée telle quelle. Un titre d'annuaire reste refusé, un prix sans
+   devise reste refusé, et rien n'est inventé.
+*/
+
+/* Jina Reader a besoin de quelques secondes : il charge la page, exécute le
+   JavaScript et convertit le résultat. 20 s laisse de la marge sans bloquer
+   indéfiniment une requête utilisateur. */
+const JINA_TIMEOUT_MS = 20000;
+
+/* Au-delà, on coupe : un modèle local a une fenêtre limitée, et le début d'une
+   fiche produit contient déjà le titre et le prix. Tout garder ferait échouer
+   l'extraction pour rien. */
+const MAX_PAGE_CHARS = 12000;
+
+/** Lit une page via r.jina.ai (gratuit, sans clé) et renvoie son texte. */
+async function fetchPageTextFree(url, fetchImpl) {
+  let response;
+  try {
+    response = await fetchImpl(`https://r.jina.ai/${url}`, {
+      headers: {
+        // `markdown` conserve les titres et les tableaux de prix, que du texte
+        // brut écraserait.
+        'X-Return-Format': 'markdown',
+        Accept: 'text/plain',
+      },
+      signal: AbortSignal.timeout(JINA_TIMEOUT_MS),
+    });
+  } catch (error) {
+    if (error?.name === 'TimeoutError' || error?.name === 'AbortError') {
+      throw new Error(`le lecteur gratuit (r.jina.ai) n'a pas répondu en ${JINA_TIMEOUT_MS / 1000} s.`);
+    }
+    throw new Error(`lecteur gratuit injoignable : ${error?.message ?? error}`);
+  }
+
+  if (!response.ok) {
+    const detail = await response.text().catch(() => '');
+    if (response.status === 429) {
+      throw new Error(
+        'le lecteur gratuit (r.jina.ai) est saturé (HTTP 429). Réessaie dans une minute : '
+        + 'sans clé, le service est limité en débit.',
+      );
+    }
+    throw new Error(`le lecteur gratuit a répondu HTTP ${response.status} : ${detail.slice(0, 200)}`);
+  }
+
+  const texte = (await response.text()).trim();
+  if (!texte) {
+    throw new Error('le lecteur gratuit n’a renvoyé aucun texte : la page est probablement vide ou bloquée.');
+  }
+  return texte.slice(0, MAX_PAGE_CHARS);
+}
+
+/** Consigne d'extraction pour le modèle : il LIT un texte, il ne navigue pas. */
+function buildExtractionPrompt(url, texte) {
+  return (
+    `Voici le texte d'une page produit, récupéré depuis ${url}.\n`
+    + 'Tu ne navigues pas : tu EXTRAIS uniquement ce qui figure dans ce texte.\n'
+    + 'Réponds UNIQUEMENT par un objet JSON, sans texte autour ni balise de code :\n'
+    + '{\n'
+    + '  "pageRead": true si le texte décrit bien UN produit identifiable, sinon false,\n'
+    + '  "pageKind": "fiche produit" | "page d\'accueil" | "page de categorie" | "annuaire" | "mur anti-robot" | "erreur",\n'
+    + '  "title": le nom exact du produit tel qu\'il est écrit, ou "",\n'
+    + '  "price": le prix à l\'unité le PLUS BAS visible, en nombre décimal sans symbole ni séparateur de milliers, ou null,\n'
+    + '  "currency": le code ISO à 3 lettres de ce prix (USD, EUR, CNY…) ou null,\n'
+    + '  "priceNote": le prix tel qu\'écrit mot pour mot, ou "",\n'
+    + '  "description": 2 à 4 phrases décrivant le produit d\'après ce texte, ou "",\n'
+    + '  "images": tableau d\'URL absolues d\'images vues dans le texte (maximum 8, [] si aucune),\n'
+    + '  "evidence": une citation courte et EXACTE du texte qui montre le prix retenu, ou ""\n'
+    + '}\n'
+    + 'Règles strictes :\n'
+    + '- N\'INVENTE RIEN. Ni prix, ni devise, ni titre, ni image. Ce qui n\'est pas dans le texte vaut null ou "".\n'
+    + '- Si le texte est une page d\'accueil, de catégorie, un annuaire ou un mur anti-robot, mets "pageRead": false : '
+    + 'cela vaut mieux qu\'un titre approximatif.\n'
+    + '- Fourchette de prix : retiens la borne BASSE pour "price", recopie la fourchette entière dans "priceNote".\n'
+    + '- Ne convertis aucune devise : donne celle qui est écrite.\n'
+    + '- Aucune estimation de marché, aucun prix « typique ».\n\n'
+    + '--- DÉBUT DU TEXTE DE LA PAGE ---\n'
+    + texte
+  );
+}
+
+/**
+ * Lit une fiche produit sans aucune clé payante.
+ * Même contrat de retour et mêmes refus que le chemin Perplexity.
+ */
+export async function readProductPageFree({ url, lookupHost = defaultLookup, fetchImpl = fetch } = {}) {
+  let parsedUrl;
+  try {
+    parsedUrl = new URL(url);
+  } catch {
+    throw new Error('URL invalide (doit commencer par http:// ou https://).');
+  }
+  if (parsedUrl.protocol !== 'http:' && parsedUrl.protocol !== 'https:') {
+    throw new Error('URL invalide : seuls les schémas http:// et https:// sont autorisés.');
+  }
+
+  /* Le garde SSRF compte ici aussi : r.jina.ai va chercher l'URL depuis SON
+     réseau. Une adresse privée doit être refusée avant qu'un tiers n'en entende
+     parler, exactement comme pour Wayback. */
+  await assertHostIsPublic(parsedUrl, lookupHost);
+
+  const texte = await fetchPageTextFree(parsedUrl.toString(), fetchImpl);
+
+  // Le modèle configuré, gratuit dans les deux cas : Ollama en local, Groq en ligne.
+  let raw;
+  try {
+    raw = await askModel({
+      system: 'Tu extrais des données de fiches produit. Tu réponds uniquement en JSON valide, sans texte autour.',
+      prompt: buildExtractionPrompt(parsedUrl.toString(), texte),
+      maxTokens: 1200,
+    });
+  } catch (error) {
+    throw new Error(`le modèle local n'a pas pu analyser la page : ${error?.message ?? error}`);
+  }
+
+  const objet = parseJsonFromModel(raw);
+  /* On annonce la VRAIE provenance : « agent-perplexity » serait un mensonge
+     dans le badge de l'import, et l'utilisateur doit savoir que la lecture
+     vient d'un modèle local sur un texte tiers, pas d'un agent payant. */
+  return normalizeAgentResult(objet, parsedUrl.toString(), {
+    strategy: 'agent-gratuit',
+    lecteur: 'r.jina.ai + modèle local',
+  });
+}
+
 export async function readProductPageWithAgent({
   url,
   lookupHost = defaultLookup,
   fetchImpl = fetch,
 } = {}) {
+  /* SANS CLÉ PAYANTE, ON NE RENONCE PLUS. On bascule sur le lecteur gratuit
+     (r.jina.ai + le modèle déjà configuré). Le nom de la fonction ne change pas :
+     l'appelant n'a rien à savoir de la façon dont la page est lue.
+
+     Ce que la bascule ne fait pas : elle ne CHERCHE pas la page ailleurs. Si
+     l'URL elle-même est bloquée, elle échouera comme avant — mais avec un
+     message clair, et sans exiger de clé. */
   if (!config.perplexity.ready) {
-    throw new Error(
-      'PERPLEXITY_API_KEY manquante — impossible de faire lire la page par un agent. '
-      + 'Renseigne la clé, ou passe par la saisie manuelle.',
-    );
+    return readProductPageFree({ url, lookupHost, fetchImpl });
   }
 
   let parsedUrl;
