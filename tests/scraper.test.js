@@ -379,7 +379,18 @@ test('aborts with a clear message when the supplier page never responds', async 
          On traite donc le cas déjà-abandonné avant d'écouter. */
       if (!options.signal) { reject(new Error('aucun signal transmis au fetch')); return; }
       if (options.signal.aborted) { reject(options.signal.reason); return; }
-      options.signal.addEventListener('abort', () => reject(options.signal.reason), { once: true });
+      /* GARDE-FOU DE BOUCLE. `AbortSignal.timeout()` utilise un minuteur
+         « unref » : il ne maintient PAS la boucle d'événements en vie. Si rien
+         d'autre ne la retient, Node sort avant que l'abandon ne parte, la
+         promesse reste pendante, et Node 22 annule tout le fichier de tests
+         (« Promise resolution is still pending but the event loop has already
+         resolved »). Ce minuteur-ci garde la boucle vivante le temps que le
+         signal parte ; il est annulé dès l'abandon. */
+      const garde = setTimeout(() => reject(new Error('le signal ne s’est jamais déclenché')), 500);
+      options.signal.addEventListener('abort', () => {
+        clearTimeout(garde);
+        reject(options.signal.reason);
+      }, { once: true });
     });
   };
   try {
@@ -528,7 +539,13 @@ test('the timeout budget covers the whole redirect chain', async () => {
       // jamais « abort », et la promesse resterait pendante.
       if (!options.signal) { reject(new Error('aucun signal transmis au fetch')); return; }
       if (options.signal.aborted) { reject(options.signal.reason); return; }
-      options.signal.addEventListener('abort', () => reject(options.signal.reason), { once: true });
+      // Même garde-fou de boucle que plus haut : le minuteur d'AbortSignal.timeout
+      // est « unref » et ne retient pas le processus.
+      const garde = setTimeout(() => reject(new Error('le signal ne s’est jamais déclenché')), 800);
+      options.signal.addEventListener('abort', () => {
+        clearTimeout(garde);
+        reject(options.signal.reason);
+      }, { once: true });
     });
   };
   try {
