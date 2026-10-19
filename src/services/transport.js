@@ -23,7 +23,7 @@ import { dbAll, dbGet } from '../db/database.js';
 export async function carrierForImport(importRow) {
   if (importRow && importRow.carrier_id != null) {
     const choisi = await dbGet(
-      'SELECT id, name, shipping_cost, shipping_days FROM suppliers WHERE id = ? AND kind = ?',
+      'SELECT id, name, shipping_cost, shipping_cost_per_kg, shipping_days FROM suppliers WHERE id = ? AND kind = ?',
       [importRow.carrier_id, 'transporteur'],
     );
     if (choisi) return { ...choisi, implicite: false };
@@ -33,13 +33,24 @@ export async function carrierForImport(importRow) {
      porte un tarif. C'est un défaut assumé, pas un choix de l'utilisateur — d'où
      `implicite: true`, que l'écran peut signaler. */
   const defaut = await dbGet(
-    `SELECT id, name, shipping_cost, shipping_days FROM suppliers
+    `SELECT id, name, shipping_cost, shipping_cost_per_kg, shipping_days FROM suppliers
      WHERE kind = 'transporteur' AND status = 'actif'
-       AND shipping_cost IS NOT NULL AND shipping_cost > 0
+       AND (shipping_cost_per_kg > 0 OR shipping_cost > 0)
      ORDER BY shipping_cost ASC, id ASC LIMIT 1`,
   );
   return defaut ? { ...defaut, implicite: true } : null;
 }
+
+/* POIDS MINIMUM FACTURÉ. Presque aucun transporteur ne facture au gramme : les
+ * lignes petit colis appliquent un tarif plancher, souvent équivalent à 0,5 kg.
+ * Sans ce plancher, une affiche de 150 g serait facturée 1,35 € de port à
+ * 9 €/kg — très en dessous du vrai coût, donc un prix de vente trop bas, donc
+ * une vente à perte. Sous-estimer le port est bien plus dangereux que le
+ * surestimer : le second rogne la marge, le premier la rend négative.
+ *
+ * Le plancher est volontairement visible et unique : il se discute, il ne se
+ * cache pas. */
+export const POIDS_MINIMUM_FACTURE_KG = 0.5;
 
 /**
  * Coût transporteur par pièce, en euros — ou 0 avec la raison.
@@ -60,24 +71,49 @@ export async function carrierCostForImport(importRow) {
     };
   }
 
+  const quantite = Number.isInteger(importRow?.lot_quantity) && importRow.lot_quantity > 0
+    ? importRow.lot_quantity
+    : 1;
+
+  /* 1. LE POIDS D'ABORD, quand il est connu : c'est le plus juste. Le port suit
+     le poids, pas le nombre de pièces — dix affiches pèsent plus qu'une. */
+  const tarifAuKilo = Number(porteur.shipping_cost_per_kg);
+  const poidsG = Number(importRow?.weight_g);
+  if (Number.isFinite(tarifAuKilo) && tarifAuKilo > 0 && Number.isFinite(poidsG) && poidsG > 0) {
+    /* LE PLANCHER S'APPLIQUE AU COLIS, PAS À CHAQUE PIÈCE. Facturer 0,5 kg par
+       unité ferait 50 kg pour un lot de 100 affiches de 150 g — cinq fois le
+       poids réel. On pèse le colis entier, on applique le plancher une fois,
+       puis on répartit sur la quantité : c'est ainsi qu'un transporteur facture. */
+    const poidsColis = Math.max((poidsG / 1000) * quantite, POIDS_MINIMUM_FACTURE_KG);
+    return {
+      carrierCostEur: Math.round(((tarifAuKilo * poidsColis) / quantite) * 100) / 100,
+      carrierName: porteur.name,
+      implicite: porteur.implicite,
+      methode: 'poids',
+      poidsColisKg: Math.round(poidsColis * 1000) / 1000,
+      raison: null,
+    };
+  }
+
+  /* 2. Sinon le forfait par envoi, réparti sur la quantité du lot. */
   const cout = Number(porteur.shipping_cost);
   if (!Number.isFinite(cout) || cout <= 0) {
     return {
       carrierCostEur: 0,
       carrierName: porteur.name,
       implicite: porteur.implicite,
-      raison: `Le transporteur « ${porteur.name} » n'a pas de coût renseigné.`,
+      methode: null,
+      raison: Number.isFinite(tarifAuKilo) && tarifAuKilo > 0
+        ? `Le transporteur « ${porteur.name} » facture au kilo, mais le poids du produit n'est pas renseigné.`
+        : `Le transporteur « ${porteur.name} » n'a pas de coût renseigné.`,
     };
   }
-
-  const quantite = Number.isInteger(importRow?.lot_quantity) && importRow.lot_quantity > 0
-    ? importRow.lot_quantity
-    : 1;
 
   return {
     carrierCostEur: Math.round((cout / quantite) * 100) / 100,
     carrierName: porteur.name,
     implicite: porteur.implicite,
+    methode: 'forfait',
     raison: null,
   };
 }

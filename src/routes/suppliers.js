@@ -119,6 +119,11 @@ function parseMargin(value) {
    le moins cher (voir src/services/shipping.js). null = non renseigné, un
    transporteur sans coût connu est alors ignoré par la comparaison plutôt
    que traité comme gratuit. */
+/* Même validation que le forfait : un nombre positif ou nul, ou null. */
+function parseShippingCostPerKg(value) {
+  return parseShippingCost(value);
+}
+
 function parseShippingCost(value) {
   if (value === null || value === undefined || value === '') return null;
   if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) {
@@ -172,12 +177,12 @@ suppliersRouter.get(
 suppliersRouter.post(
   '/',
   asyncRoute(async (req, res) => {
-    const { kind, name, siteUrl, marginCoefficient, status, notes, shippingCost, shippingDays } = req.body || {};
+    const { kind, name, siteUrl, marginCoefficient, status, notes, shippingCost, shippingCostPerKg, shippingDays } = req.body || {};
 
     const now = new Date().toISOString();
     const info = await dbRun(
-      `INSERT INTO suppliers (kind, name, site_url, margin_coefficient, status, notes, shipping_cost, shipping_days, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO suppliers (kind, name, site_url, margin_coefficient, status, notes, shipping_cost, shipping_cost_per_kg, shipping_days, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         parseKind(kind),
         parseName(name),
@@ -186,6 +191,7 @@ suppliersRouter.post(
         status === undefined ? 'actif' : parseStatus(status),
         parseNotes(notes),
         parseShippingCost(shippingCost),
+        parseShippingCostPerKg(shippingCostPerKg),
         parseShippingDays(shippingDays),
         now,
         now,
@@ -222,6 +228,7 @@ suppliersRouter.patch(
     if (body.status !== undefined) { fields.push('status = ?'); values.push(parseStatus(body.status)); }
     if (body.notes !== undefined) { fields.push('notes = ?'); values.push(parseNotes(body.notes)); }
     if (body.shippingCost !== undefined) { fields.push('shipping_cost = ?'); values.push(parseShippingCost(body.shippingCost)); }
+    if (body.shippingCostPerKg !== undefined) { fields.push('shipping_cost_per_kg = ?'); values.push(parseShippingCostPerKg(body.shippingCostPerKg)); }
     if (body.shippingDays !== undefined) { fields.push('shipping_days = ?'); values.push(parseShippingDays(body.shippingDays)); }
 
     // Aucun champ exploitable : on refuse plutôt que de répondre « ok » sur une

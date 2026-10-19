@@ -266,13 +266,18 @@ async function migrateImportsLandedCost() {
      fera l'affaire, et l'écran le signalera comme un défaut, pas comme un choix. */
   const addedCarrier = await addColumnIfMissing('imports', 'carrier_id', 'INTEGER');
 
-  if (addedQuantity || addedFees || addedShipping || addedCarrier) {
+  /* Poids du produit, en GRAMMES — même convention que products.weight_g, et
+     l'unité est dans le nom. Il sert à calculer le transport au kilo quand la
+     fiche ne donne pas le port. */
+  const addedWeight = await addColumnIfMissing('imports', 'weight_g', 'INTEGER');
+
+  if (addedQuantity || addedFees || addedShipping || addedCarrier || addedWeight) {
     await logActivity(
       'MIGRATION',
       'Colonnes imports.lot_quantity, lot_fees et shipping_price ajoutées : le prix conseillé tient compte du transport et de la douane.',
     );
   }
-  return addedQuantity || addedFees || addedShipping || addedCarrier;
+  return addedQuantity || addedFees || addedShipping || addedCarrier || addedWeight;
 }
 
 /* Champs apportés par un catalogue fournisseur (voir connectors/rewix.js) : le
@@ -302,6 +307,10 @@ async function migrateProductsSourceFields() {
    la comparaison automatique plutôt que traité comme gratuit ou instantané. */
 async function migrateSuppliersShipping() {
   const addedCost = await addColumnIfMissing('suppliers', 'shipping_cost', 'REAL');
+  /* Tarif AU KILO : c'est la forme qui permet un prix approximatif sans connaître
+     le forfait exact d'un envoi. Le transport se calcule alors poids × tarif,
+     ce qui s'adapte à chaque produit au lieu de supposer un colis type. */
+  const addedPerKg = await addColumnIfMissing('suppliers', 'shipping_cost_per_kg', 'REAL');
   const addedDays = await addColumnIfMissing('suppliers', 'shipping_days', 'INTEGER');
   if (addedCost || addedDays) {
     await logActivity('MIGRATION', 'Colonnes suppliers.shipping_cost / shipping_days ajoutées : comparaison automatique des transporteurs.');
