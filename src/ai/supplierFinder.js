@@ -51,8 +51,9 @@ function buildPrompt(title, sourcingHint) {
     `Trouve 1 à 3 FICHES PRODUIT précises (pas une page d'accueil ni une page de catégorie générique) `
     + `pour sourcer ce produit : "${String(title || '').trim()}"`
     + (hint ? `, piste de sourcing suggérée : ${hint}.` : '.')
-    + ' Priorise des fournisseurs situés en Europe (délais et logistique plus courts) quand c\'est plausible pour ce type de produit, '
-    + 'sans en inventer un s\'il n\'y en a manifestement pas.'
+    + ' Cherche EXCLUSIVEMENT sur les plateformes chinoises de gros : Alibaba, 1688, AliExpress, Made-in-China, DHgate, Chinagoods, Yiwugo. '
+      + 'AUCUN distributeur européen, aucun annuaire d\'entreprises (Europages, Kompass…), aucune boutique française : '
+      + 'ce ne sont pas des usines, et leurs prix incluent déjà la marge d\'un revendeur.'
     + ' Pour CHAQUE candidat trouvé par recherche web, utilise l\'outil d\'ouverture de page pour la consulter réellement et confirmer '
     + 'qu\'elle affiche bien CE produit (ou un équivalent direct) ET un prix visible, AVANT de la proposer.'
     + ' N\'inclus JAMAIS une page d\'accueil, une page de catégorie, ou une page où tu n\'as pas pu confirmer un prix visible en l\'ouvrant '
@@ -67,6 +68,26 @@ function buildPrompt(title, sourcingHint) {
    cette fonctionnalité existe pour remplacer. Un filet de sécurité au cas où
    le modèle en citerait un dans son texte malgré la consigne. */
 const SEARCH_ENGINE_HOST_RE = /(^|\.)google\.[a-z.]+$|(^|\.)bing\.com$|(^|\.)duckduckgo\.com$/i;
+
+/* ANNUAIRES ET DISTRIBUTEURS EUROPÉENS — jamais une piste de sourcing.
+ *
+ * Constaté en production : le chercheur a proposé « Universo Merchan SL » sur
+ * europages.co.uk, un DISTRIBUTEUR espagnol à 8,46 € la pièce. Ce n'est pas une
+ * usine mais un revendeur, dont le prix contient déjà sa marge : sourcer là
+ * revient à payer deux fois l'intermédiaire.
+ *
+ * Le filtre s'applique même quand le modèle dérive — un annuaire d'entreprises
+ * n'est pas une fiche produit, quel que soit le pays.
+ */
+const ANNUAIRE_HOST_RE = /(^|\.)(europages\.[a-z.]+|kompass\.[a-z.]+|sortlist\.[a-z.]+|wlw\.[a-z.]+)$/i;
+
+export function estAnnuaireEuropeen(url) {
+  try {
+    return ANNUAIRE_HOST_RE.test(new URL(String(url || '')).hostname.toLowerCase());
+  } catch {
+    return false;
+  }
+}
 
 function isSearchEngineUrl(url) {
   try {
@@ -99,18 +120,26 @@ const BARE_URL_RE = /https?:\/\/[^\s)<>\]"']+/g;
    tierces). Le prompt demande aussi des URL en clair au format Markdown
    pour cette raison : une extraction par texte fonctionne quel que soit le
    nom exact du champ structuré. */
+/* Un lien retenu doit être une FICHE PRODUIT — ni un moteur de recherche, ni un
+   annuaire d'entreprises. Les deux sont écartés à l'extraction : le modèle peut
+   les citer malgré la consigne, et un annuaire européen n'a jamais été une
+   source de gros. */
+function lienExploitable(url) {
+  return !isSearchEngineUrl(url) && !estAnnuaireEuropeen(url);
+}
+
 function extractLinksFromText(text, links) {
   if (!text) return;
   let match;
   MARKDOWN_LINK_RE.lastIndex = 0;
   while ((match = MARKDOWN_LINK_RE.exec(text))) {
     const [, label, url] = match;
-    if (!isSearchEngineUrl(url) && !links.has(url)) links.set(url, label);
+    if (lienExploitable(url) && !links.has(url)) links.set(url, label);
   }
   BARE_URL_RE.lastIndex = 0;
   while ((match = BARE_URL_RE.exec(text))) {
     const url = match[0].replace(/[.,;:)\]]+$/, '');
-    if (!isSearchEngineUrl(url) && !links.has(url)) links.set(url, url);
+    if (lienExploitable(url) && !links.has(url)) links.set(url, url);
   }
 }
 

@@ -74,7 +74,11 @@ test('the prompt requires a verified product+price page, forbids generic categor
     const sentBody = JSON.parse(options.body);
     assert.match(sentBody.input, /prix visible/);
     assert.match(sentBody.input, /page de catégorie générique/);
-    assert.match(sentBody.input, /Europe/);
+    // La consigne « Europe » a été retirée : elle produisait des distributeurs
+    // espagnols (Europages) au lieu d'usines chinoises.
+    assert.match(sentBody.input, /plateformes chinoises/);
+    assert.match(sentBody.input, /Alibaba/);
+    assert.ok(!/Priorise des fournisseurs situés en Europe/.test(sentBody.input));
     return jsonResponse(200, { output_text: 'ok', search_results: [] });
   });
   try {
@@ -186,14 +190,18 @@ test('a 429 that persists after the retry surfaces a clear, final error', async 
   }
 });
 
-test('when structured citations are absent, URLs written in the text itself (Markdown or bare) are still recovered', async () => {
-  // Le champ exact des citations structurées n'a pas pu être vérifié contre
-  // la doc officielle (docs.perplexity.ai était bloquée par le proxy réseau
-  // pendant le développement) — le prompt demande donc des URL en clair, et
-  // l'extraction doit les retrouver même sans search_results ni annotations.
+test('when structured citations are absent, URLs written in the text itself are still recovered', async () => {
+  // Le champ exact des citations structurées n'a pas pu être vérifié contre la
+  // doc officielle — le prompt demande donc des URL en clair, et l'extraction
+  // doit les retrouver même sans search_results ni annotations.
+  //
+  // MAIS un annuaire d'entreprises est écarté, même cité en Markdown : en
+  // production, Europages a proposé un DISTRIBUTEUR espagnol à 8,46 € la pièce
+  // alors qu'on cherche une usine. Ce n'est pas une fiche produit.
   process.env.PERPLEXITY_API_KEY = 'cle-de-test-perplexity';
   const restore = stubPerplexityFetch(async () => jsonResponse(200, {
     output_text: 'Voici [Europages — Exemple](https://www.europages.fr/entreprises/exemple.html) '
+      + 'et [Alibaba — 4,20 $ la pièce](https://www.alibaba.com/product-detail/lampe_1.html) '
       + 'et aussi https://fabricant-reel.example/fiche, deux pistes sérieuses.',
   }));
   try {
@@ -201,14 +209,19 @@ test('when structured citations are absent, URLs written in the text itself (Mar
     const urls = result.links.map((l) => l.url).sort();
     assert.deepEqual(urls, [
       'https://fabricant-reel.example/fiche',
-      'https://www.europages.fr/entreprises/exemple.html',
+      'https://www.alibaba.com/product-detail/lampe_1.html',
     ]);
-    const markdownLink = result.links.find((l) => l.url.includes('europages'));
-    assert.equal(markdownLink.label, 'Europages — Exemple', 'le libellé Markdown doit être conservé, pas juste l\'URL brute');
+    assert.ok(
+      !urls.some((u) => u.includes('europages')),
+      'un annuaire d’entreprises ne doit jamais ressortir comme fournisseur',
+    );
+    const alibaba = result.links.find((l) => l.url.includes('alibaba'));
+    assert.equal(alibaba.label, 'Alibaba — 4,20 $ la pièce', 'le libellé Markdown est conservé');
   } finally {
     restore();
   }
 });
+
 
 test('a Google or Bing search URL is never surfaced, even if the model cites one in its text', async () => {
   process.env.PERPLEXITY_API_KEY = 'cle-de-test-perplexity';
@@ -293,4 +306,30 @@ test('a missing title is refused before any network call', async () => {
   }
   assert.equal(result.status, 400);
   assert.match(result.body.error, /Titre du produit manquant/);
+});
+
+/* ===================== ANNUAIRES EUROPÉENS ===================== */
+
+test('un annuaire d’entreprises est reconnu et écarté', async () => {
+  // Constat de production : « Universo Merchan SL » sur europages.co.uk,
+  // présenté comme fournisseur à 8,46 € la pièce. C'est un DISTRIBUTEUR
+  // espagnol : son prix contient déjà sa marge.
+  const { estAnnuaireEuropeen } = await import('../src/ai/supplierFinder.js');
+  assert.equal(estAnnuaireEuropeen('https://europages.co.uk/en/company/universo-merchan-sl-22380312/products/x'), true);
+  assert.equal(estAnnuaireEuropeen('https://www.europages.fr/entreprises/exemple.html'), true);
+  assert.equal(estAnnuaireEuropeen('https://www.kompass.com/fr/a/123/'), true);
+});
+
+test('les vraies places de marché chinoises ne sont pas écartées', async () => {
+  const { estAnnuaireEuropeen } = await import('../src/ai/supplierFinder.js');
+  assert.equal(estAnnuaireEuropeen('https://www.alibaba.com/product-detail/x_1.html'), false);
+  assert.equal(estAnnuaireEuropeen('https://detail.1688.com/offer/1.html'), false);
+  assert.equal(estAnnuaireEuropeen('https://fr.aliexpress.com/item/1.html'), false);
+});
+
+test('un lien illisible ne fait pas planter le filtre', async () => {
+  const { estAnnuaireEuropeen } = await import('../src/ai/supplierFinder.js');
+  assert.equal(estAnnuaireEuropeen('pas une url'), false);
+  assert.equal(estAnnuaireEuropeen(''), false);
+  assert.equal(estAnnuaireEuropeen(null), false);
 });
