@@ -4134,6 +4134,29 @@ function renderDashboardLists() {
 }
 
 /* ===================== CANAUX ===================== */
+
+/* Le NOM RÉEL du canal, pour l'affichage.
+ *
+ * `own_site` est une clé technique : elle sert d'identifiant dans la base, dans
+ * les connecteurs et dans les URL d'API. La renommer casserait tout.
+ *
+ * Mais à l'écran, personne ne vend sur « own_site » — on vend sur BBVolteX.
+ * On garde donc la clé et on traduit UNIQUEMENT le libellé. C'est la même
+ * distinction que partout ailleurs : la donnée reste stable, l'affichage parle
+ * la langue de l'utilisateur.
+ */
+const CHANNEL_LABELS = {
+  own_site: 'BBVolteX',
+  lumivita: 'LumiVita',
+  tiktok_shop: 'TikTok Shop',
+  amazon: 'Amazon',
+  allegro: 'Allegro',
+};
+
+function channelLabel(canal) {
+  return CHANNEL_LABELS[canal] || String(canal || '');
+}
+
 async function loadChannels() {
   const box = $('channels');
   if (box) box.innerHTML = skeletonCards(2);
@@ -4154,7 +4177,7 @@ async function loadChannels() {
     if (!actifs.length) box.innerHTML = '<p class="empty">Aucun canal configuré pour le moment.</p>' + rappel;
     else box.innerHTML = actifs.map((c) => (
       '<div class="channel-card row-in">'
-      + '<div class="channel-main"><span class="channel-name">' + esc(c.channel) + '</span>'
+      + '<div class="channel-main"><span class="channel-name">' + esc(channelLabel(c.channel)) + '</span>'
       + '<span class="channel-meta">' + (c.configured ? 'Prêt à recevoir des écritures.' : 'Ignoré par les synchronisations.') + '</span></div>'
       + '<span class="pill ' + (c.configured ? 'ok' : 'off') + '">' + (c.configured ? 'configuré' : 'non configuré') + '</span>'
       + '</div>'
@@ -6534,13 +6557,13 @@ function renderListings(listings) {
   // ferait chercher ce qu'on croit avoir perdu.
   const note = masques.length
     ? '<p class="hint hint-tight" style="margin:0 0 10px">' + masques.length
-      + ' fiche(s) masquée(s) — canal non configuré : ' + esc(masques.join(', ')) + '.</p>'
+      + ' fiche(s) masquée(s) — canal non configuré : ' + esc(masques.map(channelLabel).join(', ')) + '.</p>'
     : '';
 
   box.innerHTML = note + visibles.map((l) => (
     '<article class="listing-card row-in">'
     + '<header class="listing-head">'
-    + '<div><span class="listing-mp">' + esc(l.marketplace) + '</span>'
+    + '<div><span class="listing-mp">' + esc(channelLabel(l.marketplace)) + '</span>'
     + '<span class="listing-price">Prix conseillé ' + money(l.suggested_price)
     + (l.published_external_id ? ' · publié sous ' + esc(l.published_external_id) : '') + '</span></div>'
     + '<span class="pill ' + (l.status === 'publie' ? 'ok' : l.status === 'echec' ? 'bad' : 'warn') + '">' + esc(l.status) + '</span>'

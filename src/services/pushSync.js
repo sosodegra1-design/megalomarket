@@ -1,5 +1,6 @@
-import { dbGet, dbRun, logActivity } from '../db/database.js';
+import { dbAll, dbGet, dbRun, logActivity } from '../db/database.js';
 import { connectors } from '../connectors/index.js';
+import { publishListing } from '../importer/publisher.js';
 
 /*
  * Propagation d'une valeur INTERNE vers un canal de vente.
@@ -141,7 +142,47 @@ async function idSitePropre(product) {
     const nom = normaliserNom(p?.name);
     return nom && cible && (cible.startsWith(nom) || nom.startsWith(cible));
   });
-  return parDebut?.id != null ? String(parDebut.id) : null;
+  if (parDebut?.id != null) return String(parDebut.id);
+
+  /* LE PRODUIT N'EST PAS SUR LE SITE — ON LE PUBLIE, PUIS ON POUSSE LE PRIX.
+   *
+   * C'est la demande : une seule action. Constat de départ : cliquer « appliquer
+   * un prix » sur un produit jamais publié renvoyait un 404 trompeur (« Product
+   * not found »), et le prix n'arrivait nulle part.
+   *
+   * On ne peut pas créer l'article depuis un produit du hub : le site exige une
+   * catégorie, un univers, un âge, une icône et des libellés bilingues, que seul
+   * `import_listings.site_payload` possède. On cherche donc la fiche d'import
+   * correspondante et on la publie — ce qui crée l'article AVEC son prix.
+   *
+   * Si aucune fiche n'existe, on s'arrête : fabriquer un article sans ces champs
+   * donnerait une page cassée sur le site, ce qui est pire qu'un refus clair.
+   */
+  return publierDepuisImport(product);
+}
+
+/** Publie sur le site la fiche d'import qui correspond à ce produit. */
+async function publierDepuisImport(product) {
+  const cible = normaliserNom(product.sku);
+  if (!cible) return null;
+
+  const fiches = await dbAll(
+    `SELECT id, title FROM import_listings
+     WHERE marketplace = 'own_site' AND status <> 'publie'
+       AND site_payload IS NOT NULL AND site_payload <> ''
+     ORDER BY updated_at DESC LIMIT 200`,
+  );
+
+  const fiche = fiches.find((f) => {
+    const titre = normaliserNom(f.title);
+    return titre && (titre === cible || cible.startsWith(titre) || titre.startsWith(cible));
+  });
+  if (!fiche) return null;
+
+  await logActivity('SITE_AUTO_PUBLICATION', `« ${fiche.title} » absent du site : publication automatique avant la propagation du prix.`);
+  const resultat = await publishListing(fiche.id);
+  const id = resultat?.offerId ?? resultat?.listingId ?? null;
+  return id != null ? String(id) : null;
 }
 
 async function channelIdentifier(channel, product, listing) {
@@ -151,8 +192,9 @@ async function channelIdentifier(channel, product, listing) {
     const id = await idSitePropre(product);
     if (id) return id;
     throw new Error(
-      `« ${product.sku} » n'existe pas sur le site propre : le prix ne peut pas y être poussé. `
-      + 'Publie d\'abord la fiche sur le canal own_site, puis relance la propagation.',
+      `« ${product.sku} » n'existe ni sur le site, ni dans une fiche d'import prête à publier. `
+      + 'Le site exige une catégorie, un univers, un âge et une icône : génère puis complète '
+      + 'la fiche BBVolteX depuis l\'import, et la publication se fera automatiquement.',
     );
   }
 
