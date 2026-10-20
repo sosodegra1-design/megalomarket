@@ -27,9 +27,23 @@ Règles :
 - "rationale" : pourquoi ce produit est intéressant en ce moment (tendance, usage, saisonnalité) — deux phrases maximum, en français.
 - "targetAudience" : à qui ce produit s'adresse.
 - "priceRange" : fourchette de prix de vente indicative au détail, en euros (ex. "15-25 €").
-- "sourcingHint" : type de fournisseur et région d'où le sourcer EN PRIORITÉ (ex. "fabricant textile au Portugal", "grossiste déco en Pologne"). Privilégie des pistes européennes plutôt qu'asiatiques quand c'est plausible pour ce type de produit — délais et logistique plus courts — sans l'inventer si le produit n'a manifestement pas de filière européenne crédible (dis-le alors franchement).
+- "sourcingHint" : OBLIGATOIREMENT une plateforme chinoise bon marché — "Alibaba", "1688" ou "AliExpress" — suivie du type de fabricant. Exemple : "Alibaba — fabricant d'accessoires de cuisine", "1688 — usine de gadgets électroniques". AUCUNE autre origine : pas de fabricant européen, pas de grossiste français, pas de marque. Une piste sourcée ailleurs n'a pas sa place ici.
+- BON MARCHÉ À L'ACHAT : vise un coût unitaire inférieur à 5 € sur la plateforme chinoise. C'est le critère principal : un produit qui coûte cher à l'achat ne doit pas figurer dans la liste, même s'il se revend bien.
 - Diversité : ne propose pas 20 variantes du même produit.
 - N'invente pas de chiffre de vente précis ni de source : ce sont des suggestions, pas des statistiques vérifiées. Ceci vaut aussi pour "sourcingHint" : un type de fournisseur plausible, jamais un nom d'entreprise réel inventé.`;
+
+/* LE CONTRÔLE, MÊME QUAND LE MODÈLE IGNORE LA CONSIGNE.
+ *
+ * Un prompt n'est pas une garantie : les modèles dérivent. On marque donc comme
+ * à revoir toute piste dont le sourcing ne nomme pas une plateforme chinoise.
+ * Le lot reste enregistré — la piste et sa raison restent visibles — mais elle
+ * ne passera pas pour validée par erreur.
+ */
+const PLATEFORMES_CHINOISES = /(alibaba|1688|aliexpress|taobao|made-in-china|dhgate|temu)/i;
+
+export function sourcingChinois(sourcingHint) {
+  return PLATEFORMES_CHINOISES.test(String(sourcingHint || ''));
+}
 
 function buildPrompt({ focus }) {
   const base = 'Propose 20 idées de produits à fort potentiel pour un e-commerce généraliste qui importe et revend sur plusieurs canaux, en privilégiant des pistes de sourcing européennes quand c\'est crédible pour optimiser les délais de livraison.';
@@ -79,9 +93,11 @@ export async function huntNiches({ focus } = {}) {
       sourcingHint: typeof find.sourcingHint === 'string' ? find.sourcingHint.trim() : '',
     };
     await dbRun(
-      `INSERT INTO trend_finds (batch_id, rank, title, category, rationale, target_audience, price_range, sourcing_hint, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [row.batchId, row.rank, row.title, row.category, row.rationale, row.targetAudience, row.priceRange, row.sourcingHint, now],
+      `INSERT INTO trend_finds (batch_id, rank, title, category, rationale, target_audience, price_range, sourcing_hint, review_ok, review_issue, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [row.batchId, row.rank, row.title, row.category, row.rationale, row.targetAudience,
+        row.priceRange, row.sourcingHint, sourcingChinois(row.sourcingHint) ? 1 : 0,
+        sourcingChinois(row.sourcingHint) ? null : 'sourcing non chinois : la chasse ne propose que Alibaba, 1688 ou AliExpress', now],
     );
     saved.push(row);
   }
