@@ -1378,8 +1378,41 @@ function valeurAttribut(attributs, motifs) {
  * donnerait un poids faux, donc un port faux, donc un prix faux.
  */
 export function weightFromAlibabaAttributes(attributs) {
+  /* 1. LE POIDS D'UNE SEULE PIÈCE, quand la page le donne.
+   *
+   * Alibaba publie souvent « single gross weight » (la pièce avec son emballage)
+   * et « product weight » (la pièce nue). On retient le PREMIER : le
+   * transporteur facture le colis, emballage compris — prendre le poids nu
+   * sous-estimerait le port, donc le prix de vente.
+   *
+   * Les clés sont localisées et parfois écrites avec des parenthèses pleine
+   * largeur (« product weight（kg） »), d'où des motifs tolérants.
+   */
+  const poidsPiece = valeurAttribut(attributs, [
+    /single\s*gross\s*weight/i,
+    /poids\s*brut\s*(unitaire|d.une\s*pi[eè]ce)/i,
+    /product\s*weight/i,
+    /poids\s*du\s*produit/i,
+    /^n\.?w\b/i,
+    /net\s*weight/i,
+  ]);
+  if (poidsPiece) {
+    const nombre = /([0-9]+(?:[.,][0-9]+)?)/.exec(poidsPiece);
+    if (nombre) {
+      const valeur = Number(nombre[1].replace(',', '.'));
+      // Une valeur en grammes est possible (« 850g ») ; sinon on suppose des
+      // kilos — convention de ces champs, y compris quand l'unité est dans la CLÉ.
+      const enGrammes = /[0-9]\s*g\b/i.test(poidsPiece) && !/kg/i.test(poidsPiece);
+      const grammes = enGrammes ? valeur : valeur * 1000;
+      if (Number.isFinite(grammes) && grammes >= 1 && grammes <= 100000) {
+        return Math.round(grammes);
+      }
+    }
+  }
+
+  /* 2. Sinon le poids du carton divisé par le nombre de pièces. */
   const poidsCarton = valeurAttribut(attributs, [/^g\.?w/i, /poids\s*brut/i, /gross\s*weight/i]);
-  const parCarton = valeurAttribut(attributs, [/^qty\s*\/?\s*ctn/i, /quantit[eé].*carton/i, /pcs.*carton/i]);
+  const parCarton = valeurAttribut(attributs, [/^qty\s*\/?\s*ctn/i, /quantit[eé].*carton/i, /pcs.*ctn/i, /pcs.*carton/i]);
   if (!poidsCarton || !parCarton) return null;
 
   // « 17.5/16kgs » ou « 17,5 kg » : on ne garde que le premier nombre.
@@ -1388,8 +1421,6 @@ export function weightFromAlibabaAttributes(attributs) {
   const valeur = Number(nombrePoids[1].replace(',', '.'));
   if (!Number.isFinite(valeur) || valeur <= 0) return null;
 
-  // Une valeur en grammes est possible (« 850g ») ; sinon on suppose des kilos,
-  // ce qui est la convention du champ G.W/N.W.
   const enGrammes = /[0-9]\s*g\b/i.test(poidsCarton) && !/kg/i.test(poidsCarton);
   const poidsCartonG = enGrammes ? valeur : valeur * 1000;
 
@@ -1399,7 +1430,6 @@ export function weightFromAlibabaAttributes(attributs) {
   if (!Number.isInteger(pieces) || pieces < 1) return null;
 
   const parPiece = Math.round(poidsCartonG / pieces);
-  // Mêmes bornes que l'extracteur générique : hors de là, c'est une erreur.
   if (parPiece < 1 || parPiece > 100000) return null;
   return parPiece;
 }
@@ -1556,7 +1586,18 @@ function extractFromHtml(html, finalUrl, patternSite) {
    * du texte entier. */
   const texteComplet = cleanText($('body').text());
   const port = extractShippingPrice($, texteComplet.slice(0, 20000));
-  let weightGrams = extractWeightGrams($, texteComplet, jsonLdProduct);
+  /* SUR ALIBABA, LE TABLEAU D'ATTRIBUTS PASSE AVANT.
+   *
+   * Le texte libre contient le poids du CARTON entier (« 28 kg » pour un lot de
+   * projecteurs), pas celui d'une pièce. Le chercher en premier a produit un
+   * projecteur à 28 kg — donc 252 € de port et un prix à 1 514 €.
+   *
+   * Le tableau « Caractéristiques » donne G.W. et QTY/CTN : diviser l'un par
+   * l'autre redevient le poids d'UNE pièce, qui est ce dont le prix a besoin. */
+  const attributsPoids = weightFromAlibabaAttributes(extractAlibabaAttributes($));
+  let weightGrams = Number.isFinite(attributsPoids) && attributsPoids > 0
+    ? attributsPoids
+    : extractWeightGrams($, texteComplet, jsonLdProduct);
 
   /* Repli DÉCISIF pour Alibaba : le poids n'est pas dans les métadonnées, il est
      dans le tableau « Caractéristiques du produit » (G.W/N.W ÷ QTY/CTN). Sans ce
