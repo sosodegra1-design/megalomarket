@@ -174,6 +174,19 @@ export const config = {
      endroit doit avoir le pouvoir le plus étroit possible.
 
      Absent = déclencheur désactivé (échec en fermé, comme ADMIN_API_KEY). */
+  /* Jeton du CHIEN DE GARDE (surveillance des favoris).
+     ENCORE PLUS ÉTROIT QUE LE JETON CRON : ce programme automate vit sur une
+     machine personnelle et ne doit pouvoir que CRÉER des imports et générer
+     leurs fiches. Il n'a aucune raison de lire les commandes clients, de
+     changer un prix ou de publier. C'est le principe de moindre privilège :
+     une clé qui fuite doit casser le moins possible. */
+  importToken: {
+    secret: process.env.IMPORT_TOKEN || null,
+    get ready() {
+      return has('IMPORT_TOKEN');
+    },
+  },
+
   cron: {
     secret: process.env.CRON_SECRET || null,
     get ready() {
