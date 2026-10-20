@@ -201,7 +201,11 @@ export function computePriceFromSupplier({
   marketPrice = null,
 } = {}) {
   const transport = resolveTransport({ currency, shippingPrice, carrierCostEur, lotQuantity, lotFees, rates });
+  /* Deux repères pour le diagnostic : le prix calculé SANS plafond (pour savoir
+     si le marché a réellement rogné), et le plafond retenu. */
+  const plafondConnu = Number.isFinite(marketPrice) && marketPrice > 0 ? round2(marketPrice) : null;
   const landedCost = computeLandedCost({ purchasePrice, currency, shippingPrice, carrierCostEur, lotQuantity, lotFees, rates });
+  const calculeSansPlafond = computeSuggestedPrice(landedCost, { marginCoefficient, fixedFee });
   const suggestedPrice = computeSuggestedPrice(landedCost, { marginCoefficient, fixedFee, marketPrice });
 
   const code = String(currency || '').trim().toUpperCase();
@@ -224,6 +228,17 @@ export function computePriceFromSupplier({
          le produit se vend surtout du port : ce n'est PAS une erreur de calcul,
          c'est le signal qu'il n'est pas viable à cette quantité. L'écran peut
          alors proposer un lot plus grand, sans jamais fausser le prix. */
+      /* LE PRIX EST-IL SEULEMENT VENDABLE ?
+       *
+       * Quand le coût rendu dépasse le prix du marché, le produit ne peut pas se
+       * vendre : ce n'est pas le coefficient qui est en cause, c'est le transport
+       * (ou le lot) qui coûte plus cher que ce que le client paie.
+       *
+       * On le DIT au lieu de renvoyer silencieusement un prix trop haut —
+       * constaté sur une brosse à dents calculée 28,37 € quand le marché est à 7. */
+      marketPrice: plafondConnu,
+      marketCapped: plafondConnu !== null && plafondConnu >= landedCost && plafondConnu < calculeSansPlafond,
+      viable: plafondConnu === null || plafondConnu >= landedCost,
       partTransport: landedCost > 0
         ? round2((transport.perPieceEur / landedCost) * 100)
         : 0,
