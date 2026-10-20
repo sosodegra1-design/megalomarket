@@ -1543,9 +1543,20 @@ function extractFromHtml(html, finalUrl, patternSite) {
   /* Le transport n'est retenu que s'il est exprimé dans la MÊME devise que le
      prix d'achat : convertir ici obligerait à charger les taux à chaque page, et
      un montant mal interprété fausserait tous les prix en silence. */
-  const textePage = cleanText($('body').text()).slice(0, 20000);
-  const port = extractShippingPrice($, textePage);
-  let weightGrams = extractWeightGrams($, textePage, jsonLdProduct);
+  /* LE PAVÉ COMPLET POUR LE POIDS, LA TRONCATURE POUR LE PORT.
+   *
+   * Le texte était coupé à 20 000 caractères AVANT l'extraction du poids. Or une
+   * page Alibaba en fait 278 000 : les mentions de poids (« 0.06 kg », « 684G »)
+   * vivent bien au-delà des 20 000 premiers. Résultat mesuré : toutes les fiches
+   * Alibaba arrivaient SANS poids, donc avec le forfait de 28 € par pièce au lieu
+   * du tarif au kilo — et des prix trois fois trop hauts.
+   *
+   * Le port garde sa fenêtre courte : il est lu dans l'en-tête de la page, et
+   * chercher plus loin multiplierait les faux positifs. Le poids, lui, a besoin
+   * du texte entier. */
+  const texteComplet = cleanText($('body').text());
+  const port = extractShippingPrice($, texteComplet.slice(0, 20000));
+  let weightGrams = extractWeightGrams($, texteComplet, jsonLdProduct);
 
   /* Repli DÉCISIF pour Alibaba : le poids n'est pas dans les métadonnées, il est
      dans le tableau « Caractéristiques du produit » (G.W/N.W ÷ QTY/CTN). Sans ce
