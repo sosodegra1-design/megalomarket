@@ -105,8 +105,8 @@ test('un produit absent du site donne un message qui dit quoi faire', async () =
     await assert.rejects(
       () => pushPriceToChannel(produit.id, 'own_site', 9.99),
       (erreur) => {
-        assert.match(erreur.message, /n'existe pas sur le site propre/);
-        assert.match(erreur.message, /Publie/, 'le message doit dire quoi faire');
+        assert.match(erreur.message, /n'existe ni sur le site/);
+        assert.match(erreur.message, /catégorie/, 'le message doit dire ce qui manque');
         return true;
       },
     );
@@ -144,6 +144,63 @@ test('un 429 passager est réessayé une fois', async () => {
     const resultat = await pushPriceToChannel(produit.id, 'own_site', 12);
     assert.equal(resultat.ok, true, 'le second essai doit réussir');
     assert.equal(tentatives, 2, 'exactement un réessai');
+  } finally {
+    restore();
+  }
+});
+
+
+/* ===================== PUBLICATION AUTOMATIQUE ===================== */
+
+/* Demande explicite : « publier automatiquement puis propager le prix, en une
+ * seule action ». Un produit du hub n'a pas les champs exigés par le site
+ * (catégorie, univers, âge, icône, bilingue) — seul le `site_payload` d'une
+ * fiche d'import les porte. On publie donc CETTE fiche, puis le prix suit. */
+
+test('un produit absent du site est publié depuis sa fiche d’import', async () => {
+  await dbRun(
+    "INSERT INTO imports (source_url, source_site, title, raw_description, purchase_price, currency, status, created_at) VALUES ('https://x.test/a', 'alibaba', 'Lampe lunaire', '', 5, 'EUR', 'pret', ?)",
+    [Date.now()],
+  );
+  const { dbGet } = await import('../src/db/database.js');
+  const imp = await dbGet("SELECT id FROM imports WHERE title = 'Lampe lunaire'");
+
+  await dbRun(
+    `INSERT INTO import_listings (import_id, marketplace, title, description, suggested_price, status, site_payload, created_at, updated_at)
+     VALUES (?, 'own_site', 'Lampe lunaire', 'desc', 19.9, 'a_valider', ?, ?, ?)`,
+    [imp.id, JSON.stringify({ name: 'Lampe lunaire', category: 'deco', universe: 'maison', age: '3-6', iconKey: 'lamp' }), Date.now(), Date.now()],
+  );
+
+  await dbRun(
+    "INSERT INTO products (sku, name, description, cost_price, created_at) VALUES ('Lampe lunaire', 'Lampe lunaire', '', 5, ?)",
+    [Date.now()],
+  );
+  const produit = await dbGet("SELECT id FROM products WHERE sku = 'Lampe lunaire'");
+
+  let creation = 0;
+  const { appels, restore } = stubSite((url, options) => {
+    if (url.endsWith('/api/products')) return jsonReponse([]);   // absent du site
+    if (url.endsWith('/api/admin/products') && (options.method || 'GET') === 'POST') {
+      creation += 1;
+      const corps = JSON.parse(options.body || '{}');
+      // Le prix publié est celui de la fiche.
+      assert.equal(corps.price, 19.9);
+      // L'API du site renvoie le produit créé, avec son `id` — c'est lui que le
+      // connecteur lit pour fabriquer l'offerId.
+      return jsonReponse({ id: 'p42', name: corps.name }, 201);
+    }
+    return jsonReponse({ ok: true });
+  });
+
+  try {
+    const resultat = await pushPriceToChannel(produit.id, 'own_site', 24.9);
+    assert.equal(creation, 1, 'la fiche doit être publiée une fois');
+    assert.equal(resultat.ok, true);
+    assert.equal(resultat.externalId, 'p42', 'l’id créé sert ensuite au push du prix');
+
+    // Et le prix est bien poussé sur l'article fraîchement créé.
+    const patch = appels.find((a) => a.method === 'PATCH');
+    assert.ok(patch.url.endsWith('/api/admin/products/p42'));
   } finally {
     restore();
   }

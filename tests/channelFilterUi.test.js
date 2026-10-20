@@ -133,8 +133,9 @@ test('les fiches masquées sont NOMMÉES, pas escamotées', () => {
   const html = node('listings').innerHTML;
   // Une disparition silencieuse ferait chercher ce qu'on croit avoir perdu.
   assert.match(html, /2 fiche\(s\) masquée\(s\)/);
-  assert.match(html, /amazon/);
-  assert.match(html, /allegro/);
+  // Les canaux s'affichent sous leur NOM RÉEL, pas leur clé technique.
+  assert.match(html, /Amazon/);
+  assert.match(html, /Allegro/);
 });
 
 /* ===================== LA FICHE PUBLIÉE RESTE VISIBLE ===================== */
