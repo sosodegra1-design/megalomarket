@@ -200,7 +200,23 @@ export async function start() {
     logActivity('DEMARRAGE', `Serveur Megalomarket AI Core démarré sur le port ${config.port}.`).catch(console.error);
     console.log(`Megalomarket AI Core en écoute sur http://localhost:${config.port}`);
     logConfigurationSummary();
-    startScheduler();
+
+    /* UN SEUL PLANIFICATEUR PAR BASE.
+     *
+     * La synchronisation du stock, des commandes et des retours tourne dans le
+     * processus. Si DEUX instances pointent sur la même base — par exemple un
+     * serveur local et le service déployé — elles synchronisent deux fois, se
+     * disputent les mêmes écritures et doublent les appels aux API des canaux.
+     *
+     * SCHEDULER_DISABLED=true coupe le planificateur SANS toucher au reste :
+     * le serveur continue de servir l'interface et l'API, mais ne planifie
+     * rien. C'est ce qu'il faut sur l'instance qui n'est pas le maître du
+     * calendrier. */
+    if (String(process.env.SCHEDULER_DISABLED || '').toLowerCase() === 'true') {
+      logActivity('DEMARRAGE', 'Planificateur DÉSACTIVÉ (SCHEDULER_DISABLED=true) : une autre instance pilote le calendrier sur cette base.').catch(console.error);
+    } else {
+      startScheduler();
+    }
   });
 }
 
