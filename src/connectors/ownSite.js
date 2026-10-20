@@ -58,15 +58,33 @@ async function ownSiteFetch(path, { method = 'GET', body, auth = true } = {}) {
     headers['X-Admin-Key'] = config.ownSite.apiKey;
   }
 
-  const response = await fetch(`${baseUrl()}${path}`, {
+  /* Le site propre limite le débit (HTTP 429). Un push qui échoue sur une limite
+     passagère laissait le prix non propagé sans que rien ne le rattrape : on
+     réessaie UNE fois, après le délai demandé par le serveur. Un seul réessai
+     suffit — au-delà, c'est un vrai blocage qu'il faut voir, pas masquer. */
+  const envoyer = () => fetch(`${baseUrl()}${path}`, {
     method,
     headers,
     body: body === undefined ? undefined : JSON.stringify(body),
     signal: AbortSignal.timeout(20000),
   });
 
+  let response = await envoyer();
+  if (response.status === 429) {
+    const apres = Number(response.headers?.get?.('retry-after'));
+    const attente = Number.isFinite(apres) && apres > 0 ? Math.min(apres * 1000, 10000) : 2000;
+    await new Promise((resolve) => setTimeout(resolve, attente));
+    response = await envoyer();
+  }
+
   if (!response.ok) {
     const detail = await response.text();
+    if (response.status === 429) {
+      throw new Error(
+        `Le site propre limite le débit (HTTP 429), toujours saturé après un réessai. `
+        + `Réessaie dans une minute. Réponse : ${detail.slice(0, 200)}`,
+      );
+    }
     throw new Error(`Erreur API site propre ${method} ${path} (${response.status}) : ${detail.slice(0, 300)}`);
   }
   return response.status === 204 ? null : response.json();
