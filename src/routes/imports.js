@@ -697,7 +697,7 @@ function suggestCurrency(code, connus) {
 
 async function recomputeListingPrices(importId) {
   const imp = await dbGet(
-    'SELECT purchase_price, currency, shipping_price, weight_g, carrier_id, lot_quantity, lot_fees, supplier_id FROM imports WHERE id = ?',
+    'SELECT purchase_price, currency, shipping_price, weight_g, carrier_id, lot_quantity, lot_fees, supplier_id, market_price FROM imports WHERE id = ?',
     [importId],
   );
   if (!imp) return 0;
@@ -728,6 +728,7 @@ async function recomputeListingPrices(importId) {
     rates,
     marginCoefficient: coefficient,
     fixedFee: config.pricing.fixedFee,
+    marketPrice: imp.market_price,
   });
 
   const info = await dbRun(

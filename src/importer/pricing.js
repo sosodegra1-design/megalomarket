@@ -146,7 +146,11 @@ export function computeLandedCost({
  * se met à calculer autre chose à son insu — ce sont les appelants qui sont
  * mis à jour, un par un, pour lui passer un coût rendu.
  */
-export function computeSuggestedPrice(landedCost, { marginCoefficient = 1.8, fixedFee = 0 } = {}) {
+export function computeSuggestedPrice(landedCost, {
+  marginCoefficient = 1.8,
+  fixedFee = 0,
+  marketPrice = null,
+} = {}) {
   if (!Number.isFinite(landedCost) || landedCost < 0) {
     throw new Error('Coût rendu invalide.');
   }
@@ -157,24 +161,23 @@ export function computeSuggestedPrice(landedCost, { marginCoefficient = 1.8, fix
     throw new Error('Frais fixes invalides.');
   }
 
-  /* LE COEFFICIENT S'APPLIQUE AU COÛT RENDU — port et douane compris.
+  /* LE PRIX SE CALCULE SUR LE COÛT, SE PLAFONNE AU MARCHÉ, ET NE PASSE JAMAIS
+   * SOUS LE COÛT RENDU.
    *
-   * C'est le standard du commerce international, et ce n'est pas un détail
-   * comptable : un produit à 4,50 $ peut coûter 12,23 $ une fois le fret et la
-   * douane payés. Appliquer la marge au seul prix d'achat donnerait un prix qui
-   * ne couvre pas le transport — donc une perte à chaque vente.
-   *
-   * Référence : « Landed Cost = Product Cost + Freight + Customs Duties +
-   * Insurance + Brokerage », et le prix se construit sur ce total.
-   * https://nventory.io/blog/landed-cost-calculator-ecommerce-imported-goods
-   *
-   * Quand le coût rendu est dominé par le transport, ce n'est pas la formule
-   * qui est fausse : c'est le produit qui n'est pas viable à cette quantité.
-   * Le détail le signale (voir `detail.partTransport`), il ne le cache pas.
+   * Trois bornes, dans cet ordre :
+   *   1. le calcul : coût rendu × coefficient + frais fixes — notre marge voulue ;
+   *   2. le marché : quand le prix de vente constaté est connu, il PLAFONNE. Une
+   *      trottinette à 940 € était « correcte » au sens du calcul et absurde sur
+   *      le marché : ce plafond manquait ;
+   *   3. le verrou : jamais sous coût rendu + frais fixes, quel que soit le
+   *      plafond. Un plafond trop bas signale un produit non viable — il ne doit
+   *      pas se transformer en vente à perte.
    */
-  const floor = landedCost + fixedFee;
-  const raw = landedCost * marginCoefficient + fixedFee;
-  return round2(Math.max(raw, floor));
+  const plancher = landedCost + fixedFee;
+  const calcule = landedCost * marginCoefficient + fixedFee;
+  const plafond = Number.isFinite(marketPrice) && marketPrice > 0 ? marketPrice : null;
+  const retenu = plafond === null ? calcule : Math.min(calcule, plafond);
+  return round2(Math.max(retenu, plancher));
 }
 
 /**
@@ -195,10 +198,11 @@ export function computePriceFromSupplier({
   rates = {},
   marginCoefficient,
   fixedFee,
+  marketPrice = null,
 } = {}) {
   const transport = resolveTransport({ currency, shippingPrice, carrierCostEur, lotQuantity, lotFees, rates });
   const landedCost = computeLandedCost({ purchasePrice, currency, shippingPrice, carrierCostEur, lotQuantity, lotFees, rates });
-  const suggestedPrice = computeSuggestedPrice(landedCost, { marginCoefficient, fixedFee });
+  const suggestedPrice = computeSuggestedPrice(landedCost, { marginCoefficient, fixedFee, marketPrice });
 
   const code = String(currency || '').trim().toUpperCase();
   const transportParPiece = shippingPrice > 0

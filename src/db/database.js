@@ -370,6 +370,21 @@ async function migrateImportListingsQuality() {
   const addedSupplierUrl = await addColumnIfMissing('trend_finds', 'supplier_url', 'TEXT');
   const addedSupplierLabel = await addColumnIfMissing('trend_finds', 'supplier_label', 'TEXT');
   const addedSupplierAt = await addColumnIfMissing('trend_finds', 'supplier_searched_at', 'INTEGER');
+
+  /* LE PRIX DU MARCHÉ — le garde-fou qui manquait.
+   *
+   * Le coefficient s'appliquait au coût rendu sans jamais regarder ce que le
+   * produit se vend ailleurs. Résultat constaté : une trottinette à 940 € ou des
+   * barrières de lit à 300 €, calculées « correctement » mais invendables.
+   *
+   * Un prix ne se déduit pas seulement du coût : il se confronte au marché.
+   * Cette colonne porte le prix de vente constaté (fourchette du Dénicheur, ou
+   * saisie à la main). Le coefficient reste notre marge voulue ; le marché
+   * devient le PLAFOND, et le coût rendu le PLANCHER. */
+  const addedMarketPrice = await addColumnIfMissing('imports', 'market_price', 'REAL');
+  if (addedMarketPrice) {
+    console.log('Migration : imports.market_price ajouté (plafond de prix par le marché).');
+  }
   if (addedSupplierUrl || addedSupplierLabel || addedSupplierAt) {
     console.log('Migration : trend_finds.supplier_url / supplier_label / supplier_searched_at ajoutés.');
   }

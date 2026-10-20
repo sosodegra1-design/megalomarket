@@ -196,3 +196,48 @@ test('PUT /api/pricing refuse un multiplicateur ≤ 1 (vente à perte)', async (
   const { status } = await call('/api/pricing', { method: 'PUT', body: { multiplicateur: 1 } });
   assert.equal(status, 400);
 });
+
+/* ===================== LE MARCHÉ PLAFONNE, LE COÛT PLANCHERNE ===================== */
+
+test('le prix se plafonne au marché quand il est connu', () => {
+  // Une trottinette à 940 € était « correcte » au sens du calcul et absurde sur
+  // le marché. Le prix constaté devient le plafond.
+  const { suggestedPrice } = computePriceFromSupplier({
+    purchasePrice: 50,
+    currency: 'EUR',
+    rates: RATES,
+    marginCoefficient: 6,
+    fixedFee: 0,
+    marketPrice: 120,
+  });
+  assert.equal(suggestedPrice, 120, 'plafonné au prix du marché');
+});
+
+test('sans prix de marché, le calcul reste seul maître', () => {
+  const { suggestedPrice } = computePriceFromSupplier({
+    purchasePrice: 50, currency: 'EUR', rates: RATES,
+    marginCoefficient: 6, fixedFee: 0,
+  });
+  assert.equal(suggestedPrice, 300);
+});
+
+test('un marché sous le coût ne transforme pas la vente en perte', () => {
+  // Le plafond protège du prix trop haut, jamais au point de vendre à perte :
+  // le verrou anti-perte reprend la main.
+  const { suggestedPrice } = computePriceFromSupplier({
+    purchasePrice: 50, currency: 'EUR', rates: RATES,
+    marginCoefficient: 6, fixedFee: 0, marketPrice: 40,
+  });
+  assert.equal(suggestedPrice, 50, 'jamais sous le coût rendu');
+  assert.ok(suggestedPrice >= 50);
+});
+
+test('un marché au-dessus du calcul ne fait pas monter le prix', () => {
+  // Le marché est un PLAFOND, pas une cible : on ne s'aligne pas sur un prix
+  // plus cher que nécessaire.
+  const { suggestedPrice } = computePriceFromSupplier({
+    purchasePrice: 10, currency: 'EUR', rates: RATES,
+    marginCoefficient: 3, fixedFee: 0, marketPrice: 500,
+  });
+  assert.equal(suggestedPrice, 30);
+});

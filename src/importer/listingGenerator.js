@@ -231,6 +231,9 @@ export async function generateListingsForImport(importId) {
       rates,
       marginCoefficient: await getMultiplicateur(),
       fixedFee: config.pricing.fixedFee,
+      // Plafond : ce que le produit se vend ailleurs. Sans lui, un coût élevé
+      // produit un prix que personne ne paie (trottinette à 940 €).
+      marketPrice: imp.market_price,
     }));
   } catch (error) {
     priceError = error.message;
