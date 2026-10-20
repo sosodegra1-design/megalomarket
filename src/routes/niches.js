@@ -3,6 +3,7 @@ import { huntNiches, latestFinds } from '../ai/nicheHunter.js';
 import { refineFocus } from '../ai/nicheCoach.js';
 import { reviewBatch } from '../ai/nicheSupervisor.js';
 import { findSupplierLinks } from '../ai/supplierFinder.js';
+import { dbRun } from '../db/database.js';
 
 /*
  * Rubrique « Dénicheur » (GET/POST /api/niches).
@@ -68,7 +69,21 @@ nichesRouter.post(
 nichesRouter.post(
   '/supplier-search',
   asyncRoute(async (req, res) => {
-    const { title, sourcingHint } = req.body || {};
-    res.json(await findSupplierLinks({ title, sourcingHint }));
+    const { title, sourcingHint, findId } = req.body || {};
+    const resultat = await findSupplierLinks({ title, sourcingHint });
+
+    /* ON ENREGISTRE LE MEILLEUR LIEN quand la piste est identifiée.
+     *
+     * Sans cela, recharger la page perdait le résultat et il fallait recliquer
+     * sur chaque piste — vingt recherches pour vingt produits. Le premier lien
+     * est retenu : c'est celui que le chercheur a vérifié en premier. */
+    const premier = (resultat?.links || [])[0];
+    if (findId != null && premier?.url) {
+      await dbRun(
+        'UPDATE trend_finds SET supplier_url = ?, supplier_label = ?, supplier_searched_at = ? WHERE id = ?',
+        [premier.url, premier.label || premier.url, Date.now(), Number(findId)],
+      );
+    }
+    res.json(resultat);
   }),
 );

@@ -7151,6 +7151,12 @@ function nicheSupplierCell(f, index) {
       '<li><a class="link-quiet" href="' + esc(l.url) + '" target="_blank" rel="noopener">' + esc(l.label || l.url) + ' ↗</a></li>'
     )).join('') + '</ul>';
   }
+  // Le fournisseur enregistré survit au rafraîchissement : on l'affiche avant
+  // de reproposer une recherche.
+  if (f.supplierUrl) {
+    return '<a class="link-quiet" href="' + esc(f.supplierUrl) + '" target="_blank" rel="noopener">'
+      + esc(f.supplierLabel || f.supplierUrl) + '</a>';
+  }
   return '<button class="btn ghost btn-sm" type="button" data-niche-find-supplier="' + index + '">🔎 Chercher un vrai fournisseur</button>' + manualLink;
 }
 
@@ -7160,7 +7166,7 @@ async function findRealSupplier(index, button) {
   await action(button, async () => {
     const result = await api('/api/niches/supplier-search', {
       method: 'POST',
-      body: JSON.stringify({ title: find.title, sourcingHint: find.sourcingHint }),
+      body: JSON.stringify({ title: find.title, sourcingHint: find.sourcingHint, findId: find.id }),
     });
     find.supplierOutputText = result.outputText || '';
     find.supplierLinks = result.links || [];

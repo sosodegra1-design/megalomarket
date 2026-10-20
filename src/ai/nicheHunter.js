@@ -147,8 +147,10 @@ export async function latestFinds() {
   if (!latest.length) return { batchId: null, finds: [] };
   const batchId = latest[0].batch_id;
   const finds = await dbAll(
-    `SELECT rank, title, category, rationale, target_audience AS targetAudience, price_range AS priceRange,
-            sourcing_hint AS sourcingHint, review_ok AS reviewOk, review_issue AS reviewIssue, created_at
+    `SELECT id, rank, title, category, rationale, target_audience AS targetAudience, price_range AS priceRange,
+            sourcing_hint AS sourcingHint, review_ok AS reviewOk, review_issue AS reviewIssue,
+            supplier_url AS supplierUrl, supplier_label AS supplierLabel,
+            supplier_searched_at AS supplierSearchedAt, created_at
      FROM trend_finds WHERE batch_id = ? ORDER BY rank ASC`,
     [batchId],
   );
