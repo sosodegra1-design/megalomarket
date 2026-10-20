@@ -260,6 +260,36 @@ api.post(
   }),
 );
 
+/*
+ * TOUTES LES FICHES EN ATTENTE, EN UN SEUL ENDROIT.
+ *
+ * Elles vivaient éparpillées : une par import, dans l'onglet Imports. Pour
+ * valider vingt produits il fallait ouvrir vingt imports. Cette route les
+ * rassemble, tous canaux confondus, avec de quoi décider sans naviguer :
+ * le prix, la présence d'une fiche site, et le titre.
+ *
+ * On ne renvoie PAS le site_payload complet : il pèse plusieurs kilo-octets
+ * chacun et l'écran n'en affiche qu'un à la fois. On donne sa taille, ce qui
+ * suffit à distinguer « fiche prête » de « fiche vide ».
+ */
+api.get(
+  '/fiches',
+  asyncRoute(async (req, res) => {
+    const rows = await dbAll(`
+      SELECT l.id, l.import_id, l.marketplace, l.title, l.status, l.suggested_price,
+             length(coalesce(l.site_payload, '')) AS payload_size,
+             substr(coalesce(l.publish_error, ''), 1, 120) AS publish_error,
+             i.title AS import_title, i.currency, i.purchase_price,
+             i.weight_g, i.lot_quantity
+      FROM import_listings l
+      JOIN imports i ON i.id = l.import_id
+      WHERE l.status IN ('a_valider', 'valide')
+      ORDER BY (l.marketplace = 'own_site') DESC, l.import_id ASC, l.marketplace ASC
+    `);
+    res.json({ listings: rows, total: rows.length });
+  }),
+);
+
 // --- Commandes ---
 api.get(
   '/orders',
