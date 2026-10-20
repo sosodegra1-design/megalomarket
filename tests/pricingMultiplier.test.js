@@ -69,6 +69,12 @@ test('le transport par pièce entre dans le coût rendu', () => {
 });
 
 test('le multiplicateur s’applique au coût RENDU, transport compris', () => {
+  // C'EST LE STANDARD DU COMMERCE INTERNATIONAL, et une ancienne modification
+  // l'avait inversé à tort. Le coût rendu (landed cost) additionne produit,
+  // fret, douane et frais : c'est CE total qu'on multiplie. Multiplier le seul
+  // prix d'achat donnerait un prix qui ne couvre pas le transport — donc une
+  // perte à chaque vente.
+  // Référence : https://nventory.io/blog/landed-cost-calculator-ecommerce-imported-goods
   const { suggestedPrice } = computePriceFromSupplier({
     purchasePrice: 2,
     currency: 'EUR',
@@ -77,8 +83,39 @@ test('le multiplicateur s’applique au coût RENDU, transport compris', () => {
     marginCoefficient: 3,
     fixedFee: 0,
   });
-  // (2,00 + 1,20) × 3 = 9,60 € — et non 2,00 × 3 = 6,00 €.
+  // (2,00 + 1,20) × 3 = 9,60 €.
   assert.equal(suggestedPrice, 9.6);
+});
+
+test('le détail signale la part du transport dans le coût rendu', () => {
+  // Un transport qui pèse plus de la moitié du coût rendu n'est pas une erreur
+  // de formule : c'est un produit peu viable à cette quantité. Le hub le dit.
+  const { landedCost, detail } = computePriceFromSupplier({
+    purchasePrice: 10,
+    currency: 'EUR',
+    shippingPrice: 30,
+    rates: RATES,
+    marginCoefficient: 3,
+    fixedFee: 0,
+  });
+  assert.equal(landedCost, 40);
+  assert.equal(detail.partTransport, 75, '30 € de port sur 40 € de coût rendu');
+});
+
+test('le port reste intégralement refacturé : jamais vendu à perte', () => {
+  // Le verrou anti-perte doit continuer de couvrir le port même quand le
+  // coefficient ne suffit pas.
+  const { suggestedPrice } = computePriceFromSupplier({
+    purchasePrice: 0.2,
+    currency: 'EUR',
+    shippingPrice: 28,
+    rates: RATES,
+    marginCoefficient: 1.5,
+    fixedFee: 0,
+  });
+  // (0,20 + 28) × 1,5 = 42,30 € — le coefficient porte sur le coût rendu.
+  assert.equal(suggestedPrice, 42.3);
+  assert.ok(suggestedPrice >= 28 + 0.2, 'le port et le produit sont couverts');
 });
 
 test('le transport est converti dans la devise du prix d’achat', () => {
