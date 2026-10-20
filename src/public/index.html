@@ -6329,13 +6329,74 @@ async function applyImportData(data) {
    l'utilisateur a déjà tapée — c'est exactement ce que promet le message
    d'échec d'extraction. Si un prix/une devise ont déjà été corrigés sur
    l'import courant, on les reprend pour ne pas les retaper. */
+/* QUELLE DEVISE POUR CE LIEN ? — miroir de src/importer/currencyHint.js
+ *
+ * Un produit Alibaba saisi en EUR est un prix faux d'un facteur ~7,7 : le
+ * fournisseur affiche 9,99 USD, l'écran lisait 9,99 €. La devise se déduit donc
+ * du lien, et le champ se remplit tout seul.
+ *
+ * Elle reste CORRIGEABLE : c'est une estimation, pas une lecture de la page.
+ * Si tu saisis une devise à la main, l'automatisme ne l'écrase plus.
+ */
+const DEVISE_PAR_DOMAINE = [
+  [/(^|\.)alibaba\.com$/, 'USD'],
+  [/(^|\.)made-in-china\.com$/, 'USD'],
+  [/(^|\.)globalsources\.com$/, 'USD'],
+  [/(^|\.)(1688|taobao|tmall)\.com$/, 'CNY'],
+  [/(^|\.)amazon\.(fr|de|es|it|nl|be)$/, 'EUR'],
+  [/(^|\.)amazon\.co\.uk$/, 'GBP'],
+  [/(^|\.)amazon\.com$/, 'USD'],
+  [/(^|\.)ebay\.(fr|de|es|it|be|nl|at|ie)$/, 'EUR'],
+  [/(^|\.)ebay\.co\.uk$/, 'GBP'],
+  [/(^|\.)ebay\.com$/, 'USD'],
+  [/(^|\.)aliexpress\.com$/, 'EUR'],
+  [/(^|\.)etsy\.com$/, 'EUR'],
+];
+const DEVISE_PAR_TLD = {
+  fr: 'EUR', de: 'EUR', es: 'EUR', it: 'EUR', be: 'EUR', nl: 'EUR',
+  pt: 'EUR', at: 'EUR', ie: 'EUR', lu: 'EUR', fi: 'EUR', gr: 'EUR',
+  uk: 'GBP', ch: 'CHF', ca: 'CAD', jp: 'JPY', cn: 'CNY', us: 'USD',
+};
+const TLD_COMPOSES = { 'co.uk': 'GBP', 'org.uk': 'GBP', 'com.au': 'AUD', 'co.jp': 'JPY' };
+
+function devinerDevise(url) {
+  const brut = String(url || '').trim();
+  if (!brut) return null;
+  let hote;
+  try {
+    hote = new URL(brut.includes('://') ? brut : 'https://' + brut).hostname.toLowerCase();
+  } catch { return null; }
+  for (const [motif, devise] of DEVISE_PAR_DOMAINE) if (motif.test(hote)) return devise;
+  const parties = hote.split('.');
+  const deux = parties.slice(-2).join('.');
+  if (TLD_COMPOSES[deux]) return TLD_COMPOSES[deux];
+  return DEVISE_PAR_TLD[parties[parties.length - 1]] || null;
+}
+
 function openManualImportForm(prefillUrl) {
   const block = $('manualImportBlock');
   if (!block) return;
   const urlField = $('manualImportUrl');
   if (urlField && prefillUrl) urlField.value = prefillUrl;
   const currencyField = $('manualImportCurrency');
-  if (currencyField && !currencyField.value) currencyField.value = 'USD';
+  if (currencyField && !currencyField.value) {
+    // Pas de valeur : on déduit de l'URL si possible, sinon USD (commerce
+    // international). L'utilisateur reste libre de corriger.
+    currencyField.value = devinerDevise(urlField ? urlField.value : '') || 'USD';
+    currencyField.dataset.auto = '1';
+  }
+  if (currencyField && currencyField.dataset.auto !== '0' && !currencyField.dataset.lie) {
+    // À chaque changement d'URL, tant que la devise n'a pas été saisie à la main.
+    currencyField.dataset.lie = '1';
+    currencyField.addEventListener('input', () => { currencyField.dataset.auto = '0'; });
+    if (urlField) {
+      urlField.addEventListener('input', () => {
+        if (currencyField.dataset.auto !== '1') return;
+        const devinee = devinerDevise(urlField.value);
+        if (devinee) currencyField.value = devinee;
+      });
+    }
+  }
 
   const priceField = $('manualImportPrice');
   if (priceField && !priceField.value && state.importId != null && state.importDetails) {

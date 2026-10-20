@@ -157,6 +157,21 @@ export function computeSuggestedPrice(landedCost, { marginCoefficient = 1.8, fix
     throw new Error('Frais fixes invalides.');
   }
 
+  /* LE COEFFICIENT S'APPLIQUE AU COÛT RENDU — port et douane compris.
+   *
+   * C'est le standard du commerce international, et ce n'est pas un détail
+   * comptable : un produit à 4,50 $ peut coûter 12,23 $ une fois le fret et la
+   * douane payés. Appliquer la marge au seul prix d'achat donnerait un prix qui
+   * ne couvre pas le transport — donc une perte à chaque vente.
+   *
+   * Référence : « Landed Cost = Product Cost + Freight + Customs Duties +
+   * Insurance + Brokerage », et le prix se construit sur ce total.
+   * https://nventory.io/blog/landed-cost-calculator-ecommerce-imported-goods
+   *
+   * Quand le coût rendu est dominé par le transport, ce n'est pas la formule
+   * qui est fausse : c'est le produit qui n'est pas viable à cette quantité.
+   * Le détail le signale (voir `detail.partTransport`), il ne le cache pas.
+   */
   const floor = landedCost + fixedFee;
   const raw = landedCost * marginCoefficient + fixedFee;
   return round2(Math.max(raw, floor));
@@ -201,6 +216,13 @@ export function computePriceFromSupplier({
       shippingPrice,
       carrierCostEur,
       transportEur: transport.perPieceEur,
+      /* Part du transport dans le coût rendu, en pourcentage. Au-delà de 50 %,
+         le produit se vend surtout du port : ce n'est PAS une erreur de calcul,
+         c'est le signal qu'il n'est pas viable à cette quantité. L'écran peut
+         alors proposer un lot plus grand, sans jamais fausser le prix. */
+      partTransport: landedCost > 0
+        ? round2((transport.perPieceEur / landedCost) * 100)
+        : 0,
       // D'où vient le transport : 'fiche', 'transporteur', 'lot' ou 'aucun'.
       transportSource: transport.source,
       lotQuantity,

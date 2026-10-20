@@ -7,6 +7,7 @@ import { publishListing, unpublishListing } from '../importer/publisher.js';
 import { connectors } from '../connectors/index.js';
 import { computePriceFromSupplier } from '../importer/pricing.js';
 import { loadCurrencyRates } from '../db/currency-catalogue.js';
+import { devisePourUrl } from '../importer/currencyHint.js';
 import { config } from '../config/env.js';
 import { getMultiplicateur } from '../services/pricingSettings.js';
 import { carrierCostForImport } from '../services/transport.js';
@@ -289,7 +290,24 @@ importsRouter.post(
         "Prix d'achat invalide : il doit être un nombre strictement supérieur à 0 (0 € signale une extraction manquée).",
       );
     }
-    if (typeof currency !== 'string' || !/^[A-Za-z]{3}$/.test(currency.trim())) {
+    /* LA DEVISE SE DÉDUIT DE L'URL QUAND ELLE N'EST PAS FOURNIE.
+     *
+     * Un produit Alibaba saisi sans devise partait en EUR : un jouet à 9,99 USD
+     * était lu comme 9,99 €, soit ~7,7 fois son vrai coût, et toute la chaîne de
+     * prix héritait de l'erreur.
+     *
+     * On ne devine pas au hasard : `devisePourUrl` s'appuie sur le domaine
+     * (Alibaba publie en USD, 1688 en CNY) puis sur l'extension nationale. La
+     * valeur reste une ESTIMATION, affichée comme telle, et corrigeable.
+     */
+    let devise = currency;
+    if (devise === undefined || devise === null || String(devise).trim() === '') {
+      const inferee = devisePourUrl(url);
+      if (inferee.devise) {
+        devise = inferee.devise;
+      }
+    }
+    if (typeof devise !== 'string' || !/^[A-Za-z]{3}$/.test(devise.trim())) {
       throw new Error('Devise invalide : un code de 3 lettres est attendu (ex. EUR, USD).');
     }
     if (rawDescription !== undefined && rawDescription !== null && typeof rawDescription !== 'string') {
@@ -337,7 +355,7 @@ importsRouter.post(
         title.trim(),
         (rawDescription || '').trim(),
         purchasePrice,
-        currency.trim().toUpperCase(),
+        devise.trim().toUpperCase(),
         // Transport lu sur la page, dans la devise du prix d'achat. 0 = inconnu.
         Number.isFinite(Number(shippingPrice)) && Number(shippingPrice) > 0 ? Number(shippingPrice) : 0,
         Number.isInteger(Number(moq)) && Number(moq) > 0 ? Number(moq) : null,
@@ -364,7 +382,7 @@ importsRouter.post(
       title: title.trim(),
       rawDescription: (rawDescription || '').trim(),
       purchasePrice,
-      currency: currency.trim().toUpperCase(),
+      currency: devise.trim().toUpperCase(),
       imageUrls: images,
       /* Le MOQ et la quantité de lot font partie de la réponse : sans eux, un
          import saisi à la main reviendrait sans sa donnée de comparaison, et le
