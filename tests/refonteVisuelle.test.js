@@ -91,7 +91,8 @@ test('chaque vue a un sous-titre, un groupe et un titre', () => {
   const V = vues(sandbox);
   const noms = Object.keys(V);
   // Seize : Paramètres (devises) et Informations légales (mentions, RGPD).
-  assert.equal(noms.length, 16, 'les seize vues du hub');
+  // 17 depuis l'ajout de la vue « Fiches », qui rassemble les fiches en attente.
+  assert.equal(noms.length, 17, 'les dix-sept vues du hub');
   for (const nom of noms) {
     const v = V[nom];
     assert.ok(v.title && v.title.trim(), `titre manquant pour ${nom}`);

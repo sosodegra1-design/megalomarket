@@ -1400,6 +1400,11 @@
         Imports
         <span class="nav-count" id="navCountImports" hidden></span>
       </a>
+      <a class="nav-item" href="#/fiches" data-view="fiches">
+        <span class="nav-ico">🗂️</span>
+        <span class="nav-label">Fiches</span>
+        <span class="nav-badge" id="fichesCount" hidden></span>
+      </a>
       <a class="nav-item" href="#/produits" data-view="produits">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 8 12 3 3 8v8l9 5 9-5V8Z"/><path d="m3 8 9 5 9-5M12 13v8"/></svg>
         Produits
@@ -2586,6 +2591,19 @@
       </section>
 
       <!-- ==================== VUE : CANAUX ==================== -->
+      <section class="view" id="view-fiches" data-view="fiches" hidden>
+        <div class="card reveal-in">
+          <h2>Toutes les fiches en attente</h2>
+          <p class="hint">Les fiches générées, tous canaux confondus, au même endroit. Une fiche sans
+            fiche détaillée du site ne peut pas être publiée sur BBVolteX : elle est signalée.</p>
+          <div class="toolbar" style="margin:12px 0">
+            <button class="btn btn-ghost btn-sm" type="button" data-action="reload-fiches">Rafraîchir</button>
+            <span class="hint" id="fichesResume"></span>
+          </div>
+          <div id="fichesList"><div class="skel-card"><span class="skel skel-bar" style="width:60%"></span></div></div>
+        </div>
+      </section>
+
       <section class="view" id="view-canaux" data-view="canaux" hidden>
         <div class="card reveal-in">
           <h2>Canaux</h2>
@@ -7930,6 +7948,7 @@ $('btnRefreshCommandes').addEventListener('click', (event) => action(event.curre
    donc l'ordre des clés de VIEW_ORDER suit celui de la navigation. */
 const VIEWS = {
   dashboard: { el: 'view-dashboard', title: 'Tableau de bord', group: 'Pilotage', sub: "Vue d'ensemble de l'activité et des décisions en attente" },
+  fiches: { el: 'view-fiches', title: 'Fiches', group: 'Pilotage', sub: 'Toutes les fiches en attente, réunies' },
   imports: { el: 'view-imports', title: 'Imports', group: 'Pilotage', sub: 'Extraire une fiche fournisseur et préparer sa publication' },
   produits: { el: 'view-produits', title: 'Produits', group: 'Pilotage', sub: 'Catalogue interne et prix de revient' },
   fournisseurs: { el: 'view-fournisseurs', title: 'Fournisseurs', group: 'Réglages', sub: 'Partenaires de sourcing et coefficients de marge' },
@@ -7990,6 +8009,82 @@ function viewRank(name) {
 
 let currentView = null;
 
+/* ===================== FICHES (TOUT AU MÊME ENDROIT) =====================
+   Les fiches vivaient une par import : valider vingt produits demandait
+   d'ouvrir vingt imports. Elles sont ici rassemblées, triées par import, le
+   canal BBVolteX d'abord puisque c'est celui qui exige une fiche détaillée. */
+state.fiches = state.fiches || { listings: [], charge: false };
+
+async function loadFiches(force) {
+  const zone = $('fichesList');
+  if (!zone) return;
+  if (state.fiches.charge && !force) return;
+  zone.innerHTML = '<div class="skel-card"><span class="skel skel-bar" style="width:60%"></span></div>';
+  try {
+    const data = await api('/api/fiches');
+    state.fiches.listings = data.listings || [];
+    state.fiches.charge = true;
+    renderFiches();
+  } catch (e) {
+    zone.innerHTML = '<p class="hint">Lecture impossible : ' + esc(e.message) + '</p>';
+  }
+}
+
+function renderFiches() {
+  const zone = $('fichesList');
+  const resume = $('fichesResume');
+  if (!zone) return;
+  const rows = state.fiches.listings || [];
+  const site = rows.filter((r) => r.marketplace === 'own_site');
+  const pretes = site.filter((r) => Number(r.payload_size) > 200);
+  const sansPayload = site.filter((r) => Number(r.payload_size) <= 200);
+
+  if (resume) {
+    resume.textContent = rows.length
+      ? rows.length + ' fiche(s) en attente — ' + pretes.length + ' prête(s) sur BBVolteX'
+        + (sansPayload.length ? ', ' + sansPayload.length + ' sans fiche détaillée' : '')
+      : 'Aucune fiche en attente.';
+  }
+  const badge = $('fichesCount');
+  if (badge) {
+    badge.textContent = String(rows.length);
+    badge.hidden = rows.length === 0;
+  }
+  if (!rows.length) {
+    zone.innerHTML = '<p class="hint">Rien à valider : toutes les fiches sont publiées ou en brouillon.</p>';
+    return;
+  }
+
+  const ligne = (r) => {
+    const ok = Number(r.payload_size) > 200;
+    const siteRow = r.marketplace === 'own_site';
+    const etat = siteRow
+      ? (ok ? '<span class="pill ok">fiche prête</span>' : '<span class="pill warn">sans fiche</span>')
+      : '<span class="pill">' + esc(channelLabel(r.marketplace)) + '</span>';
+    return '<tr>'
+      + '<td data-label="Import">#' + esc(r.import_id) + '</td>'
+      + '<td data-label="Canal">' + esc(channelLabel(r.marketplace)) + '</td>'
+      + '<td data-label="Titre">' + esc(String(r.title || r.import_title || '').slice(0, 70)) + '</td>'
+      + '<td data-label="Prix">' + (r.suggested_price != null ? esc(r.suggested_price) + ' €' : '—') + '</td>'
+      + '<td data-label="État">' + etat + '</td>'
+      + '<td data-label="Action"><button class="btn btn-ghost btn-sm" type="button" data-action="open-import" data-id="'
+        + esc(r.import_id) + '">Ouvrir</button></td>'
+      + '</tr>';
+  };
+
+  const parImport = new Map();
+  for (const r of rows) {
+    if (!parImport.has(r.import_id)) parImport.set(r.import_id, []);
+    parImport.get(r.import_id).push(r);
+  }
+  let html = '<table class="table compact"><thead><tr>'
+    + '<th>Import</th><th>Canal</th><th>Titre</th><th>Prix</th><th>État</th><th></th>'
+    + '</tr></thead><tbody>';
+  for (const [, groupe] of parImport) html += groupe.map(ligne).join('');
+  html += '</tbody></table>';
+  zone.innerHTML = html;
+}
+
 function showView(name, options = {}) {
   const view = VIEWS[name] ? name : 'dashboard';
   const animate = options.animate !== false && motionOK();
@@ -8041,6 +8136,7 @@ function showView(name, options = {}) {
   // tant qu'elles sont cachées), les lignes déjà rendues le leur, et les vues
   // cachées sont débarrassées de leurs lignes transparentes : sans cela, une
   // table rendue en arrière-plan attendrait un décalage qui ne s'écoule jamais.
+  if (view === 'fiches') loadFiches();
   refreshRowIn(view);
   revealStagger($(VIEWS[view].el));
   replayStagger($(VIEWS[view].el));
