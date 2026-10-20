@@ -16,6 +16,28 @@ function buildPublishPayload(listing, imp) {
   const images = JSON.parse(imp.image_urls || '[]');
 
   if (listing.marketplace === 'own_site') {
+    /* PAS DE PHOTO, PAS DE PUBLICATION.
+     *
+     * Constaté en production : le lot de 3 bavoirs est parti sur le site avec
+     * ZÉRO photo. Un article sans image ne se vend pas — et on ne le découvre
+     * qu'en ouvrant la boutique.
+     *
+     * Le refus est explicite et dit quoi faire, plutôt que de publier une fiche
+     * vide qu'il faudra retirer ensuite. */
+    const photosImport = (() => {
+      try { return JSON.parse(imp.image_urls || '[]'); } catch { return []; }
+    })();
+    const photosPayload = (() => {
+      try { return JSON.parse(listing.site_payload || '{}').images || []; } catch { return []; }
+    })();
+    if (!photosImport.length && !photosPayload.length) {
+      throw new Error(
+        "Publication BBVolteX refusée : aucune photo. Un article sans image ne se vend pas "
+        + "et fait une page vide sur la boutique. Ajoute au moins une photo à l'import (n°"
+        + imp.id + ') puis republie.',
+      );
+    }
+
     if (!listing.site_payload) {
       throw new Error(
         "Publication sur le site propre impossible : aucune fiche détaillée n'a été préparée. " +
