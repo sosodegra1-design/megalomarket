@@ -158,3 +158,26 @@ test('the callbacks registered by startScheduler contain a failing job instead o
   assert.match(errors[2].message, /synchronisation retours planifiée/);
   assert.match(errors[3].message, /synchronisation controle_qualite planifiée/);
 });
+
+/* ===================== UN SEUL PLANIFICATEUR PAR BASE ===================== */
+
+test('le planificateur peut être coupé par SCHEDULER_DISABLED', async () => {
+  // Deux instances sur la même base synchroniseraient deux fois le stock et les
+  // commandes, et se disputeraient les mêmes écritures. Le drapeau permet d'en
+  // désigner une seule comme maître du calendrier, sans arrêter le service.
+  const { readFileSync } = await import('node:fs');
+  const source = readFileSync(new URL('../src/server.js', import.meta.url), 'utf8');
+  assert.match(source, /SCHEDULER_DISABLED/, 'le drapeau doit exister');
+  assert.match(source, /Planificateur DÉSACTIVÉ/, 'la désactivation doit être journalisée, jamais silencieuse');
+  // Le démarrage doit être conditionnel, pas inconditionnel.
+  assert.ok(
+    /if \(String\(process\.env\.SCHEDULER_DISABLED/.test(source),
+    'startScheduler ne doit plus être appelé sans condition',
+  );
+});
+
+test('sans le drapeau, le planificateur démarre normalement', async () => {
+  const { readFileSync } = await import('node:fs');
+  const source = readFileSync(new URL('../src/server.js', import.meta.url), 'utf8');
+  assert.match(source, /\} else \{\s*\n\s*startScheduler\(\);/, 'le comportement par défaut reste le démarrage');
+});
