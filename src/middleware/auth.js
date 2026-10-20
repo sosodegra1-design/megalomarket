@@ -64,6 +64,30 @@ function presentedSecret(req) {
    PROPRE jeton (CRON_SECRET), vérifié dans routes/cron.js. Un planificateur
    externe ne doit pas détenir la clé admin : il n'a besoin que de lancer une
    chasse, pas de lire les commandes ni les clients. */
+/* CE QUE LE JETON LIMITÉ A LE DROIT DE FAIRE — et rien d'autre.
+ *
+ * Le chien de garde importe un produit, puis génère ses fiches. Ces routes
+ * suffisent. Tout le reste lui est FERMÉ : lire les commandes clients, changer
+ * un prix, publier sur un canal, vider la base.
+ *
+ * Sans cette liste, un jeton dérobé sur une machine personnelle ouvrirait le
+ * back-office entier. C'est le principe de l'OWASP (Excessive Agency) : donner
+ * à un automate le minimum d'actions, jamais « tout par commodité ».
+ */
+const ROUTES_AUTORISEES_JETON_LIMITE = [
+  { method: 'GET', motif: /^\/api\/health$/ },
+  { method: 'GET', motif: /^\/api\/imports$/ },
+  { method: 'POST', motif: /^\/api\/imports$/ },
+  { method: 'POST', motif: /^\/api\/imports\/[^/]+\/generate$/ },
+  { method: 'DELETE', motif: /^\/api\/imports\/duplicates$/ },
+];
+
+function jetonLimiteAutorise(req) {
+  return ROUTES_AUTORISEES_JETON_LIMITE.some(
+    (route) => route.method === req.method && route.motif.test(req.path),
+  );
+}
+
 const PUBLIC_PATHS = new Set([
   '/api/health',
   '/api/orders/sendcloud/webhook',
@@ -86,6 +110,19 @@ export function requireAdmin(req, res, next) {
   }
 
   const presented = presentedSecret(req);
+
+  /* LE JETON LIMITÉ SE JUGE AVANT LA CLÉ MAÎTRE. S'il correspond, on
+     n'autorise que sa liste de routes ; le reste est refusé avec un message
+     qui dit pourquoi, plutôt qu'un 401 indistinct. */
+  const jetonLimite = config.importToken.secret;
+  if (presented && jetonLimite && safeEqual(presented, jetonLimite)) {
+    if (jetonLimiteAutorise(req)) return next();
+    return res.status(403).json({
+      error: "Jeton limité aux imports : cette action n'est pas couverte. "
+        + 'Utilise la clé administrateur pour lire les commandes, changer un prix ou publier.',
+    });
+  }
+
   if (!presented || !safeEqual(presented, expected)) {
     /* L'en-tête WWW-Authenticate est ce qui déclenche la boîte de dialogue du
        navigateur : sans lui, un accès direct au tableau de bord afficherait un

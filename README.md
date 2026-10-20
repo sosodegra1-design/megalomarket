@@ -343,6 +343,34 @@ utiliser le bouton du tableau de bord (qui passe par la clé admin).
 > forte charge. Sans conséquence pour une chasse hebdomadaire ; inadapté à une
 > tâche toutes les 5 minutes.
 
+## Moindre privilège : le jeton du chien de garde
+
+Le chien de garde (surveillance des favoris Chrome) est un automate qui vit sur
+une machine personnelle. Il détenait la **clé administrateur** — donc le droit
+de lire les commandes clients, de changer un prix et de publier.
+
+Il a désormais son propre jeton, `IMPORT_TOKEN`, limité à **quatre routes** :
+
+| Méthode | Route |
+|---|---|
+| GET | `/api/imports` (lister, pour éviter les doublons) |
+| POST | `/api/imports` (créer) |
+| POST | `/api/imports/:id/generate` (générer les fiches) |
+| DELETE | `/api/imports/duplicates` (nettoyage) |
+
+Tout le reste répond **403** avec un message explicite. C'est le principe
+« Excessive Agency » de l'OWASP : un automate reçoit le minimum d'actions.
+
+## Idempotence : un import ne se crée pas deux fois
+
+`POST /api/imports` refuse (**409**) une URL déjà importée, et renvoie
+l'identifiant existant. Le contrôle a lieu **avant l'extraction** : scraper une
+page pour découvrir ensuite qu'on la connaissait déjà serait du travail payé
+deux fois — requête réseau, et parfois appel IA.
+
+> Déposer deux fois le même favori ne crée plus deux imports ni deux jeux de
+> fiches : la comparaison entre fournisseurs reste lisible.
+
 ## Sauvegarde
 
 **Turso assure la durabilité et les points de reprise.** L'export ci-dessous ne

@@ -151,6 +151,31 @@ importsRouter.post(
     // choisi n'existe pas — l'erreur doit tomber tout de suite.
     const resolvedSupplierId = await resolveSupplierId(supplierId);
 
+    /* IDEMPOTENCE — un import ne se crée pas deux fois.
+     *
+     * Constat : déposer deux fois le même favori créait deux imports, deux jeux
+     * de fiches, et brouillait la comparaison entre fournisseurs. Le chien de
+     * garde redémarre, rejoue un lien non mémorisé, et le doublon apparaît.
+     *
+     * On refuse AVANT d'extraire : scraper la page pour découvrir ensuite qu'on
+     * la connaissait déjà serait du travail payé deux fois (requête réseau,
+     * éventuellement appel IA).
+     *
+     * 409 et non 400 : ce n'est pas une erreur de l'appelant, c'est un état.
+     * L'identifiant existant est renvoyé pour qu'il puisse le réutiliser.
+     */
+    const dejaImporte = await dbGet(
+      'SELECT id, title FROM imports WHERE source_url = ? ORDER BY id DESC LIMIT 1',
+      [url],
+    );
+    if (dejaImporte) {
+      return res.status(409).json({
+        error: `Cet import existe déjà (#${dejaImporte.id} — « ${dejaImporte.title} »).`,
+        duplicate: true,
+        existingId: dejaImporte.id,
+      });
+    }
+
     /* Deux voies d'extraction, dans cet ordre :
        1. le scraping (rapide, gratuit, exact — c'est la source de vérité quand
           il aboutit) ;
