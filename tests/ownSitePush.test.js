@@ -159,8 +159,10 @@ test('un 429 passager est réessayé une fois', async () => {
 
 test('un produit absent du site est publié depuis sa fiche d’import', async () => {
   await dbRun(
-    "INSERT INTO imports (source_url, source_site, title, raw_description, purchase_price, currency, status, created_at) VALUES ('https://x.test/a', 'alibaba', 'Lampe lunaire', '', 5, 'EUR', 'pret', ?)",
-    [Date.now()],
+    // Une photo est desormais EXIGEE pour publier sur BBVolteX (voir publisher.js) :
+    // la fiche de test en porte donc une, comme une vraie fiche fournisseur.
+    "INSERT INTO imports (source_url, source_site, title, raw_description, purchase_price, currency, image_urls, status, created_at) VALUES ('https://x.test/a', 'alibaba', 'Lampe lunaire', '', 5, 'EUR', ?, 'pret', ?)",
+    [JSON.stringify(['https://exemple.test/lampe.jpg']), Date.now()],
   );
   const { dbGet } = await import('../src/db/database.js');
   const imp = await dbGet("SELECT id FROM imports WHERE title = 'Lampe lunaire'");
@@ -204,4 +206,34 @@ test('un produit absent du site est publié depuis sa fiche d’import', async (
   } finally {
     restore();
   }
+});
+
+/* ===================== PAS DE PHOTO, PAS DE PUBLICATION ===================== */
+
+test('publier une fiche BBVolteX sans aucune photo est refusé', async () => {
+  // Constaté en production : le lot de 3 bavoirs est parti sur le site avec zéro
+  // photo. Le client voit une page vide, et il faut retirer l'article.
+  const { dbRun, dbGet } = await import('../src/db/database.js');
+  const { publishListing } = await import('../src/importer/publisher.js');
+
+  await dbRun(
+    "INSERT INTO imports (source_url, source_site, title, raw_description, purchase_price, currency, image_urls, status, created_at) VALUES ('https://x.test/sansphoto', 'alibaba', 'Sans photo', '', 3, 'EUR', '[]', 'pret', ?)",
+    [Date.now()],
+  );
+  const imp = await dbGet("SELECT id FROM imports WHERE title = 'Sans photo'");
+  await dbRun(
+    `INSERT INTO import_listings (import_id, marketplace, title, description, suggested_price, status, site_payload, created_at, updated_at)
+     VALUES (?, 'own_site', 'Sans photo', 'desc', 9.9, 'a_valider', ?, ?, ?)`,
+    [imp.id, JSON.stringify({ name: 'Sans photo', category: 'vetements', universe: 'bebe', age: '0-2', iconKey: 'body' }), Date.now(), Date.now()],
+  );
+  const listing = await dbGet("SELECT id FROM import_listings WHERE import_id = ? AND marketplace = 'own_site'", [imp.id]);
+
+  await assert.rejects(
+    () => publishListing(listing.id),
+    (e) => {
+      assert.match(e.message, /aucune photo/);
+      assert.match(e.message, /ne se vend pas/);
+      return true;
+    },
+  );
 });
