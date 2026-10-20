@@ -96,8 +96,67 @@ async function requireProduct(productId) {
  * Identifiant attendu par le connecteur pour CE canal : `external_id` (le plus
  * souvent le SKU posé par la synchro de stock), à défaut le SKU du produit.
  */
+/* Résout l'identifiant que le SITE PROPRE attend : un id court (« p2 », « bj1 »),
+ * pas un SKU. Le site ne connaît pas nos SKU — il a ses propres identifiants.
+ *
+ * LE DÉFAUT CONSTATÉ EN PRODUCTION : sans `external_id` enregistré, le hub
+ * envoyait le SKU, qui vaut ici le NOM du produit. Le site répondait
+ * « PATCH /api/admin/products/Tablette%20d%27%C3%A9criture… (404) » — et le prix
+ * n'était jamais propagé.
+ *
+ * On cherche donc le produit par son nom sur le site. S'il n'y est pas, on
+ * s'arrête avec un message qui dit quoi faire : pousser le prix d'un produit
+ * absent n'a aucun sens, et un 404 brut ne l'explique pas.
+ */
+function normaliserNom(valeur) {
+  return String(valeur || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/\s+/g, ' ')
+    .replace(/[,.;:]+$/, '')
+    .trim();
+}
+
+async function idSitePropre(product) {
+  const connecteur = connectors.own_site;
+  if (!connecteur || typeof connecteur.listProducts !== 'function') return null;
+
+  let produits;
+  try {
+    produits = await connecteur.listProducts();
+  } catch {
+    // Le catalogue du site est injoignable : on ne peut pas résoudre. L'appelant
+    // décidera, mais on ne fabrique pas un identifiant au hasard.
+    return null;
+  }
+
+  const liste = Array.isArray(produits) ? produits : (produits?.products || []);
+  const cible = normaliserNom(product.sku);
+  const parNom = liste.find((p) => normaliserNom(p?.name) === cible);
+  if (parNom?.id != null) return String(parNom.id);
+
+  // Repli : certains SKU contiennent le nom suivi d'une référence.
+  const parDebut = liste.find((p) => {
+    const nom = normaliserNom(p?.name);
+    return nom && cible && (cible.startsWith(nom) || nom.startsWith(cible));
+  });
+  return parDebut?.id != null ? String(parDebut.id) : null;
+}
+
 async function channelIdentifier(channel, product, listing) {
-  return listing?.external_id || product.sku || null;
+  if (listing?.external_id) return listing.external_id;
+
+  if (channel === 'own_site') {
+    const id = await idSitePropre(product);
+    if (id) return id;
+    throw new Error(
+      `« ${product.sku} » n'existe pas sur le site propre : le prix ne peut pas y être poussé. `
+      + 'Publie d\'abord la fiche sur le canal own_site, puis relance la propagation.',
+    );
+  }
+
+  return product.sku || null;
 }
 
 /** Reflète côté hub ce qui vient d'être accepté par le canal (prix et/ou stock). */
