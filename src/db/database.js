@@ -358,6 +358,21 @@ async function migrateImportListingsQuality() {
   const addedAt = await addColumnIfMissing('import_listings', 'quality_checked_at', 'INTEGER');
   const addedOk = await addColumnIfMissing('import_listings', 'quality_ok', 'INTEGER');
   const addedIssue = await addColumnIfMissing('import_listings', 'quality_issue', 'TEXT');
+
+  /* LE FOURNISSEUR TROUVÉ DOIT SURVIVRE AU RAFRAÎCHISSEMENT.
+   *
+   * La recherche Perplexity rendait des liens affichés à l'écran mais jamais
+   * enregistrés : recharger la page les perdait, et il fallait recliquer sur
+   * chaque piste. Sur vingt produits, cela fait vingt recherches à refaire.
+   *
+   * On garde donc le lien retenu ET son libellé (qui porte le prix constaté),
+   * avec la date de recherche — un prix de fournisseur vieillit. */
+  const addedSupplierUrl = await addColumnIfMissing('trend_finds', 'supplier_url', 'TEXT');
+  const addedSupplierLabel = await addColumnIfMissing('trend_finds', 'supplier_label', 'TEXT');
+  const addedSupplierAt = await addColumnIfMissing('trend_finds', 'supplier_searched_at', 'INTEGER');
+  if (addedSupplierUrl || addedSupplierLabel || addedSupplierAt) {
+    console.log('Migration : trend_finds.supplier_url / supplier_label / supplier_searched_at ajoutés.');
+  }
   if (addedAt || addedOk || addedIssue) {
     await logActivity('MIGRATION', 'Colonnes import_listings.quality_checked_at / quality_ok / quality_issue ajoutées : contrôle qualité périodique des photos publiées.');
   }
