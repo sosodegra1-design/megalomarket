@@ -71,7 +71,16 @@ async function saveRun({
 pipelineRouter.post(
   '/run',
   asyncRoute(async (req, res) => {
-    const body = req.body || {};
+    res.status(201).json(await executerPipeline(req.body || {}));
+  }),
+);
+
+/* LE MÊME TRAVAIL, APPELLABLE POUR N'IMPORTE QUEL IMPORT.
+ *
+ * Le pipeline ne servait qu'à la saisie manuelle : les imports déjà faits
+ * restaient à préparer un par un. On extrait donc le corps du traitement pour
+ * que le lot puisse s'exécuter sans passer par le formulaire. */
+async function executerPipeline(body) {
     const title = typeof body.title === 'string' ? body.title.trim() : '';
     if (!title) throw new Error('Le titre du produit est obligatoire.');
 
@@ -217,7 +226,59 @@ pipelineRouter.post(
       category, seoTitle: listing?.seoTitle, description: listing?.description, report,
     });
     await logActivity('PIPELINE_BROUILLON', `Pipeline : "${listing?.seoTitle || title}" préparé en brouillon — validation humaine requise avant toute publication.`);
-    res.status(201).json({ id, status: 'brouillon', report, listing });
+    return { id, status: 'brouillon', report, listing };
+}
+
+/* TOUT L'EXISTANT PART AU PIPELINE.
+ *
+ * Les imports déjà faits n'étaient jamais passés au pipeline : textes,
+ * contrôles qualité et catégorisation restaient à faire à la main, produit par
+ * produit. Cette route les prend en lot.
+ *
+ * Ce qui ne peut pas passer est IGNORÉ avec sa raison, jamais traité de travers :
+ * sans prix d'achat le pipeline refuse de calculer un prix de vente, et sans
+ * photo il n'a rien à contrôler. */
+pipelineRouter.post(
+  '/from-imports',
+  asyncRoute(async (req, res) => {
+    const ids = Array.isArray(req.body?.importIds)
+      ? req.body.importIds.map(Number).filter((n) => Number.isInteger(n) && n > 0)
+      : null;
+    const imports = ids && ids.length
+      ? await dbAll(`SELECT * FROM imports WHERE id IN (${ids.map(() => '?').join(',')}) ORDER BY id`, ids)
+      : await dbAll('SELECT * FROM imports ORDER BY id');
+
+    const resultats = [];
+    for (const imp of imports) {
+      const images = (() => { try { return JSON.parse(imp.image_urls || '[]'); } catch { return []; } })();
+      if (!(Number(imp.purchase_price) > 0)) {
+        resultats.push({ importId: imp.id, ignore: "aucun prix d'achat" });
+        continue;
+      }
+      if (!images.length) {
+        resultats.push({ importId: imp.id, ignore: 'aucune photo' });
+        continue;
+      }
+      try {
+        const r = await executerPipeline({
+          title: imp.title,
+          purchasePrice: imp.purchase_price,
+          images,
+          sourceUrl: imp.source_url,
+          notes: imp.raw_description,
+          weightKg: imp.weight_g ? Number(imp.weight_g) / 1000 : null,
+        });
+        resultats.push({ importId: imp.id, runId: r.id, ok: true });
+      } catch (e) {
+        resultats.push({ importId: imp.id, ok: false, erreur: String(e.message).slice(0, 140) });
+      }
+    }
+    res.json({
+      traites: resultats.filter((r) => r.ok).length,
+      ignores: resultats.filter((r) => r.ignore).length,
+      echecs: resultats.filter((r) => r.ok === false).length,
+      resultats,
+    });
   }),
 );
 
