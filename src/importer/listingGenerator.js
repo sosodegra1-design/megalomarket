@@ -33,6 +33,7 @@ Règles :
 - TikTok Shop : ton jeune et dynamique, phrases courtes, orienté usage au quotidien.
 - Allegro : ton clair et rassurant, précis sur les caractéristiques.
 - LumiVita : catalogue professionnel pour distributeurs et revendeurs, ton sobre et factuel, sans prix ni promesse de stock.
+- "description" : 400 à 700 caractères, en paragraphes. Commence par une phrase qui donne envie, puis 3 à 4 atouts concrets tirés des données fournies, puis l'usage au quotidien. Une description de 150 caractères est REFUSÉE : elle ne vend rien et ne référence rien.
 - Ne jamais inventer une caractéristique technique absente des données fournies.`;
 
 /* ===================== SITE PROPRE =====================
@@ -83,6 +84,7 @@ Règles impératives :
 - "sizeGuide" et "sizeGuide_en" : la première ligne est un en-tête de colonnes ; au moins une ligne de valeurs. Adapte les colonnes au produit (âge, dimensions, poids, matière…).
 - "age" est un code court (par exemple "0-2", "3-5", "6-8", "adulte") ; "ageLabel" est son libellé lisible ("0-2 ans").
 - "colors" : une à trois couleurs hexadécimales plausibles pour le produit.
+- "description" et "description_en" : 400 à 700 caractères CHACUNE, en paragraphes, dans la langue de leur champ. Une description courte est REFUSÉE : c'est elle qui fait vendre et qui référence la page.
 - Ne jamais inventer une caractéristique technique absente des données fournies.`;
 }
 

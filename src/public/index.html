@@ -6614,6 +6614,44 @@ function visibleListings(listings) {
   return { visibles, masques };
 }
 
+/* TOUTES LES OPTIONS DU SITE, LISIBLES DANS L'IMPORT.
+ *
+ * Le payload du site était un pavé JSON : les catégories, l'âge, l'icône, les
+ * couleurs, l'entretien, la sécurité et le guide des tailles y étaient bien,
+ * mais illisibles. On affiche d'abord un récapitulatif en clair, puis l'éditeur
+ * JSON pour les corrections — l'un n'empêche pas l'autre.
+ */
+const SITE_CHAMPS_LISIBLES = [
+  ['category', 'Catégorie'],
+  ['universe', 'Univers'],
+  ['ageLabel', 'Âge'],
+  ['iconKey', 'Icône'],
+  ['colors', 'Couleurs'],
+  ['ecoDetails', 'Éco-conception'],
+  ['safety', 'Sécurité'],
+  ['care', 'Entretien'],
+];
+
+function recapSitePayload(brut) {
+  let p;
+  try { p = JSON.parse(brut || '{}'); } catch { return ''; }
+  const lignes = SITE_CHAMPS_LISIBLES
+    .filter(([cle]) => p[cle] !== undefined && p[cle] !== null && String(p[cle]).trim() !== '')
+    .map(([cle, label]) => {
+      const v = Array.isArray(p[cle]) ? p[cle].join(', ') : String(p[cle]);
+      return '<div style="display:flex;gap:8px;padding:2px 0"><span class="hint hint-tight" style="min-width:120px">'
+        + esc(label) + '</span><span>' + esc(v) + '</span></div>';
+    });
+  if (p.sizeGuide && Array.isArray(p.sizeGuide)) {
+    lignes.push('<div style="display:flex;gap:8px;padding:2px 0"><span class="hint hint-tight" style="min-width:120px">'
+      + 'Guide des tailles</span><span>' + esc(p.sizeGuide.map((r) => r.join(' · ')).join(' | ')) + '</span></div>');
+  }
+  if (!lignes.length) return '';
+  return '<div style="margin-top:8px;padding:10px;border:1px solid var(--line);border-radius:10px">'
+    + '<p class="hint hint-tight" style="margin:0 0 6px">Ce que la fiche enverra au site</p>'
+    + lignes.join('') + '</div>';
+}
+
 function renderListings(listings) {
   const box = $('listings');
   if (!box) return;
@@ -6666,7 +6704,8 @@ function renderListings(listings) {
     + '<textarea class="input textarea" id="d-' + esc(l.id) + '" rows="4">' + esc(l.description) + '</textarea></div></details>'
     + (l.marketplace === 'own_site'
       ? '<details class="site-details"><summary>Fiche détaillée du site (catégorie, univers, âge, icône, bilingue)</summary>'
-        + '<p class="hint hint-tight" style="margin-top:8px">Le site exige ces champs, que les marketplaces ne demandent pas. Corrige le JSON si la génération s\'est trompée, puis enregistre avant de publier.</p>'
+        + recapSitePayload(l.site_payload)
+                + '<p class="hint hint-tight" style="margin-top:8px">Le site exige ces champs, que les marketplaces ne demandent pas. Corrige le JSON si la génération s\'est trompée, puis enregistre avant de publier.</p>'
         + '<textarea class="input textarea mono" id="s-' + esc(l.id) + '" rows="12">' + esc(l.site_payload || '') + '</textarea></details>'
       : '')
     + '<div class="actions">'
