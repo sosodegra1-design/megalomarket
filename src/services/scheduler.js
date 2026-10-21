@@ -4,6 +4,7 @@ import { syncOrdersFromAllChannels } from './orderSync.js';
 import { huntNiches } from '../ai/nicheHunter.js';
 import { processPendingReturns } from './returnFulfillment.js';
 import { runQualitySupervision } from './qualitySupervisor.js';
+import { repairAllImports } from './importHealer.js';
 import { logActivity } from '../db/database.js';
 
 /**
@@ -54,6 +55,7 @@ export async function startScheduler({
   nicheJob = huntNiches,
   returnsJob = processPendingReturns,
   qualityJob = runQualitySupervision,
+  repairJob = () => repairAllImports({ limite: 6 }),
   logger = logActivity,
 } = {}) {
   /*
@@ -110,6 +112,19 @@ export async function startScheduler({
    * autres tâches planifiées).
    */
   schedule('*/30 * * * *', () => runSafely('controle_qualite', qualityJob, logger), { noOverlap: true });
+
+  /*
+   * AGENT DE COMPLÉTION DES FICHES : toutes les heures, six imports au plus.
+   *
+   * Les imports arrivent parfois amputés — la veste de pluie est entrée avec son
+   * prix mais SANS photo ni poids. Sans photo le site refuse de publier, et sans
+   * poids le port est facturé au forfait de 28 €, ce qui triple le prix. Cet
+   * agent retourne sur la page fournisseur et ne remplit que les trous.
+   *
+   * Le lot est BORNÉ : chaque passage relit des pages réelles, et un lot trop
+   * large ferait ramper le service sans rien apporter de plus.
+   */
+  schedule('20 * * * *', () => runSafely('completion_fiches', repairJob, logger), { noOverlap: true });
 
   /*
    * Pas de tâche périodique de PUSH.

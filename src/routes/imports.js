@@ -8,6 +8,7 @@ import { connectors } from '../connectors/index.js';
 import { computePriceFromSupplier } from '../importer/pricing.js';
 import { loadCurrencyRates } from '../db/currency-catalogue.js';
 import { devisePourUrl } from '../importer/currencyHint.js';
+import { repairImport, repairAllImports } from '../services/importHealer.js';
 import { config } from '../config/env.js';
 import { getMultiplicateur } from '../services/pricingSettings.js';
 import { carrierCostForImport } from '../services/transport.js';
@@ -786,6 +787,36 @@ importsRouter.post(
     const importId = Number(req.params.id);
     const result = await generateListingsForImport(importId);
     res.json(await applySupplierMargin(importId, result));
+  }),
+);
+
+// --- Agent de complétion : photos, poids, MOQ manquants ---
+/*
+ * Un import peut arriver amputé : la veste de pluie est entrée avec son prix mais
+ * SANS photo et SANS poids. Sans photo le site refuse de publier ; sans poids le
+ * port est facturé au forfait de 28 €, ce qui triple le prix. Cet agent retourne
+ * sur la page fournisseur et ne remplit que les trous.
+ */
+importsRouter.post(
+  '/:id/repair',
+  asyncRoute(async (req, res) => {
+    const rapport = await repairImport(Number(req.params.id));
+    // Le poids et les photos changent le transport, donc le prix : on recalcule.
+    if (rapport.remplis.length) await recomputeListingPrices(req.params.id);
+    res.json(rapport);
+  }),
+);
+
+importsRouter.post(
+  '/repair-all',
+  asyncRoute(async (req, res) => {
+    const rapport = await repairAllImports({ limite: Number(req.body?.limite) || 40 });
+    for (const r of rapport.resultats) {
+      if (r.remplis?.length) {
+        try { await recomputeListingPrices(r.importId); } catch { /* un prix impossible ne doit pas arrêter le lot */ }
+      }
+    }
+    res.json(rapport);
   }),
 );
 
