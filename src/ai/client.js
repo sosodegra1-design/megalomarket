@@ -96,7 +96,7 @@ function withNoThink(content, model, vision) {
   return content;
 }
 
-async function askOpenAiCompatible({ system, prompt, maxTokens, userContent, model, vision = false }) {
+async function askOpenAiCompatible({ system, prompt, maxTokens, userContent, model, vision = false, tentative429 = 0 }) {
   // Une base terminée par un slash (fréquent dans une variable recopiée)
   // produirait « //chat/completions » ; on la normalise ici.
   const baseUrl = String(config.ai.baseUrl).replace(/\/+$/, '');
@@ -142,6 +142,26 @@ async function askOpenAiCompatible({ system, prompt, maxTokens, userContent, mod
     // 429 : les paliers gratuits plafonnent par minute ET par jour. Le dire
     // évite de croire à une panne et de relancer en boucle.
     if (response.status === 429) {
+      /* UN 429 SE RÉESSAIE AVANT D'ABANDONNER.
+       *
+       * Les paliers gratuits plafonnent PAR MINUTE : un lot de vingt imports
+       * tombe forcément sur la limite, et chaque étape perdait alors sa
+       * rédaction — d'où des dossiers vides alors que le pipeline « avait
+       * tourné ». Attendre la fenêtre et réessayer sauve la majorité des cas.
+       *
+       * Deux réessais, avec le délai demandé par le serveur quand il le donne.
+       * Au-delà, c'est le plafond JOURNALIER : insister ne servirait à rien, et
+       * le message doit le dire. */
+      if (tentative429 < 2) {
+        const apres = Number(response.headers?.get?.('retry-after'));
+        const attente = Number.isFinite(apres) && apres > 0
+          ? Math.min(apres * 1000, 20000)
+          : 4000 * (tentative429 + 1);
+        await new Promise((r) => setTimeout(r, attente));
+        return askOpenAiCompatible({
+          system, prompt, maxTokens, userContent, model, vision, tentative429: tentative429 + 1,
+        });
+      }
       throw new Error(
         `Quota IA dépassé (HTTP 429) chez « ${provider} » — les paliers gratuits plafonnent par minute et par jour. ` +
         'Attends la fenêtre suivante (ou le lendemain) avant de réessayer, ou change de fournisseur via AI_BASE_URL/AI_API_KEY/AI_MODEL. ' +
