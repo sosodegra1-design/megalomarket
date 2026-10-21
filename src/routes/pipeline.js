@@ -259,6 +259,15 @@ pipelineRouter.post(
         resultats.push({ importId: imp.id, ignore: 'aucune photo' });
         continue;
       }
+      /* UNE PAUSE ENTRE CHAQUE IMPORT.
+       *
+       * Le pipeline enchaîne plusieurs appels IA par produit (rédaction, contrôle
+       * visuel, contrôle éditorial, catégorisation). Sur un lot de vingt, cela
+       * fait plus de quatre-vingts appels d'affilée : les paliers gratuits
+       * plafonnent par minute, et chaque étape perdait sa rédaction. Espacer de
+       * deux secondes suffit à rester sous la limite sans allonger sensiblement
+       * le lot. */
+      if (resultats.length) await new Promise((r) => setTimeout(r, 2000));
       try {
         const r = await executerPipeline({
           title: imp.title,
