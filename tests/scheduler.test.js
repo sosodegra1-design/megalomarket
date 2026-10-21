@@ -84,7 +84,7 @@ test('throwing a non-Error value is contained the same way', async () => {
    interne à 3 h du matin ne se déclenchait jamais (le service s'endort), et il
    est passé sur un déclencheur externe — voir routes/cron.js et
    .github/workflows/denicheur.yml. */
-test('startScheduler enregistre les 4 tâches restantes avec les expressions exactes', async () => {
+test('startScheduler enregistre les 5 tâches avec les expressions exactes', async () => {
   const { registered, schedule } = captureSchedules();
   const logs = [];
   const logger = async (kind, message) => { logs.push({ kind, message }); };
@@ -96,17 +96,18 @@ test('startScheduler enregistre les 4 tâches restantes avec les expressions exa
     nicheJob: async () => {},
     returnsJob: async () => {},
     qualityJob: async () => {},
+    repairJob: async () => {},
     logger,
   });
 
   // Les cadences ne doivent pas bouger sans qu'on le décide explicitement.
   assert.deepEqual(
     registered.map((entry) => entry.expression),
-    ['*/15 * * * *', '*/5 * * * *', '*/10 * * * *', '*/30 * * * *'],
+    ['*/15 * * * *', '*/5 * * * *', '*/10 * * * *', '*/30 * * * *', '20 * * * *'],
   );
   assert.deepEqual(
     registered.map((entry) => entry.options?.noOverlap),
-    [true, true, true, true],
+    [true, true, true, true, true],
   );
   // Le Dénicheur ne doit plus apparaître : deux déclencheurs concurrents
   // produiraient deux lots pour la même semaine.
@@ -134,6 +135,7 @@ test('the callbacks registered by startScheduler contain a failing job instead o
     nicheJob: async () => { throw new Error('IA indisponible'); },
     returnsJob: async () => { throw new Error('site indisponible'); },
     qualityJob: async () => { throw new Error('vision indisponible'); },
+    repairJob: async () => { throw new Error('fournisseur injoignable'); },
     logger,
   });
 
@@ -152,7 +154,8 @@ test('the callbacks registered by startScheduler contain a failing job instead o
   }
 
   const errors = logs.filter((entry) => entry.kind === 'ERREUR_SYNC');
-  assert.equal(errors.length, 4, 'chaque tick en échec doit être journalisé, sans fuite');
+  // 5 depuis l'ajout de l'agent de complétion des fiches.
+  assert.equal(errors.length, 5, 'chaque tick en échec doit être journalisé, sans fuite');
   assert.match(errors[0].message, /synchronisation stock planifiée/);
   assert.match(errors[1].message, /synchronisation commandes planifiée/);
   assert.match(errors[2].message, /synchronisation retours planifiée/);
